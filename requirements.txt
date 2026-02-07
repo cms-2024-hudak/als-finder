@@ -1,0 +1,12 @@
+geopandas
+shapely
+requests
+# pdal
+laspy
+fiona
+boto3
+tqdm
+python-dotenv
+pyyaml
+click
+pyproj

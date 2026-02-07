@@ -1,0 +1,6 @@
+click
+requests
+geopandas
+shapely
+python-dotenv
+tqdm

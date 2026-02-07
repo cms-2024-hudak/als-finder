@@ -1,0 +1,10 @@
+
+# Environment
+als-finder-env/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+.mypy_cache/
+output/
+data/
