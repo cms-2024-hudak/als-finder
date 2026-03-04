@@ -76,14 +76,20 @@ class OpenTopographyProvider(BaseProvider):
             
             results = []
             for ds in datasets:
-                # Normalize metadata
+                # OpenTopography wraps the actual metadata in a 'Dataset' key
+                meta = ds.get('Dataset', ds)
+                
                 results.append({
                     "provider": "OpenTopography",
-                    "dataset_id": ds.get('opentopoID'),
-                    "name": ds.get('title'),
-                    "url": ds.get('uri'),
-                    "bounds": ds.get('coverage'),
-                    "year": ds.get('year'),
+                    "dataset_id": meta.get('opentopoID'),
+                    "name": meta.get('title') or meta.get('shortName'),
+                    "url": meta.get('uri'),
+                    "bounds": meta.get('coverage'),
+                    "geometry": None, # Complex to fetch full geometry from basic search
+                    "year": meta.get('year'),
+                    "point_count": meta.get('pointCount'),
+                    "point_density": meta.get('pointDensity'),
+                    "area_sqkm": meta.get('area'),
                     # Store raw for full context
                     "raw_metadata": ds
                 })

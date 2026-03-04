@@ -18,8 +18,9 @@ def cli():
 @click.option('--start-date', help='Start date (YYYY-MM-DD)')
 @click.option('--end-date', help='End date (YYYY-MM-DD)')
 @click.option('--output-manifest', default='./manifest.json', help='Output JSON manifest path')
+@click.option('--output-csv', help='Output CSV manifest path (optional)')
 @click.option('--provider', multiple=True, default=['opentopography', 'usgs', 'noaa'], help='Provider(s) to search')
-def search(roi, start_date, end_date, output_manifest, provider):
+def search(roi, start_date, end_date, output_manifest, output_csv, provider):
     """Search for available LiDAR data."""
     logger.info(f"Searching for data in ROI: {roi}")
     logger.info(f"Providers: {provider}")
@@ -106,6 +107,32 @@ def search(roi, start_date, end_date, output_manifest, provider):
         with open(output_manifest, 'w') as f:
             json.dump(unique_results, f, indent=2, default=str)
         logger.info(f"Manifest written to {output_manifest}")
+        
+        # Save CSV if requested
+        if output_csv:
+            import csv
+            with open(output_csv, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Provider', 'Name', 'DatasetID', 'Date', 'SizeMB', 'PointCount', 'PointDensity', 'AreaSqKm', 'URL'])
+                for item in unique_results:
+                    size_mb = ""
+                    if item.get('size'):
+                         try:
+                             size_mb = f"{int(item.get('size')) / (1024*1024):.1f}"
+                         except:
+                             pass
+                    writer.writerow([
+                        item.get('provider', ''),
+                        item.get('name', ''),
+                        item.get('dataset_id', ''),
+                        item.get('date', ''),
+                        size_mb,
+                        item.get('point_count', ''),
+                        item.get('point_density', ''),
+                        item.get('area_sqkm', ''),
+                        item.get('url', '')
+                    ])
+            logger.info(f"CSV manifest written to {output_csv}")
         
     except ROIError as e:
         logger.error(str(e))

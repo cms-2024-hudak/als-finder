@@ -171,6 +171,11 @@ class NOAAProvider(BaseProvider):
                 "size": None, 
                 "preview": None,
                 "metaUrl": row.get("stac_url"),
+                "bounds": row.geometry.bounds if getattr(row, 'geometry', None) else None,
+                "geometry": row.geometry.__geo_interface__ if getattr(row, 'geometry', None) else None,
+                "point_count": None,
+                "point_density": None,
+                "area_sqkm": None,
                 "raw_metadata": {"id": row.get("id"), "title": row.get("title")}
             })
             

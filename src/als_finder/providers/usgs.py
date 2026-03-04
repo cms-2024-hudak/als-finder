@@ -70,6 +70,11 @@ class USGSProvider(BaseProvider):
                     "size": None, # PC STAC might not always list exact bytes in summary
                     "preview": assets.get('thumbnail', {}).get('href'),
                     "metaUrl": item.get('links', [{}])[0].get('href'),
+                    "bounds": props.get('proj:bbox', item.get('bbox')),
+                    "geometry": item.get('geometry'), # Note: Full GeoJSON geometry for the tile
+                    "point_count": props.get('pc:count'),
+                    "point_density": props.get('pc:density'), # Often missing in USGS STAC, but good to check
+                    "area_sqkm": None, # Often missing
                     "raw_metadata": item
                 })
             return results
