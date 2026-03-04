@@ -52,15 +52,59 @@ def search(roi, start_date, end_date, output_manifest, provider):
             except Exception as e:
                 logger.error(f"Search failed for {p.__class__.__name__}: {e}")
 
-        # Summary Output
-        logger.info(f"Total Datasets Found: {len(final_results)}")
+        # Deduplication and Summary Output
+        logger.info(f"Total Raw Datasets Found: {len(final_results)}")
         
-        # Dump to console or file (TODO: Format this better)
-        print(json.dumps(final_results, indent=2, default=str))
+        # Deduplicate based on name or dataset_id
+        # OpenTopography often indexes the same dataset name as USGS or NOAA
+        unique_results = []
+        seen_names = set()
+        
+        for item in final_results:
+            name_key = str(item.get('name') or item.get('dataset_id', '')).lower()
+            if not name_key or name_key in seen_names:
+                continue
+            seen_names.add(name_key)
+            unique_results.append(item)
+
+        logger.info(f"Unique Datasets after deduplication: {len(unique_results)}")
+
+        # Pretty Print Table
+        if unique_results:
+            col_widths = {
+                "Provider": 15,
+                "Name": 40,
+                "Date": 22,
+                "Size (MB)": 10
+            }
+            
+            header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Date':<{col_widths['Date']}} | {'Size (MB)':<{col_widths['Size (MB)']}} |"
+            print("\n" + "=" * len(header))
+            print(" LiDAR Data Search Results ")
+            print("=" * len(header))
+            print(header)
+            print("-" * len(header))
+            
+            for item in unique_results:
+                prov = str(item.get('provider', 'Unknown'))[:col_widths['Provider']]
+                name = str(item.get('name') or item.get('dataset_id', 'Unknown'))[:col_widths['Name']]
+                date = str(item.get('date') or 'N/A')[:col_widths['Date']]
+                size_mb = 'N/A'
+                if item.get('size'):
+                     try:
+                         size_mb = f"{int(item.get('size')) / (1024*1024):.1f}"
+                     except:
+                         pass
+                
+                print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_mb:<{col_widths['Size (MB)']}} |")
+            
+            print("=" * len(header) + "\n")
+        else:
+            print("\nNo datasets found for the given ROI.\n")
 
         # Save manifest
         with open(output_manifest, 'w') as f:
-            json.dump(final_results, f, indent=2, default=str)
+            json.dump(unique_results, f, indent=2, default=str)
         logger.info(f"Manifest written to {output_manifest}")
         
     except ROIError as e:
