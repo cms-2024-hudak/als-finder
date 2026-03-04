@@ -57,31 +57,45 @@ class NOAAProvider(BaseProvider):
         logger.info(f"Building local NOAA STAC spatial index at {self.INDEX_FILE}...")
         logger.info("Fetching STAC metadata for ~950 datasets. This normally takes ~15 seconds and only happens once.")
         
-        catalog = self._fetch_json(self.CATALOG_URL)
-        if not catalog:
-            logger.error("Failed to load NOAA STAC Catalog.")
-            return
-
-        # Find all item links
-        links = [l['href'] for l in catalog.get('links', []) if l.get('rel') == 'item']
-        base_url = self.CATALOG_URL.rsplit('/', 1)[0]
-        item_urls = [base_url + "/" + link.lstrip('./') for link in links]
+        # We must use boto3 directly because NOAA's HTTP STAC links are broken/404ing
+        import boto3
+        from botocore import UNSIGNED
+        from botocore.config import Config
         
+        s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
+        
+        # Paginate through the S3 bucket to find the JSON items directly
+        item_keys = []
+        paginator = s3.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket='noaa-nos-coastal-lidar-pds', Prefix='entwine/stac/')
+        for page in pages:
+            for obj in page.get('Contents', []):
+                key = obj['Key']
+                if key.endswith('.json') and key != 'entwine/stac/catalog.json':
+                    item_keys.append(key)
+                    
         features = []
-        logger.info(f"Fetching {len(item_urls)} STAC definitions concurrently...")
+        logger.info(f"Fetching {len(item_keys)} STAC items via S3...")
         
-        # Reduced max workers to 15 to avoid overwhelming the S3 rate limit or local file descriptors
+        # Function to read item from S3 natively
+        def _fetch_s3_item(key):
+            try:
+                resp = s3.get_object(Bucket='noaa-nos-coastal-lidar-pds', Key=key)
+                return json.loads(resp['Body'].read().decode('utf-8')), key
+            except Exception as e:
+                logger.debug(f"Failed to fetch {key}: {e}")
+                return None, key
+        
         with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
-            future_to_url = {executor.submit(self._fetch_json, url): url for url in item_urls}
+            future_to_key = {executor.submit(_fetch_s3_item, key): key for key in item_keys}
             
-            # Use a simple counter to log progress
             completed = 0
-            for future in concurrent.futures.as_completed(future_to_url):
+            for future in concurrent.futures.as_completed(future_to_key):
                 completed += 1
                 if completed % 200 == 0:
-                    logger.info(f" ... fetched {completed} / {len(item_urls)} items")
+                    logger.info(f" ... fetched {completed} / {len(item_keys)} items")
                     
-                item = future.result()
+                item, key = future.result()
                 if not item:
                     continue
                 
@@ -114,7 +128,7 @@ class NOAAProvider(BaseProvider):
                         "title": item.get("title", item.get("id")),
                         "url": data_url,
                         "datetime": item.get("properties", {}).get("datetime", ""),
-                        "stac_url": future_to_url[future]
+                        "stac_url": f"https://noaa-nos-coastal-lidar-pds.s3.amazonaws.com/{key}"
                     }
                 }
                 features.append(feature)
