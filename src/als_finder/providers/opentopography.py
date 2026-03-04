@@ -76,22 +76,40 @@ class OpenTopographyProvider(BaseProvider):
             
             results = []
             for ds in datasets:
-                # OpenTopography wraps the actual metadata in a 'Dataset' key
+                # OpenTopography wraps the actual metadata in a 'Dataset' key using JSON-LD
                 meta = ds.get('Dataset', ds)
                 
+                # Extract IDs natively from the JSON-LD format
+                ident = meta.get('identifier', {})
+                if isinstance(ident, dict):
+                    dataset_id = ident.get('value', 'Unknown')
+                else:
+                    dataset_id = str(ident)
+                    
+                # Extract area if available
+                area = None
+                vars = meta.get('variableMeasured', [])
+                for v in vars:
+                    if isinstance(v, dict) and v.get('name') == 'Area':
+                        try:
+                            area_str = v.get('value', '').replace(' km2', '').strip()
+                            area = float(area_str)
+                        except:
+                            pass
+
                 results.append({
                     "provider": "OpenTopography",
-                    "dataset_id": meta.get('opentopoID'),
-                    "name": meta.get('title') or meta.get('shortName'),
-                    "url": meta.get('uri'),
-                    "bounds": meta.get('coverage'),
-                    "geometry": None, # Complex to fetch full geometry from basic search
-                    "year": meta.get('year'),
-                    "point_count": meta.get('pointCount'),
-                    "point_density": meta.get('pointDensity'),
-                    "area_sqkm": meta.get('area'),
+                    "dataset_id": dataset_id,
+                    "name": meta.get('name') or meta.get('alternateName'),
+                    "url": meta.get('url'),
+                    "bounds": None, # Complex to fetch full bounds from the json-ld spatialCoverage without parsing GeoJSON
+                    "geometry": meta.get('spatialCoverage', {}).get('geo', {}).get('geojson', {}),
+                    "date": meta.get('dateCreated'),
+                    "point_count": None, # OT doesn't provide these easily in the standard catalog search
+                    "point_density": None,
+                    "area_sqkm": area,
                     # Store raw for full context
-                    "raw_metadata": ds
+                    "raw_metadata": meta
                 })
             return results
 
