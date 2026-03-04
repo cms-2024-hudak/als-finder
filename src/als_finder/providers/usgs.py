@@ -14,79 +14,96 @@ class USGSProvider(BaseProvider):
     Uses the underlying Entwine index / USGS API to find tiles.
     """
     
+    # The USGS TNM API is unreliable for LiDAR point clouds and often returns 0 results for valid regions.
+    # The modern, highly reliable approach is to use the Microsoft Planetary Computer STAC API
+    # which hosts the complete USGS 3DEP LiDAR collection in COPC (Cloud Optimized Point Cloud) LAZ format.
+    STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1/search"
+
     def check_access(self) -> bool:
-        """USGS 3DEP is public, but we can check if the TNM API is reachable."""
+        """Check if the Planetary Computer STAC API is reachable."""
         try:
-            requests.get(self.TNM_URL, timeout=5)
+            requests.get("https://planetarycomputer.microsoft.com/api/stac/v1", timeout=5)
             return True
         except requests.RequestException:
-            logger.warning("USGS TNM API seems unreachable.")
+            logger.warning("Microsoft Planetary Computer STAC API seems unreachable.")
             return False
-    
-    # This endpoint searches the Entwine index for USGS 3DEP data
-    # Reference: https://usgs.entwine.io/
-    # Note: Direct spatial search on S3 is hard. We often use an index service.
-    # A common way is to use the USGS National Map API or Entwine's index if available.
-    # For this implementation, we will use the highly effective 'usgslidar' package approach
-    # or a public STAC API if robust.
-    # To keep it simple and dependency-light, we'll use the National Map API for search
-    # or the entwine boundaries if possible.
-    
-    # Actually, a better approach for 3DEP without heavy deps is the USGS TNM Access API.
-    TNM_URL = "https://tnmaccess.nationalmap.gov/api/v1/products"
 
     def search(self, roi: Polygon, **kwargs) -> List[Dict[str, Any]]:
         """
-        Search for USGS 3DEP LiDAR Point Cloud products (LPC).
+        Search for USGS 3DEP LiDAR Point Cloud products using Planetary Computer STAC.
         """
         minx, miny, maxx, maxy = roi.bounds
         
         params = {
+            "collections": "3dep-lidar-copc",
             "bbox": f"{minx},{miny},{maxx},{maxy}",
-            "prodFormats": "LAZ,LAS",
-            "datasets": "Lidar Point Cloud (LPC)", 
-            # "max": 10  # Limit for testing
+            "limit": 100 # Adjust as needed for pagination
         }
         
         try:
-            logger.info(f"Querying USGS TNM: {params}")
-            response = requests.get(self.TNM_URL, params=params, timeout=30)
+            logger.info(f"Querying USGS 3DEP via STAC: {params}")
+            response = requests.get(self.STAC_URL, params=params, timeout=30)
             response.raise_for_status()
             data = response.json()
             
-            # TNM returns a list of items
-            items = data.get('items', [])
-            logger.info(f"Found {len(items)} items from USGS.")
+            features = data.get('features', [])
+            logger.info(f"Found {len(features)} items from USGS 3DEP.")
             
             results = []
-            for item in items:
-                # Filter strictly if needed, TNM bbox search is sometimes loose
+            for item in features:
+                # Planetary Computer assets include 'data' which points to the COPC.laz file
+                assets = item.get('assets', {})
+                data_asset = assets.get('data', {})
+                url = data_asset.get('href')
+                
+                if not url:
+                    continue
+                    
+                props = item.get('properties', {})
+                
                 results.append({
-                    "provider": "USGS",
+                    "provider": "USGS_STAC",
                     "dataset_id": item.get('id'),
-                    "name": item.get('title'),
-                    "url": item.get('downloadURL'), # Direct download link for LAZ
-                    "date": item.get('publicationDate'),
-                    "size": item.get('sizeInBytes'),
-                    "preview": item.get('previewGraphicURL'),
-                    "metaUrl": item.get('metaUrl'),
+                    "name": item.get('id'),
+                    "url": url, 
+                    "date": props.get('datetime'),
+                    "size": None, # PC STAC might not always list exact bytes in summary
+                    "preview": assets.get('thumbnail', {}).get('href'),
+                    "metaUrl": item.get('links', [{}])[0].get('href'),
                     "raw_metadata": item
                 })
             return results
 
         except requests.RequestException as e:
-            logger.error(f"Error searching USGS: {e}")
+            logger.error(f"Error searching USGS STAC: {e}")
             return []
 
-    def download(self, dataset_id: str, output_dir: Path, **kwargs) -> Path:
+    def download(self, tile_url: str, output_dir: Path, **kwargs) -> Path:
         """
-        Download a file from USGS (usually direct URL).
+        Download a specific .laz file from the USGS download URL.
         """
-        # In a real implementation, we'd lookup the URL from the search result 
-        # or require the URL to be passed.
-        # For simplistic interface, let's assume the 'dataset_id' might be the URL or we re-fetch.
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
         
-        # NOTE: Proper design would pass the full metadata object or URL to download.
-        # Here we just log it as a placeholder.
-        logger.info(f"Downloading {dataset_id} to {output_dir}")
-        return output_dir
+        # Extract filename from URL (e.g., https://.../USGS_LPC_OR_...laz)
+        filename = tile_url.split('/')[-1]
+        out_path = output_dir / filename
+        
+        if out_path.exists():
+            logger.info(f"File {out_path} already exists. Skipping download.")
+            return out_path
+            
+        logger.info(f"Downloading USGS tile from {tile_url} to {out_path}")
+        try:
+            with requests.get(tile_url, stream=True, timeout=60) as r:
+                r.raise_for_status()
+                with open(out_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            logger.info(f"Successfully downloaded {filename}")
+            return out_path
+        except requests.RequestException as e:
+            logger.error(f"Failed to download {tile_url}: {e}")
+            if out_path.exists():
+                out_path.unlink() # Clean up partial file
+            raise
