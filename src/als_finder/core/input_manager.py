@@ -36,7 +36,7 @@ def load_roi(source: Union[str, Path, List[float]]) -> Polygon:
         # 2. Handle BBox as string
         if isinstance(source, str):
             # Check if it looks like a list of numbers
-            if "," in source and source.replace(",", "").replace(".", "").replace("-", "").isdigit():
+            if "," in source and source.replace(",", "").replace(".", "").replace("-", "").replace(" ", "").isdigit():
                  try:
                      parts = [float(x.strip()) for x in source.split(",")]
                      if len(parts) == 4:
