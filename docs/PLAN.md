@@ -14,6 +14,11 @@ This tool provides a Python-based interface to search for and download LiDAR poi
 -   **Docker Container**: The primary delivery mechanism.
 -   **Entrypoint**: A CLI tool `als-finder`.
 
+### Core Workflow (Two-Stage Batching)
+To support HPC job arrays and prevent overloading provider APIs, the tool operates in two distinct stages:
+1.  **Search**: Queries the provider for a given ROI, identifies all overlapping LiDAR tiles, and exports a JSON manifest containing individual tile download URLs and metadata.
+2.  **Download**: Accepts a single tile URL or metadata entry (often dispatched via a Slurm Array task) and downloads that specific `.laz` file.
+
 ### Modules
 1.  **Core**:
     -   `InputManager`: Validates ROIs (GeoJSON/Shapefile).
@@ -22,23 +27,32 @@ This tool provides a Python-based interface to search for and download LiDAR poi
     -   `BaseProvider`: Abstract class.
     -   `OpenTopographyProvider`: Implements search/download for OT.
     -   `USGSProvider`: Implements search/download for USGS AWS.
-3.  **Download Manager**:
-    -   Handles concurrency, retries, and file organization.
+3.  **Tile Manager**:
+    -   Handles the generation of the search manifest and the execution of single-tile or concurrent-tile downloads with retries.
 
 ## 4. System Inputs
 
 ### CLI Arguments
--   `--roi`: Path to GeoJSON/Shapefile/BBox.
+
+**Search Stage:**
+-   `search --roi <path>`: Path to GeoJSON/Shapefile bounding box.
 -   `--start-date`, `--end-date`: ISO 8601 dates.
--   `--density`: Minimum point density (pts/m²).
--   `--output`: Host directory mounted to container.
+-   `--output-manifest`: Path to save the resulting JSON array of tile URLs.
+
+**Download Stage:**
+-   `download --manifest <path>`: Download all tiles in a manifest.
+-   `download --tile-url <url>`: Download a single specific tile (Ideal for HPC Job Arrays).
+-   `--output-dir`: Host directory to save the `.laz` file.
 
 ### Docker Usage
 ```bash
-docker run -v $(pwd)/data:/output -v $(pwd)/config:/config \
-    --env-file .env \
-    als-finder:latest \
-    download --roi /config/roi.geojson --output /output
+# Stage 1: Search and generate manifest
+docker run -v $(pwd)/data:/data als-finder:latest \
+    search --roi /data/roi.geojson --output-manifest /data/tiles.json
+
+# Stage 2: Download a single tile
+docker run -v $(pwd)/data:/data als-finder:latest \
+    download --tile-url "https://.../tile.laz" --output-dir /data/laz/
 ```
 
 ## 5. Development Standards
@@ -68,12 +82,19 @@ docker run -v $(pwd)/data:/output -v $(pwd)/config:/config \
 -   [x] Final Docker Optimization (Multi-stage build)
 -   [ ] Documentation Complete
 
-## 7. Output Structure
+## 7. Output Structure (Aligned with `als-downscaler`)
 ```text
-output/
-├── manifest.json
-├── opentopography/
-│   └── dataset_A/ ...
-└── usgs/
-    └── tile_B/ ...
+.
+├── .agent/            # AI Assistant rules and workflows
+├── config/            # YAML/JSON configs for pipelines
+├── data/              # (Gitignored) Short-lived or small datasets
+│   ├── input/         
+│   └── output/        
+├── docs/              # Documentation
+├── infrastructure/    # Dockerfiles
+├── logs/              # (Gitignored) Execution logs
+├── scripts/           # Entrypoints / Testing scripts
+├── src/               # Python source code
+│   └── als_finder/    # Core logic modules
+└── tests/             # Pytest scripts
 ```

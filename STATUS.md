@@ -11,10 +11,10 @@
 
 ## In Progress
 - [ ] USGS Provider (Search implemented but tuning parameters for 3DEP)
-- [ ] Download Logic (Concurrent downloads, file organization)
+- [ ] Two-Stage Architecture Refactoring: Split into `search` (manifest generation) and `download` (single-tile/manifest processing).
 - [ ] NOAA Provider
 
 ## Next Steps
-1.  Refine USGS 3DEP search parameters.
-2.  Implement `download` command in CLI.
+1.  Refactor CLI to support `search` (outputting JSON manifest) and `download` (taking tile URLs).
+2.  Refine USGS 3DEP search parameters to return precise tile URLs.
 3.  Add NOAA Digital Coast provider.

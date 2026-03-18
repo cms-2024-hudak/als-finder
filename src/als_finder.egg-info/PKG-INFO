@@ -1,10 +1,10 @@
-Metadata-Version: 2.4
-Name: als_finder
+Metadata-Version: 2.1
+Name: als-finder
 Version: 0.1.0
-Requires-Dist: click
-Requires-Dist: requests
-Requires-Dist: geopandas
-Requires-Dist: shapely
-Requires-Dist: python-dotenv
-Requires-Dist: tqdm
-Dynamic: requires-dist
+Summary: UNKNOWN
+Home-page: UNKNOWN
+License: UNKNOWN
+Platform: UNKNOWN
+
+UNKNOWN
+
