@@ -91,7 +91,7 @@ class USGSProvider(BaseProvider):
         output_dir.mkdir(parents=True, exist_ok=True)
         
         # Extract filename from URL (e.g., https://.../USGS_LPC_OR_...laz)
-        filename = tile_url.split('/')[-1]
+        filename = tile_url.split('?')[0].split('/')[-1]
         out_path = output_dir / filename
         
         if out_path.exists():
@@ -99,8 +99,20 @@ class USGSProvider(BaseProvider):
             return out_path
             
         logger.info(f"Downloading USGS tile from {tile_url} to {out_path}")
+
+        # Try to sign the URL if it's a Planetary Computer Azure Blob URL
+        signed_url = tile_url
+        if "blob.core.windows.net" in tile_url:
+            try:
+                logger.info("Requesting Planetary Computer SAS Token for Azure Blob URL...")
+                sas_req = requests.get(f"https://planetarycomputer.microsoft.com/api/sas/v1/sign?href={tile_url}", timeout=10)
+                sas_req.raise_for_status()
+                signed_url = sas_req.json().get('href', tile_url)
+            except Exception as e:
+                logger.warning(f"Failed to fetch SAS token for Azure Blob: {e}. Proceeding with raw URL.")
+
         try:
-            with requests.get(tile_url, stream=True, timeout=60) as r:
+            with requests.get(signed_url, stream=True, timeout=60) as r:
                 r.raise_for_status()
                 with open(out_path, 'wb') as f:
                     for chunk in r.iter_content(chunk_size=8192):
