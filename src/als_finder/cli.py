@@ -19,8 +19,9 @@ def cli():
 @click.option('--end-date', help='End date (YYYY-MM-DD)')
 @click.option('--output-manifest', default='./manifest.json', help='Output JSON manifest path')
 @click.option('--output-csv', help='Output CSV manifest path (optional)')
+@click.option('--output-gpkg', help='Output GeoPackage catalog path (optional)')
 @click.option('--provider', multiple=True, default=['opentopography', 'usgs', 'noaa'], help='Provider(s) to search')
-def search(roi, start_date, end_date, output_manifest, output_csv, provider):
+def search(roi, start_date, end_date, output_manifest, output_csv, output_gpkg, provider):
     """Search for available LiDAR data."""
     logger.info(f"Searching for data in ROI: {roi}")
     logger.info(f"Providers: {provider}")
@@ -133,6 +134,42 @@ def search(roi, start_date, end_date, output_manifest, output_csv, provider):
                         item.get('url', '')
                     ])
             logger.info(f"CSV manifest written to {output_csv}")
+        
+        # Save GPKG if requested
+        if output_gpkg:
+            try:
+                import geopandas as gpd
+                from shapely.geometry import box
+                records = []
+                for item in unique_results:
+                    b = item.get('bounds')
+                    if b and len(b) >= 4:
+                        try:
+                            # Safely extract array structures
+                            geom = box(float(b[0]), float(b[1]), float(b[2]), float(b[3]))
+                            # Flatten dict avoiding unsupported structure writes
+                            rec = {k: str(v) for k, v in item.items() if k != 'bounds'}
+                            rec['geometry'] = geom
+                            records.append(rec)
+                        except Exception as parse_e:
+                            logger.debug(f"Skipping geometry bounds parse failure: {parse_e}")
+                            
+                if records:
+                    crs = "EPSG:3857" # Default matching OT/USGS native returns
+                    for item in unique_results:
+                        if item.get('srs'):
+                            crs = item.get('srs')
+                            break
+                            
+                    gdf = gpd.GeoDataFrame(records, crs=crs)
+                    gdf.to_file(output_gpkg, driver="GPKG")
+                    logger.info(f"GeoPackage catalog written to {output_gpkg}")
+                else:
+                    logger.warning(f"No valid geometries found; GeoPackage {output_gpkg} not created.")
+            except ImportError as e:
+                logger.error(f"Missing geospatial dependencies: {e}. Ensure geopandas and shapely are installed.")
+            except Exception as e:
+                logger.error(f"Failed to write GeoPackage: {e}")
         
     except ROIError as e:
         logger.error(str(e))
