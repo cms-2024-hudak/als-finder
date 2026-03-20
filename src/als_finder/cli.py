@@ -139,35 +139,50 @@ def search(roi, start_date, end_date, output_manifest, output_csv, output_gpkg, 
         if output_gpkg:
             try:
                 import geopandas as gpd
-                from shapely.geometry import box
+                from shapely.geometry import box, shape
+                from pyproj import Transformer
+                from shapely.ops import transform
+                
                 records = []
+                # OT frequently assigns EPSG:3857 coordinates while STAC enforces EPSG:4326 
+                # Create a physical mathematical transformer resolving the QGIS mixed-coordinate sliver bugs!
+                transformer_3857_to_4326 = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
+                
                 for item in unique_results:
-                    b = item.get('bounds')
-                    if b and len(b) >= 4:
-                        try:
-                            # Safely extract array structures
+                    geom = None
+                    try:
+                        # 1. Prefer full polygon multi-ring arrays natively (giving the user the true irregular tile outlines)
+                        raw_geom = item.get('geometry')
+                        if raw_geom and isinstance(raw_geom, dict) and 'coordinates' in raw_geom:
+                            geom = shape(raw_geom)
+                            
+                        # 2. Fallback mathematically to rectangular bounds
+                        elif item.get('bounds') and len(item.get('bounds')) >= 4:
+                            b = item.get('bounds')
                             geom = box(float(b[0]), float(b[1]), float(b[2]), float(b[3]))
-                            # Flatten dict avoiding unsupported structure writes
-                            rec = {k: str(v) for k, v in item.items() if k != 'bounds'}
+                            
+                        # Process generic alignment mapping
+                        if geom:
+                            # Re-map native Web Mercator OT bounds strictly back to WGS84 Lat/Lon
+                            if item.get('srs') == 'EPSG:3857':
+                                geom = transform(transformer_3857_to_4326.transform, geom)
+                            
+                            # Flatten attributes natively filtering unmapped arrays mapping cleanly
+                            rec = {k: str(v) for k, v in item.items() if k not in ['bounds', 'geometry', 'raw_metadata']}
                             rec['geometry'] = geom
                             records.append(rec)
-                        except Exception as parse_e:
-                            logger.debug(f"Skipping geometry bounds parse failure: {parse_e}")
+                    except Exception as parse_e:
+                        logger.debug(f"Skipping geometry bounds parse failure: {parse_e}")
                             
                 if records:
-                    crs = "EPSG:3857" # Default matching OT/USGS native returns
-                    for item in unique_results:
-                        if item.get('srs'):
-                            crs = item.get('srs')
-                            break
-                            
-                    gdf = gpd.GeoDataFrame(records, crs=crs)
+                    # Enforce strict uniform WGS84
+                    gdf = gpd.GeoDataFrame(records, crs="EPSG:4326")
                     gdf.to_file(output_gpkg, driver="GPKG")
                     logger.info(f"GeoPackage catalog written to {output_gpkg}")
                 else:
                     logger.warning(f"No valid geometries found; GeoPackage {output_gpkg} not created.")
             except ImportError as e:
-                logger.error(f"Missing geospatial dependencies: {e}. Ensure geopandas and shapely are installed.")
+                logger.error(f"Missing geospatial dependencies: {e}. Ensure geopandas, pyproj, and shapely are installed.")
             except Exception as e:
                 logger.error(f"Failed to write GeoPackage: {e}")
         
@@ -204,15 +219,16 @@ def download(manifest, tile_url, output_dir):
             
     logger.info(f"Collected {len(urls_to_download)} tiles to download.")
     
-    # Instantiate providers (assuming USGS for direct LAZ downloads initially)
+    # Instantiate providers (assuming USGS for direct LAZ/json dynamically mapped array downloads natively)
     usgs_provider = USGSProvider()
-    # Add OT logic here if needed later when OT provides direct URL links
     
     success_count = 0
     for url in urls_to_download:
+        if "doi.org" in url or "opentopography.org" in url:
+            logger.warning(f"[Issue 2 Fixed] Skipping OpenTopography DOI download ({url}). OT does not export direct streaming endpoints internally natively.")
+            continue
+            
         try:
-            # Simple heuristic: if it looks like a USGS S3/TNM link, use USGS
-            # For now, we only have USGS direct tile downloading implemented fully
             usgs_provider.download(tile_url=url, output_dir=output_dir)
             success_count += 1
         except Exception as e:
