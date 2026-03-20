@@ -1,8 +1,12 @@
 import click
 import logging
 import json
+from dotenv import load_dotenv
 from als_finder.core.input_manager import load_roi, ROIError
 from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvider
+
+# Load local API keys
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
