@@ -141,7 +141,7 @@ def search(roi, start_date, end_date, output_manifest, output_csv, provider):
 @cli.command()
 @click.option('--manifest', help='Path to generated manifest.json from search step')
 @click.option('--tile-url', help='Download a single specific tile laz URL')
-@click.option('--output-dir', default='./data/input/tiles', help='Output directory for downloaded .laz files')
+@click.option('--output-dir', default='./data/input/lidar/source=usgs', help='Output directory for downloaded .laz files')
 def download(manifest, tile_url, output_dir):
     """Download LiDAR data from manifest or single URL."""
     if not manifest and not tile_url:
