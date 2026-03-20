@@ -45,12 +45,17 @@ class USGSProvider(BaseProvider):
             intersecting = gdf[gdf.intersects(roi)]
             logger.info(f"Found {len(intersecting)} USGS datasets spanning the ROI.")
             
+            import re
             results = []
             for idx, row in intersecting.iterrows():
                 name = str(row.get('name', 'Unknown'))
                 geom = row.geometry
                 bounds = geom.bounds if geom else None
                 geom_dict = geom.__geo_interface__ if geom else None
+                
+                # Derive year structurally via regex
+                year_match = re.search(r'_?(199\d|20[0-2]\d)_?', name)
+                extracted_date = year_match.group(1) if year_match else None
                 
                 # Stringify row for raw generic tracking
                 raw_dict = {}
@@ -62,8 +67,9 @@ class USGSProvider(BaseProvider):
                     "provider": "USGS_EPT",
                     "dataset_id": name,
                     "name": name,
+                    "description": f"USGS 3DEP EPT Dataset: {name}",
                     "url": f"https://s3-us-west-2.amazonaws.com/usgs-lidar-public/{name}/ept.json", 
-                    "date": None,
+                    "date": extracted_date,
                     "size": None,
                     "preview": None,
                     "metaUrl": self.REGISTRY_URL,

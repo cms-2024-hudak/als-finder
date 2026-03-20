@@ -137,6 +137,7 @@ class NOAAProvider(BaseProvider):
                     "properties": {
                         "id": item.get("id"),
                         "title": item.get("title", item.get("id")),
+                        "description": item.get("properties", {}).get("description", ""),
                         "url": data_url,
                         "datetime": dt or "",
                         "stac_url": f"https://noaa-nos-coastal-lidar-pds.s3.amazonaws.com/{key}"
@@ -191,6 +192,7 @@ class NOAAProvider(BaseProvider):
                 "provider": "NOAA_STAC",
                 "dataset_id": row.get("id"),
                 "name": row.get("title"),
+                "description": row.get("description", ""),
                 "url": row.get("url"), 
                 "date": row.get("datetime"),
                 "size": None, 
@@ -201,7 +203,7 @@ class NOAAProvider(BaseProvider):
                 "point_count": None,
                 "point_density": None,
                 "area_sqkm": None,
-                "raw_metadata": {"id": row.get("id"), "title": row.get("title")}
+                "raw_metadata": {"id": row.get("id"), "title": row.get("title"), "description": row.get("description", "")}
             })
             
         return results

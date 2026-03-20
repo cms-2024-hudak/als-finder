@@ -101,6 +101,7 @@ class OpenTopographyProvider(BaseProvider):
                     "provider": "OpenTopography",
                     "dataset_id": dataset_id,
                     "name": meta.get('name') or meta.get('alternateName'),
+                    "description": meta.get('description', ''),
                     "url": meta.get('url'),
                     "bounds": None, # Complex to fetch full bounds from the json-ld spatialCoverage without parsing GeoJSON
                     "geometry": meta.get('spatialCoverage', {}).get('geo', {}).get('geojson', {}),
