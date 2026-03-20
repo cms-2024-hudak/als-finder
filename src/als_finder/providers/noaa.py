@@ -120,6 +120,17 @@ class NOAAProvider(BaseProvider):
 
                 geom = box(*bbox)
                 
+                # Interpret OGC STAC native temporal attributes (some projects lack 'datetime' but carry 'start_datetime')
+                props = item.get("properties", {})
+                dt = props.get("datetime")
+                if not dt:
+                    start_dt = props.get("start_datetime")
+                    end_dt = props.get("end_datetime")
+                    if start_dt and end_dt:
+                        dt = f"{start_dt} to {end_dt}"
+                    elif start_dt:
+                        dt = start_dt
+                        
                 feature = {
                     "type": "Feature",
                     "geometry": geom.__geo_interface__,
@@ -127,7 +138,7 @@ class NOAAProvider(BaseProvider):
                         "id": item.get("id"),
                         "title": item.get("title", item.get("id")),
                         "url": data_url,
-                        "datetime": item.get("properties", {}).get("datetime", ""),
+                        "datetime": dt or "",
                         "stac_url": f"https://noaa-nos-coastal-lidar-pds.s3.amazonaws.com/{key}"
                     }
                 }
