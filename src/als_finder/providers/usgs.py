@@ -1,126 +1,90 @@
 import logging
+import geopandas as gpd
 from typing import List, Dict, Any, Optional
 from shapely.geometry import Polygon
 from pathlib import Path
-import requests
-import json
 from .base import BaseProvider
+import requests
 
 logger = logging.getLogger(__name__)
 
 class USGSProvider(BaseProvider):
     """
-    Provider for USGS 3DEP data via AWS Public Datasets.
-    Uses the underlying Entwine index / USGS API to find tiles.
+    Provider for USGS 3DEP data via AWS Public Datasets (EPT format).
+    Reads the authoritative US boundary geometry file locally representing true Scale 2 Acquisitions.
     """
     
-    # The USGS TNM API is unreliable for LiDAR point clouds and often returns 0 results for valid regions.
-    # The modern, highly reliable approach is to use the Microsoft Planetary Computer STAC API
-    # which hosts the complete USGS 3DEP LiDAR collection in COPC (Cloud Optimized Point Cloud) LAZ format.
-    STAC_URL = "https://planetarycomputer.microsoft.com/api/stac/v1/search"
+    REGISTRY_URL = "https://raw.githubusercontent.com/hobu/usgs-lidar/master/boundaries/resources.geojson"
 
     def check_access(self) -> bool:
-        """Check if the Planetary Computer STAC API is reachable."""
+        """Check if Github registry is reachable."""
         try:
-            requests.get("https://planetarycomputer.microsoft.com/api/stac/v1", timeout=5)
+            requests.head(self.REGISTRY_URL, timeout=10)
             return True
         except requests.RequestException:
-            logger.warning("Microsoft Planetary Computer STAC API seems unreachable.")
+            logger.warning("AWS USGS Entwine boundary registry unreachable.")
             return False
 
     def search(self, roi: Polygon, **kwargs) -> List[Dict[str, Any]]:
         """
-        Search for USGS 3DEP LiDAR Point Cloud products using Planetary Computer STAC.
+        Search for USGS 3DEP LiDAR Point Cloud products intersecting the ROI.
         """
-        minx, miny, maxx, maxy = roi.bounds
-        
-        params = {
-            "collections": "3dep-lidar-copc",
-            "bbox": f"{minx},{miny},{maxx},{maxy}",
-            "limit": 100 # Adjust as needed for pagination
-        }
-        
         try:
-            logger.info(f"Querying USGS 3DEP via STAC: {params}")
-            response = requests.get(self.STAC_URL, params=params, timeout=30)
-            response.raise_for_status()
-            data = response.json()
+            logger.info(f"Downloading Hobu USGS 3DEP Global AWS Index...")
+            gdf = gpd.read_file(self.REGISTRY_URL)
+            logger.info(f"Loaded {len(gdf)} entire USGS acquisitions natively.")
             
-            features = data.get('features', [])
-            logger.info(f"Found {len(features)} items from USGS 3DEP.")
+            roi_gdf = gpd.GeoDataFrame(geometry=[roi], crs="EPSG:4326")
+            
+            if gdf.crs is None:
+                gdf.set_crs("EPSG:4326", inplace=True)
+            elif gdf.crs != roi_gdf.crs:
+                gdf = gdf.to_crs(roi_gdf.crs)
+                
+            logger.info("Intersecting spatial boundaries natively...")
+            intersecting = gdf[gdf.intersects(roi)]
+            logger.info(f"Found {len(intersecting)} USGS datasets spanning the ROI.")
             
             results = []
-            for item in features:
-                # Planetary Computer assets include 'data' which points to the COPC.laz file
-                assets = item.get('assets', {})
-                data_asset = assets.get('data', {})
-                url = data_asset.get('href')
+            for idx, row in intersecting.iterrows():
+                name = str(row.get('name', 'Unknown'))
+                geom = row.geometry
+                bounds = geom.bounds if geom else None
+                geom_dict = geom.__geo_interface__ if geom else None
                 
-                if not url:
-                    continue
-                    
-                props = item.get('properties', {})
-                
+                # Stringify row for raw generic tracking
+                raw_dict = {}
+                for k in row.index:
+                    if k != 'geometry':
+                        raw_dict[str(k)] = str(row[k])
+                        
                 results.append({
-                    "provider": "USGS_STAC",
-                    "dataset_id": item.get('id'),
-                    "name": item.get('id'),
-                    "url": url, 
-                    "date": props.get('datetime'),
-                    "size": None, # PC STAC might not always list exact bytes in summary
-                    "preview": assets.get('thumbnail', {}).get('href'),
-                    "metaUrl": item.get('links', [{}])[0].get('href'),
-                    "bounds": props.get('proj:bbox', item.get('bbox')),
-                    "geometry": item.get('geometry'), # Note: Full GeoJSON geometry for the tile
-                    "point_count": props.get('pc:count'),
-                    "point_density": props.get('pc:density'), # Often missing in USGS STAC, but good to check
-                    "area_sqkm": None, # Often missing
-                    "raw_metadata": item
+                    "provider": "USGS_EPT",
+                    "dataset_id": name,
+                    "name": name,
+                    "url": f"https://s3-us-west-2.amazonaws.com/usgs-lidar-public/{name}/ept.json", 
+                    "date": None,
+                    "size": None,
+                    "preview": None,
+                    "metaUrl": self.REGISTRY_URL,
+                    "srs": "EPSG:4326",
+                    "bounds": bounds,
+                    "geometry": geom_dict, 
+                    "point_count": row.get('count'),
+                    "point_density": None,
+                    "area_sqkm": None,
+                    "raw_metadata": raw_dict
                 })
             return results
 
-        except requests.RequestException as e:
-            logger.error(f"Error searching USGS STAC: {e}")
+        except Exception as e:
+            logger.error(f"Error searching USGS AWS EPT registry: {e}")
             return []
 
     def download(self, tile_url: str, output_dir: Path, **kwargs) -> Path:
         """
-        Download a specific .laz file from the USGS download URL.
+        Scale 2 USGS data streams via EPT (Entwine Point Tiles) structurally natively.
         """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Extract filename from URL (e.g., https://.../USGS_LPC_OR_...laz)
-        filename = tile_url.split('?')[0].split('/')[-1]
-        out_path = output_dir / filename
-        
-        if out_path.exists():
-            logger.info(f"File {out_path} already exists. Skipping download.")
-            return out_path
-            
-        logger.info(f"Downloading USGS tile from {tile_url} to {out_path}")
-
-        # Try to sign the URL if it's a Planetary Computer Azure Blob URL
-        signed_url = tile_url
-        if "blob.core.windows.net" in tile_url:
-            try:
-                logger.info("Requesting Planetary Computer SAS Token for Azure Blob URL...")
-                sas_req = requests.get(f"https://planetarycomputer.microsoft.com/api/sas/v1/sign?href={tile_url}", timeout=10)
-                sas_req.raise_for_status()
-                signed_url = sas_req.json().get('href', tile_url)
-            except Exception as e:
-                logger.warning(f"Failed to fetch SAS token for Azure Blob: {e}. Proceeding with raw URL.")
-
-        try:
-            with requests.get(signed_url, stream=True, timeout=60) as r:
-                r.raise_for_status()
-                with open(out_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-            logger.info(f"Successfully downloaded {filename}")
-            return out_path
-        except requests.RequestException as e:
-            logger.error(f"Failed to download {tile_url}: {e}")
-            if out_path.exists():
-                out_path.unlink() # Clean up partial file
-            raise
+        logger.warning(f"Extracted USGS datasets are Entwine Point Tile (EPT) URLs ({tile_url}).")
+        logger.warning("To extract natively, use PDAL targeting the ept.json payload directly rather than standard wget endpoints.")
+        return output_dir
