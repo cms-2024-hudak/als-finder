@@ -190,19 +190,31 @@ class NOAAProvider(BaseProvider):
         
         results = []
         for idx, row in intersecting.iterrows():
+            url = row.get("url")
+            point_count = row.get("point_count")
+            
+            # STAC fundamentally drops point counts natively. Dynamically intercept EPT to fix it!
+            if not point_count and url:
+                ept_url = url if url.endswith('ept.json') else url.rstrip('/') + '/ept.json'
+                try:
+                    ept_resp = self.session.get(ept_url, timeout=4).json()
+                    point_count = ept_resp.get('points')
+                except Exception as e:
+                    logger.debug(f"NOAA EPT extraction failed for {ept_url}: {e}")
+
             results.append({
                 "provider": "NOAA_STAC",
                 "dataset_id": row.get("id"),
                 "name": row.get("title"),
                 "description": row.get("description", ""),
-                "url": row.get("url"), 
+                "url": url, 
                 "date": row.get("datetime"),
                 "size": None, 
                 "preview": None,
                 "metaUrl": row.get("stac_url"),
                 "bounds": row.geometry.bounds if getattr(row, 'geometry', None) else None,
                 "geometry": row.geometry.__geo_interface__ if getattr(row, 'geometry', None) else None,
-                "point_count": row.get("point_count"),
+                "point_count": point_count,
                 "srs": row.get("srs", "EPSG:4326"),
                 "point_density": None,
                 "area_sqkm": None,
