@@ -97,7 +97,50 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --workspace ./my_lidar_pr
 ```
 *(Notice the `NOAA_STAC id_9036` footprint. If a dataset is cataloged but physically `404` deleted internally off AWS S3 by NOAA, `als-finder` dynamically falls back to a secure `N/A` without catastrophically crashing the orchestration pipeline).*
 
-### 2. Filtering by Chronology
+### 2. Filtering by Dataset Name (`--name`)
+If you specifically know the title format of your target distributions, you can aggressively intercept queries before discovery utilizing wildcards `*`, exact phrases, or fully-compiled Regular Expressions (prefixed with `~`).
+
+#### Finding Names via Wildcard Strings
+```bash
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "*Tahoe*" --workspace ./tahoe_wildcards/
+```
+
+**Console Output:**
+```text
+=================================================================================================================
+ LiDAR Data Search Results 
+=================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+-----------------------------------------------------------------------------------------------------------------
+ | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
+ | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
+=================================================================================================================
+ TOTAL DATASETS: 2 | ESTIMATED PAYLOAD: 403.57 GB 
+=================================================================================================================
+```
+
+#### Finding Names via Explicit Regex
+Prefix the query mathematically with a tilde `~` to securely compile advanced Python regex matchers (e.g. isolating exact `CA_Sierra` string structures):
+```bash
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "~^CA_Sierra.*" --workspace ./sierra_regex/
+```
+
+**Console Output:**
+```text
+=================================================================================================================
+ LiDAR Data Search Results 
+=================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+-----------------------------------------------------------------------------------------------------------------
+ | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
+=================================================================================================================
+ TOTAL DATASETS: 3 | ESTIMATED PAYLOAD: 3688.28 GB 
+=================================================================================================================
+```
+
+### 3. Filtering by Chronology
 
 #### Defining a Hard Start Date (`--start-date`)
 If you only need modern datasets acquired *after* a specific project mapping date, isolate the bounds strictly mathematically:
