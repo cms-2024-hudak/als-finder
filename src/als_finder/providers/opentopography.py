@@ -121,14 +121,19 @@ class OpenTopographyProvider(BaseProvider):
                         except:
                             pass
 
+                # Isolate Polygons from OT FeatureCollections
+                geom = meta.get('spatialCoverage', {}).get('geo', {}).get('geojson', {})
+                if geom and geom.get('type') == 'FeatureCollection' and geom.get('features'):
+                    geom = geom['features'][0].get('geometry')
+
                 results.append({
                     "provider": "OpenTopography",
                     "dataset_id": dataset_id,
                     "name": meta.get('name') or meta.get('alternateName'),
                     "description": meta.get('description', ''),
                     "url": meta.get('url'),
-                    "bounds": None, # Complex to fetch full bounds from the json-ld spatialCoverage without parsing GeoJSON
-                    "geometry": meta.get('spatialCoverage', {}).get('geo', {}).get('geojson', {}),
+                    "bounds": None, 
+                    "geometry": geom,
                     "date": meta.get('dateCreated'),
                     "point_count": meta.get('ptCount') or meta.get('pointCount'), 
                     "point_density": meta.get('pointDensity'),

@@ -158,19 +158,34 @@ def search(roi, start_date, end_date, workspace, quiet, provider):
                 print(header)
                 print("-" * len(header))
                 
+                # Pre-format dates and Sort Descending
+                for item in unique_results:
+                    raw_date = str(item.get('date') or '').strip()
+                    if not raw_date or raw_date.lower() == 'none' or raw_date == 'XXXX-XX-XX':
+                        display_date = '????-??-??'
+                        sort_date = '0000-00-00'
+                    else:
+                        if ' ' in raw_date:
+                            raw_date = raw_date.split(' ')[0]
+                        elif 'T' in raw_date:
+                            raw_date = raw_date.split('T')[0]
+                        display_date = raw_date
+                        sort_date = raw_date
+                        
+                    # Handle USGS single-year dates natively (e.g. '2022')
+                    if len(display_date) == 4 and display_date.isdigit():
+                        sort_date = f"{display_date}-12-31"
+                        display_date = f"{display_date}-??-??"
+                        
+                    item['display_date'] = display_date
+                    item['sort_date'] = sort_date
+                
+                unique_results.sort(key=lambda k: k.get('sort_date', '0000-00-00'), reverse=True)
+                
                 for item in unique_results:
                     prov = str(item.get('provider', 'Unknown'))[:col_widths['Provider']]
                     name = str(item.get('name') or item.get('dataset_id', 'Unknown'))[:col_widths['Name']]
-                    
-                    raw_date = str(item.get('date') or '').strip()
-                    if not raw_date or raw_date == 'None':
-                        raw_date = 'XXXX-XX-XX'
-                    elif ' ' in raw_date:
-                        raw_date = raw_date.split(' ')[0]
-                    elif 'T' in raw_date:
-                        raw_date = raw_date.split('T')[0]
-                        
-                    date = raw_date[:col_widths['Date']]
+                    date = item.get('display_date')[:col_widths['Date']]
                     
                     size_gb = 'N/A'
                     if item.get('size'):
