@@ -25,11 +25,10 @@ def cli(verbose):
 @cli.command()
 @click.option('--roi', required=True, help='Path to ROI file (GeoJSON/Shapefile) or BBox string')
 @click.option('--date', help='Temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
-@click.option('--density', help='Point density filter pts/m2 (e.g. 8.0 or 2.0/10.0)')
-@click.option('--ql', type=click.Choice(['QL0', 'QL1', 'QL2', 'QL3'], case_sensitive=False), help='USGS Topo Quality Level shorthand (e.g. QL1)')
+@click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
 @click.option('--workspace', help='Path to project workspace directory')
 @click.option('--provider', multiple=True, default=['usgs', 'noaa', 'opentopography'], help='Provider(s) to search')
-def search(roi, date, density, ql, workspace, provider):
+def search(roi, date, density, workspace, provider):
     """Search for available LiDAR data."""
     start_date, end_date = None, None
     if date:
@@ -40,18 +39,16 @@ def search(roi, date, density, ql, workspace, provider):
             
     min_density, max_density = None, None
     if density:
-        if '/' in density:
+        if density.upper().startswith('QL'):
+            ql_map = {'QL0': 8.0, 'QL1': 8.0, 'QL2': 2.0, 'QL3': 0.5}
+            min_density = ql_map.get(density.upper())
+            if min_density is None:
+                raise click.ClickException(f"Invalid QL specification: {density}. Use QL0, QL1, QL2, or QL3.")
+        elif '/' in density:
             mn, mx = density.split('/')
             min_density, max_density = float(mn), float(mx)
         else:
             min_density = float(density)
-            
-    if ql:
-        ql_map = {'QL0': 8.0, 'QL1': 8.0, 'QL2': 2.0, 'QL3': 0.5}
-        ql_threshold = ql_map.get(ql.upper())
-        if ql_threshold is not None:
-            if min_density is None or min_density < ql_threshold:
-                min_density = ql_threshold
 
     logger.info(f"Searching for data in ROI: {roi}")
     logger.info(f"Providers: {provider}")
@@ -282,7 +279,6 @@ def search(roi, date, density, ql, workspace, provider):
                 "roi": roi,
                 "date": date,
                 "density": density,
-                "ql": ql,
                 "providers": list(provider)
             },
             "execution_metadata": {
@@ -372,11 +368,10 @@ def search(roi, date, density, ql, workspace, provider):
 @cli.command()
 @click.option('--workspace', required=True, help='Path to existing als-finder workspace')
 @click.option('--date', help='Override temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
-@click.option('--density', help='Override point density filter (e.g. 8.0 or 2.0/10.0)')
-@click.option('--ql', type=click.Choice(['QL0', 'QL1', 'QL2', 'QL3'], case_sensitive=False), help='Override USGS QL shorthand')
+@click.option('--density', help='Override point density filter or QL Level (e.g. QL1)')
 @click.option('--provider', multiple=True, help='Override provider(s)')
 @click.pass_context
-def update(ctx, workspace, date, density, ql, provider):
+def update(ctx, workspace, date, density, provider):
     """Update an existing workspace catalog, preserving historical parameters and invoking atomic rollbacks."""
     catalog_dir = os.path.join(workspace, 'catalog')
     manifest_path = os.path.join(catalog_dir, 'manifest.json')
@@ -405,7 +400,6 @@ def update(ctx, workspace, date, density, ql, provider):
         
     final_date = date if date else params.get('date')
     final_density = density if density else params.get('density')
-    final_ql = ql if ql else params.get('ql')
     final_providers = list(provider) if provider else params.get('providers', ['usgs', 'noaa', 'opentopography'])
     
     logger.info(f"Executing Full-Replacement Update natively over Workspace: {workspace}")
@@ -422,7 +416,7 @@ def update(ctx, workspace, date, density, ql, provider):
     logger.info(f"Atomic Rollback successful. Historic catalog mapped to timestamp {historic_utc}.")
     
     # Execute native search bypass via explicit Context invocation
-    ctx.invoke(search, roi=final_roi, date=final_date, density=final_density, ql=final_ql, workspace=workspace, provider=final_providers)
+    ctx.invoke(search, roi=final_roi, date=final_date, density=final_density, workspace=workspace, provider=final_providers)
 
 
 @cli.command()

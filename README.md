@@ -54,10 +54,10 @@ pip install als-finder
 `als-finder` is architected around a **Workspace Paradigm**. Instead of juggling multiple disparate output flags, you simply define your geometry and the destination folder. The software mathematically queries all indices, explicitly deduplicates inputs, and constructs a secure GeoPackage directory structure automatically.
 
 ### 1. The Base Execution (All Providers & Dates)
-The simplest way to discover LiDAR is dropping an Area-of-Interest (ROI) and a target `workspace` isolated natively on your drive:
+The simplest way to discover LiDAR is dropping an Area-of-Interest (ROI) and a target `workspace` isolated natively on your drive. An example boundary (`ltbmu_boundary.gpkg`) is explicitly bundled natively with all distributions (pip, conda, docker, git) so you can directly reproduce this tutorial locally:
 
 ```bash
-als-finder search --roi ./examples/my_study_area.geojson --workspace ./my_lidar_project/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -103,7 +103,7 @@ als-finder search --roi ./examples/my_study_area.geojson --workspace ./my_lidar_
 If you only need modern datasets acquired *after* a specific project mapping date, isolate the bounds strictly mathematically:
 
 ```bash
-als-finder search --roi ./examples/my_study_area.geojson --start-date 2020-01-01 --workspace ./recent_lidar/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --start-date 2020-01-01 --workspace ./recent_lidar/
 ```
 
 **Console Output:**
@@ -127,7 +127,7 @@ als-finder search --roi ./examples/my_study_area.geojson --start-date 2020-01-01
 You can explicitly isolate historical windows (e.g., exclusively target point clouds mapping a specific 5-year observation cycle):
 
 ```bash
-als-finder search --roi ./examples/my_study_area.geojson --start-date 2015-01-01 --end-date 2019-12-31 --workspace ./historic_lidar/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --start-date 2015-01-01 --end-date 2019-12-31 --workspace ./historic_lidar/
 ```
 
 **Console Output:**
@@ -161,7 +161,7 @@ You can natively isolate datasets bounded by mathematical spatial resolutions. `
 If you require strict federal fidelity (e.g., `QL1` representing `≥8.0 pts/m²`):
 
 ```bash
-als-finder search --roi ./examples/my_study_area.geojson --ql QL1 --workspace ./high_res/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --density QL1 --workspace ./high_res/
 ```
 
 **Console Output:**
@@ -191,7 +191,7 @@ als-finder search --roi ./examples/my_study_area.geojson --ql QL1 --workspace ./
 You can supply an explicit bounds using a standard ISO-8601 interval vector string (`min/max`):
 
 ```bash
-als-finder search --roi ./examples/my_study_area.geojson --density 2/10 --workspace ./mid_res/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --density 2/10 --workspace ./mid_res/
 ```
 
 **Console Output:**
@@ -216,7 +216,7 @@ als-finder search --roi ./examples/my_study_area.geojson --density 2/10 --worksp
 To exclusively target high-density scientific sets hosted via USGS EPT bounds, supply explicit string overrides:
 
 ```bash
-als-finder search --roi ./examples/my_study_area.geojson --provider usgs --workspace ./usgs_only/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider usgs --workspace ./usgs_only/
 ```
 
 **Console Output:**
