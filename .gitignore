@@ -12,3 +12,4 @@ output/
 data/
 tests/
 .env
+test_workspace/

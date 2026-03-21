@@ -13,6 +13,7 @@ src/als_finder/core/__init__.py
 src/als_finder/core/input_manager.py
 src/als_finder/providers/__init__.py
 src/als_finder/providers/base.py
+src/als_finder/providers/noaa.py
 src/als_finder/providers/opentopography.py
 src/als_finder/providers/usgs.py
 tests/test_input_manager.py

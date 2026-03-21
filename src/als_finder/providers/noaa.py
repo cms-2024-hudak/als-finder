@@ -140,6 +140,8 @@ class NOAAProvider(BaseProvider):
                         "description": item.get("properties", {}).get("description", ""),
                         "url": data_url,
                         "datetime": dt or "",
+                        "point_count": item.get("properties", {}).get("pc:count"),
+                        "srs": item.get("properties", {}).get("proj:code", "EPSG:4326"),
                         "stac_url": f"https://noaa-nos-coastal-lidar-pds.s3.amazonaws.com/{key}"
                     }
                 }
@@ -200,7 +202,8 @@ class NOAAProvider(BaseProvider):
                 "metaUrl": row.get("stac_url"),
                 "bounds": row.geometry.bounds if getattr(row, 'geometry', None) else None,
                 "geometry": row.geometry.__geo_interface__ if getattr(row, 'geometry', None) else None,
-                "point_count": None,
+                "point_count": row.get("point_count"),
+                "srs": row.get("srs", "EPSG:4326"),
                 "point_density": None,
                 "area_sqkm": None,
                 "raw_metadata": {"id": row.get("id"), "title": row.get("title"), "description": row.get("description", "")}

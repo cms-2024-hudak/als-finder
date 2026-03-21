@@ -1,0 +1,19 @@
+name: als-finder
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.8
+  - geopandas
+  - shapely
+  - pyproj
+  - pyogrio
+  - requests
+  - click
+  - python-dotenv
+  - tqdm
+  - pytest
+  - setuptools_scm
+  - pip
+  - pip:
+    - -e .

@@ -17,9 +17,33 @@ class OpenTopographyProvider(BaseProvider):
     BASE_URL = "https://portal.opentopography.org/API"
 
     def __init__(self, api_key: Optional[str] = None):
+        import click
+        from dotenv import load_dotenv
+        
+        # Priority 1: Argument passed explicitly
+        # Priority 2: Current shell / workspace .env (loaded by cli.py)
         self.api_key = api_key or os.getenv("OPENTOPOGRAPHY_API_KEY")
+        
+        # Priority 3: Global config
+        global_config_dir = Path.home() / ".config" / "als-finder"
+        global_env = global_config_dir / ".env"
+        
+        if not self.api_key and global_env.exists():
+            load_dotenv(global_env)
+            self.api_key = os.getenv("OPENTOPOGRAPHY_API_KEY")
+            
+        # If still missing, securely intercept the CLI and globally cache it
         if not self.api_key:
-            logger.warning("No OpenTopography API key found. Some functionalities might be limited.")
+            logger.info("OpenTopography requires a free API key for native dataset execution. (https://portal.opentopography.org/myopentopo)")
+            new_key = click.prompt("Please enter your OPENTOPOGRAPHY_API_KEY (input hidden)", hide_input=True)
+            if new_key:
+                self.api_key = new_key.strip()
+                global_config_dir.mkdir(parents=True, exist_ok=True)
+                with open(global_env, "a") as f:
+                    f.write(f"\nOPENTOPOGRAPHY_API_KEY={self.api_key}\n")
+                logger.info(f"API Key physically secured at {global_env}")
+            else:
+                logger.warning("No OpenTopography API key provided. OT Discovery will bypass.")
 
     def check_access(self) -> bool:
         """Check if API key is present and valid by hitting a lightweight endpoint."""
