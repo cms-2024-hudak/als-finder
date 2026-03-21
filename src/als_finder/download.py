@@ -54,6 +54,10 @@ def generate_fetch_array(workspace_path: Path, roi_path: Optional[str], full_acq
     logger.info(f"Parsed {len(datasets)} dataset(s). Commencing tile intersection protocols...")
     
     # Write the target extraction arrays mathematically
+    fetch_matrix_manifest = {}
+    total_estimated_bytes = 0
+    total_tiles = 0
+    
     with open(fetch_csv_path, 'w') as f:
         f.write("provider,dataset_id,source_url,target_path\n")
         
@@ -62,10 +66,30 @@ def generate_fetch_array(workspace_path: Path, roi_path: Optional[str], full_acq
             d_name = item.get('dataset_id') or item.get('name', 'UNKNOWN')
             url = item.get('url') or item.get('ept_url') or ""
             
+            if d_name not in fetch_matrix_manifest:
+                fetch_matrix_manifest[d_name] = {
+                    "Provider": p_name,
+                    "Name": d_name,
+                    "Tiles": 0,
+                    "Bytes": 0,
+                    "Format": ".laz"
+                }
+                
             hive_dir = workspace_path / 'data' / 'raw' / f"provider={p_name}" / f"dataset={d_name}"
             
+            if p_name.lower() == "opentopography":
+                from als_finder.providers.opentopography import OpenTopographyProvider
+                provider = OpenTopographyProvider()
+                ot_urls = provider.get_fetch_urls(item.get('raw_metadata', {}), roi_poly, hive_dir)
+                for source_url, target_path, byte_sz in ot_urls:
+                    f.write(f"{p_name},{d_name},{source_url},{target_path.absolute()}\n")
+                    fetch_matrix_manifest[d_name]["Bytes"] += byte_sz
+                    fetch_matrix_manifest[d_name]["Tiles"] += 1
+                    fetch_matrix_manifest[d_name]["Format"] = Path(target_path).suffix
+                    total_estimated_bytes += byte_sz
+                    total_tiles += 1
             # EPT Subsetting physically isolates Octree bounds statically
-            if "ept.json" in url and roi_poly is not None:
+            elif "ept.json" in url and roi_poly is not None:
                 parser = EPTParser(url)
                 tiles = parser.find_intersecting_laz(roi_poly)
                 logger.info(f"Intercepted {len(tiles)} intersecting tiles for {d_name}.")
@@ -73,16 +97,53 @@ def generate_fetch_array(workspace_path: Path, roi_path: Optional[str], full_acq
                     node_id = laz_url.split('/')[-1]
                     hive_target = hive_dir / node_id
                     f.write(f"{p_name},{d_name},{laz_url},{hive_target.absolute()}\n")
+                    est_sz = (int(count) * 8) if count else 0
+                    fetch_matrix_manifest[d_name]["Bytes"] += est_sz
+                    fetch_matrix_manifest[d_name]["Tiles"] += 1
+                    total_estimated_bytes += est_sz
+                    total_tiles += 1
             else:
                 # Target the total comprehensive node root
                 hive_target = hive_dir / f"{d_name}_subset.laz"
                 f.write(f"{p_name},{d_name},{url},{hive_target.absolute()}\n")
+                
+                est_sz = int(item.get('size', 0))
+                fetch_matrix_manifest[d_name]["Bytes"] += est_sz
+                fetch_matrix_manifest[d_name]["Tiles"] += 1
+                total_estimated_bytes += est_sz
+                total_tiles += 1
         
-    logger.info("================================================================================")
-    logger.info(f"[SUCCESS] Generated target URI list: {fetch_csv_path}")
-    logger.info("[WARNING] Dry-run generated. No physical binaries were formally downloaded.")
-    logger.info("[WARNING] To automatically pull this payload, re-run exactly with: --execute")
-    logger.info("================================================================================")
+    def format_sz(b):
+        gb = b / (1024**3)
+        if gb >= 1.0: return f"{gb:.2f} GB"
+        return f"{b / (1024**2):.2f} MB"
+        
+    col_widths = {"Provider": 15, "Name": 38, "Tiles": 8, "True Size": 12, "Format": 8}
+    header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Tiles':>{col_widths['Tiles']}} | {'True Size':>{col_widths['True Size']}} | {'Format':>{col_widths['Format']}} |"
+    
+    print("\n" + "=" * len(header))
+    print(" LiDAR Fetch Array Matrix ")
+    print("=" * len(header))
+    print(header)
+    print("-" * len(header))
+    
+    for k, v in fetch_matrix_manifest.items():
+        prov = v["Provider"][:col_widths["Provider"]]
+        name = v["Name"][:col_widths["Name"]]
+        tiles = str(v["Tiles"])
+        sz_str = format_sz(v["Bytes"])
+        fmt = v["Format"]
+        print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {tiles:>{col_widths['Tiles']}} | {sz_str:>{col_widths['True Size']}} | {fmt:>{col_widths['Format']}} |")
+        
+    print("=" * len(header))
+    print(f" TOTAL ACQUISITIONS: {len(fetch_matrix_manifest)} | PHYSICAL TILES: {total_tiles} | EXPECTED PAYLOAD: {format_sz(total_estimated_bytes)}")
+    print("-" * len(header))
+    print(f" FETCH TARGET URI: {fetch_csv_path}")
+    print("================================================================================\n")
+    
+    logger.info(f"[SUCCESS] Array Generation Protocol Complete.")
+    logger.info("[WARNING] Dry-run natively executed. No physical binaries were formally downloaded to your hard drive.")
+    logger.info("[WARNING] To gracefully pull these payloads natively, execute exactly with: --execute")
     
     return fetch_csv_path
 

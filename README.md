@@ -173,10 +173,10 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "~^CA_Sierra.*" --
 ### 3. Filtering by Chronology
 
 #### Defining a Hard Start Date (`--date`)
-If you only need modern datasets acquired *after* a specific date:
+If you only need modern datasets acquired *after* a specific date, strictly append the terminal bounding slash explicitly leaving the termination threshold open-ended organically:
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2020-01-01 --workspace ./recent_lidar/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2020-01-01/ --workspace ./recent_lidar/
 ```
 
 **Console Output:**
@@ -197,6 +197,46 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2020-01-01 --works
  CATALOG TBL: /home/user/recent_lidar/catalog/catalog.gpkg
  JSON METADATA: /home/user/recent_lidar/catalog/manifest.json
 =======================================================================================================================================
+```
+
+#### Defining a Hard End Date (`--date`)
+If you only need historic acquisitions cleanly evaluated *prior* to a specific threshold, simply prefix the slash naturally dropping the starting bounds organically:
+
+```bash
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --date /2020-01-01 --workspace ./historic_lidar/
+```
+
+**Console Output:**
+```text
+=================================================================================================================
+ LiDAR Data Search Results 
+=================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+-----------------------------------------------------------------------------------------------------------------
+ | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
+ | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  10.4100 |   26768.13 |
+ | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9067               | 2018-07-07   |     723.53 |   1.2600 |   77212.96 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9269               | 2018-01-22   |      40.74 |   0.0300 |  182391.32 |
+ | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
+ | OpenTopography  | Walker Fault System, Nevada, 2015      | 2017-07-28   |      35.77 |   7.2700 |     660.41 |
+ | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_8979               | 2017-03-03   |       2.94 |   0.0033 |  120829.31 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_6259               | 2016-04-28   |     233.77 |   0.0300 | 1135103.73 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_5022               | 2015-06-19   |      63.84 |   0.0200 |  363554.90 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_2612               | 2013-10-30   |     151.38 |   0.0300 |  698668.47 |
+ | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
+ | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_1124               | 2009-09-01   |     141.08 |   0.0300 |  687536.10 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_4                  | 1998-04-08   |       2.31 |   0.0003 | 1038061.18 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_3                  | 1997-10-12   |       0.64 |   0.0001 | 1001673.78 |
+=================================================================================================================
+ TOTAL DATASETS: 18 | ESTIMATED PAYLOAD: 6787.54 GB | QUERY TIME: 13.05s 
+-----------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/historic_lidar/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/historic_lidar/catalog/manifest.json
+=================================================================================================================
 ```
 
 #### Defining a Temporal Range (`--date`)
@@ -234,7 +274,7 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2015-01-01/2019-12
 ```
 
 ### 4. Filtering by Point Density & Quality Level (`--density`)
-You can filter datasets based on target spatial resolutions. `als-finder` supports both numeric point density bounds (`pts/m2`) or USGS 3DEP Topographic Quality Levels (QL0-QL3).
+You can filter datasets based on target point densities. `als-finder` supports both numeric point density bounds (`pts/m2`) or USGS 3DEP Topographic Quality Levels (QL0-QL3).
 
 #### Filtering via USGS Topographic Quality Level
 If you need a specific USGS Quality Level (e.g., `QL1` which guarantees `≥8.0 pts/m²`):
@@ -270,7 +310,9 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --density QL1 --workspace
 ```
 
 #### Filtering via Exact Point Density Ranges (`--density`)
-You can supply an explicit density range using a `min/max` format:
+You can isolate structural quality matrices globally cleanly intercepting densities via explicit numeric bounds. In this example, we structurally isolate payloads globally exhibiting exactly between `2.0` and `10.0` points per square meter natively using the slash syntax (`min/max`).
+
+*Just like the `--date` flag, you can dynamically enforce open-ended parameters strictly mapping one-way thresholds (e.g., `2/` isolates datasets exclusively possessing ≥ 2 pts/m2, while `/10` evaluates payloads strictly containing ≤ 10 pts/m2).*
 
 ```bash
 als-finder search --roi ./examples/ltbmu_boundary.gpkg --density 2/10 --workspace ./mid_res/
@@ -382,30 +424,41 @@ To prevent catastrophic hard drive consumption and perfectly align local executi
 3. **The Execution**: You explicitly execute the CSV locally by appending the `--execute` flag, or seamlessly feed the `.csv` text list into an HPC scheduler for raw distribution.
 
 ### 7.1 Generating the Fetch List
-Assume you executed a tight search query dropping a 1km x 1km bounding box square strictly over an area of interest inside the `CA_SierraNevada_5_2022` USGS footprint:
+Assume you executed a tight search query dropping a bounding box strictly over an area of interest inside the `CA_SierraNevada_5_2022` USGS footprint:
 
 ```bash
-als-finder search --roi "-120.0,39.0,-119.99,39.01" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
-als-finder download --workspace ./tiny_subset/
+als-finder search --roi "-120.01, 39.01, -119.99, 39.02" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
+als-finder download --roi "-120.01, 39.01, -119.99, 39.02" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
 ```
 
-**Console Output:**
 ```text
-[INFO] Parsed 1 target dataset from manifest.json.
-[INFO] Resolving spatial tile index for USGS_EPT CA_SierraNevada_5_2022...
-[SUCCESS] Identified 2 overlapping .laz tiles geographically intersecting your ROI bounds.
-[SUCCESS] Generated target URI list: /home/user/tiny_subset/catalog/fetch_array.csv
-[================================================================================]
-[WARNING] Dry-run generated. No physical binaries were formally downloaded to your PC. 
-[WARNING] To automatically pull this payload, re-run with: --execute
-[================================================================================]
+==================================================================================================
+ LiDAR Fetch Array Matrix 
+==================================================================================================
+ | Provider        | Name                                   |    Tiles |    True Size |   Format |
+--------------------------------------------------------------------------------------------------
+ | USGS_EPT        | CA_SierraNevada_5_2022                 |      107 |     27.14 MB |     .laz |
+==================================================================================================
+ TOTAL ACQUISITIONS: 1 | PHYSICAL TILES: 107 | EXPECTED PAYLOAD: 27.14 MB
+--------------------------------------------------------------------------------------------------
+ FETCH TARGET URI: ./tiny_subset/catalog/fetch_array.csv
+==================================================================================================
 ```
 
 ### 7.2 Executing a Local Download (`--execute`)
 If you visually verify the tile payload is safe for your local hard drive capacity, you formally pull the arrays into a strict `Hive-Partitioned` database struct:
 
 ```bash
-als-finder download --workspace ./tiny_subset/ --execute
+als-finder download --roi "-120.01, 39.01, -119.99, 39.02" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/ --execute
+```
+
+**Console Output:**
+```text
+Executing Mode A/B: Physical Core Download Protocol
+Targeting fetch array: tiny_subset/catalog/fetch_array.csv
+Verified local workspace capacity: 29.71 GB available.
+Physically orchestrating multi-threaded download sequence for 107 nodes...
+[SUCCESS] Total Data Block Acquisition completed: 107/107 matrices mapped.
 ```
 
 **Resulting Hive Workspace Structure:**
@@ -416,10 +469,11 @@ tiny_subset/
 │   ├── fetch_array.csv
 │   └── manifest.json
 └── data/
-    └── USGS_EPT/
-        └── CA_SierraNevada_5_2022/
-            ├── LAZ_0001.laz
-            └── LAZ_0002.laz
+    └── raw/
+        └── provider=USGS_EPT/
+            └── dataset=CA_SierraNevada_5_2022/
+                ├── USGS_LPC_CA_SierraNevada_..._2022_LAS_2024.laz
+                └── ... (106 more files)
 ```
 
 ### 7.3 HPC Array Workflows (Expanse / Slurm)
@@ -429,6 +483,19 @@ Because `als-finder` natively isolates the source URLs against precise `data/...
 # Example generic fetching parallelization loop on Expanse
 sbatch --array=1-1000 wget_fetcher.sh ./tiny_subset/catalog/fetch_array.csv
 ```
+
+---
+
+## ⚠️ Data Processing: Caveats to Raw Downloads
+
+Because `als-finder` orchestrates transfers actively across deeply decentralized public multi-origin LiDAR repositories natively, the physically downloaded point clouds structurally mirror their origin locations mathematically. If you execute a payload extraction and cease computing there, you will encounter the following analytical bottlenecks:
+
+*   **Coordinate Reference Systems (CRS) & Projections:** There is no universal geometric standard natively mapped across point clouds. Datasets sourced from USGS often arrive in rigid regional grids (e.g., `EPSG:6339` - NAD83(2011) / UTM zone 10N), whereas NOAA assets might globally orient onto `EPSG:4326`. You cannot safely merge these binaries natively without explicit, intensive mathematical reprojections organically bridging the grids.
+*   **Arbitrary File Naming Conventions:** As shown physically in prior terminal blocks, originating domains enforce entirely proprietary alphanumeric naming formats. Expect to ingest wildly disparate labels physically mapping to your identical spatial envelope (e.g., `ot_39119B8203.las` bounding perfectly parallel to `USGS_LPC_CA_SierraNevada_..._2022_LAS_2024.laz`).
+*   **Classification Constraints (ASPRS):** While most state-of-the-art acquisitions respect ASPRS classification protocols identifying geometric physical entities natively (e.g., Class 2 = Ground), older multi-generational matrices may allocate strictly disparate definitions to identical integer buckets natively corrupting ground-filtering integrations organically.
+*   **Format Variances & Data Bloat:** Formal dataset providers often deploy mixtures of `LAS 1.2` or `1.4` formats natively spanning entirely uncompressed `.las` binary schemas organically padding disk volumes compared exclusively against mathematically lossy or natively optimal `.laz` buffers.
+
+*Note: Formal future sequences integrating Point Data Abstraction Library (PDAL) normalization pipelines will cleanly dissolve these parameters targeting a unified `.laz` standard mathematically harmonizing CRS formats organically.*
 
 ---
 

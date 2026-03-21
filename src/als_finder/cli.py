@@ -19,10 +19,13 @@ logger = logging.getLogger(__name__)
 
 @click.group()
 @click.option('-v', '--verbose', is_flag=True, help='Enable verbose execution logging')
-def cli(verbose):
+@click.option('-q', '--quiet', is_flag=True, help='Suppress standard logging to print exact payloads only.')
+def cli(verbose, quiet):
     """LiDAR Data Finder CLI"""
     if verbose:
         logging.getLogger().setLevel(logging.INFO)
+    elif quiet:
+        logging.getLogger().setLevel(logging.WARNING)
 
 @cli.command()
 @click.option('--roi', required=False, help='Path to ROI file (GeoJSON/Shapefile) or BBox string')
@@ -30,7 +33,7 @@ def cli(verbose):
 @click.option('--date', help='Temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
 @click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
 @click.option('--workspace', help='Path to project workspace directory')
-@click.option('--provider', multiple=True, default=['usgs', 'noaa', 'opentopography'], help='Provider(s) to search')
+@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography'], help='Provider(s) to search')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
 @click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
 def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
@@ -49,10 +52,12 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
 
     start_date, end_date = None, None
     if date:
-        if '/' in date:
-            start_date, end_date = date.split('/')
-        else:
-            start_date = date
+        if '/' not in date:
+            raise click.UsageError("Temporal mapping via --date must strictly contain a slash '/' delimiter isolating bounds. Options: '2020-01-01/' (after), '/2020-01-01' (before), or '2015-01-01/2020-01-01' (explicit range).")
+        
+        start_date, end_date = date.split('/', 1)
+        start_date = start_date.strip() if start_date.strip() else None
+        end_date = end_date.strip() if end_date.strip() else None
             
     min_density, max_density = None, None
     if density:
@@ -103,11 +108,11 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
         
         # Initialize Providers
         active_providers = []
-        if 'opentopography' in provider:
+        if 'OpenTopography' in provider:
             active_providers.append(OpenTopographyProvider())
-        if 'usgs' in provider:
+        if 'USGS_EPT' in provider:
             active_providers.append(USGSProvider())
-        if 'noaa' in provider:
+        if 'NOAA_STAC' in provider:
             active_providers.append(NOAAProvider())
         
         final_results = []
@@ -214,7 +219,18 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
                         continue
 
             # 2. Date filter natively intercepts standard sort_date formatting
-            item_date = item.get('sort_date', '')
+            raw_date_test = str(item.get('date') or '').strip()
+            if not raw_date_test or raw_date_test.lower() == 'none' or raw_date_test == 'XXXX-XX-XX':
+                item_date = '0000-00-00'
+            else:
+                if ' ' in raw_date_test: raw_date_test = raw_date_test.split(' ')[0]
+                elif 'T' in raw_date_test: raw_date_test = raw_date_test.split('T')[0]
+                
+                if len(raw_date_test) == 4 and raw_date_test.isdigit():
+                    item_date = f"{raw_date_test}-12-31"
+                else:
+                    item_date = raw_date_test
+                    
             if start_date and item_date < start_date:
                 continue
             if end_date and item_date > end_date:
@@ -492,7 +508,7 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex e.g. ~^USGS)')
 @click.option('--date', help='Date filter YYYY-MM-DD or range YYYY-MM-DD/YYYY-MM-DD')
 @click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
-@click.option('--provider', multiple=True, default=['usgs', 'noaa', 'opentopography'], help='Provider(s) to search')
+@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography'], help='Provider(s) to search')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
 @click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
 @click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats to the local drive natively.')

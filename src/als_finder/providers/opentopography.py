@@ -16,34 +16,28 @@ class OpenTopographyProvider(BaseProvider):
     
     BASE_URL = "https://portal.opentopography.org/API"
 
-    def __init__(self, api_key: Optional[str] = None):
-        import click
+    def __init__(self, ot_key: Optional[str] = None):
+        """Initializes the OpenTopography abstraction natively mapping keys organically."""
         from dotenv import load_dotenv
         
         # Priority 1: Argument passed explicitly
         # Priority 2: Current shell / workspace .env (loaded by cli.py)
-        self.api_key = api_key or os.getenv("OPENTOPOGRAPHY_API_KEY")
+        self.api_key = ot_key or os.getenv("OPENTOPOGRAPHY_API_KEY")
         
         # Priority 3: Global config
         global_config_dir = Path.home() / ".config" / "als-finder"
         global_env = global_config_dir / ".env"
         
+        # Priority 1: Check Explicit Keys natively via user argument constraints
         if not self.api_key and global_env.exists():
             load_dotenv(global_env)
             self.api_key = os.getenv("OPENTOPOGRAPHY_API_KEY")
             
-        # If still missing, securely intercept the CLI and globally cache it
+        # The native SDSC MinIO extraction architecture drops API key locks organically.
+        # Legacy search parameters still log it strictly for formal request headers.
+        # If still missing, log a warning.
         if not self.api_key:
-            logger.info("OpenTopography requires a free API key for native dataset execution. (https://portal.opentopography.org/myopentopo)")
-            new_key = click.prompt("Please enter your OPENTOPOGRAPHY_API_KEY (input hidden)", hide_input=True)
-            if new_key:
-                self.api_key = new_key.strip()
-                global_config_dir.mkdir(parents=True, exist_ok=True)
-                with open(global_env, "a") as f:
-                    f.write(f"\nOPENTOPOGRAPHY_API_KEY={self.api_key}\n")
-                logger.info(f"API Key physically secured at {global_env}")
-            else:
-                logger.warning("No OpenTopography API key provided. OT Discovery will bypass.")
+            logger.warning("No OpenTopography API key provided. OT Discovery will bypass or have limited functionality.")
 
     def check_access(self) -> bool:
         """Check if API key is present and valid by hitting a lightweight endpoint."""
@@ -180,100 +174,119 @@ class OpenTopographyProvider(BaseProvider):
             logger.error(f"Error searching OpenTopography: {e}")
             return []
 
-    def download(self, dataset_id: str, output_dir: Path, roi: Optional[Polygon] = None, **kwargs) -> Path:
+    def download(self, dataset_id: str, output_dir: Path, **kwargs) -> Path:
         """
-        Executes a formal Point Cloud processing job natively against the OT API.
-        This handles the POST submission, asynchronous status polling, and payload extraction.
-        
-        Note: The actual Endpoint path /API/pc represents the architectural standard for OT jobs.
+        Satisfies Provider Base Class formal requirements organically.
+        The actual OpenTopography SDSC HTTP stream extraction is fully integrated natively into `get_fetch_urls` utilizing MinIO XML traversals for `download.py`.
         """
-        import time
-        import tarfile
-        
-        if not self.api_key:
-            logger.error("API Key required. Cannot download OpenTopography datasets anonymously.")
-            raise PermissionError("OpenTopography API Key required.")
+        pass
 
-        # Determine geometric bounds organically. 
-        # OpenTopography jobs structurally crash if a bounding box is absent.
+    def get_fetch_urls(self, raw_metadata: dict, roi: Optional[Polygon], hive_dir: Path) -> list:
+        """
+        Dynamically extracts formal native SDSC S3 payload endpoints for an OpenTopography dataset.
+        If an ROI is active, we attempt to download the spatial TileIndex.zip natively, returning subset targets.
+        Otherwise, we recursively paginate the MinIO XML array isolating all standard `.laz` matrices.
+        """
+        import xml.etree.ElementTree as ET
+        import tempfile
+        import zipfile
+        import geopandas as gpd
+        import urllib.request
+        
+        # Structural OpenTopography keys actively mirror standard AWS prefixes organically
+        alt_name = raw_metadata.get('alternateName', raw_metadata.get('name', ''))
+        if not alt_name:
+            logger.error(f"OpenTopography native extraction failed. No structural AlternateName mapped for S3.")
+            return []
+            
+        base_s3 = "https://opentopography.s3.sdsc.edu/pc-bulk"
+        prefix = f"{alt_name}/"
+        urls = []
+        
+        logger.info(f"Probing OpenTopography S3 MinIO storage layer natively targeted natively on: {prefix}")
+        
+        # Mode B: ROI Extents isolating native .shp mappings recursively
+        mode_b_failed = False
         if roi:
-            minx, miny, maxx, maxy = roi.bounds
-        else:
-            logger.error("OpenTopography mandates a strict bounding box constraint. You must pass `--roi`.")
-            raise ValueError("Missing ROI constraint for OpenTopography download.")
-
-        job_submit_url = f"{self.BASE_URL}/pc"
-        payload = {
-            "datasetName": dataset_id,
-            "minx": minx,
-            "miny": miny,
-            "maxx": maxx,
-            "maxy": maxy,
-            "API_Key": self.api_key,
-            "outputFormat": "laz", # Request explicit LAZ formats
-            "email": "als-finder@automated.bot" # Notification bypass
-        }
-
-        logger.info(f"Submitting OpenTopography PC Job for dataset: {dataset_id}")
-        
-        try:
-            # 1. Trigger the asynchronous Point Cloud Job Creation
-            response = requests.post(job_submit_url, data=payload, timeout=30)
-            if response.status_code == 404:
-                logger.error("OpenTopography PC API endpoint unresolved. Verify portal.opentopography.org routing.")
-                return output_dir
-            response.raise_for_status()
-            
-            job_id = response.text.strip() # Commonly returns the tracking ID textually
-            logger.info(f"OpenTopography Job Initiated Successfully. Job ID: {job_id}")
-            
-            # 2. Asynchronous Execution Poller Logics
-            status_url = f"{self.BASE_URL}/pc/status"
-            download_url = f"{self.BASE_URL}/pc/download"
-            is_complete = False
-            
-            logger.info("Polling OpenTopography PDAL cluster engines. Awaiting completion...")
-            timeout_limit = 60 * 60 # 1 hour safe timeout
-            start_time = time.time()
-            
-            while not is_complete:
-                if time.time() - start_time > timeout_limit:
-                    logger.error("OpenTopography Job Timed Out structurally.")
-                    return output_dir
+            try:
+                tile_idx_url = f"{base_s3}/{alt_name}/{alt_name}_TileIndex.zip"
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    zip_path = Path(tmpdir) / "tile_idx.zip"
+                    urllib.request.urlretrieve(tile_idx_url, zip_path)
                     
-                time.sleep(10)
-                status_res = requests.get(status_url, params={"jobId": job_id, "API_Key": self.api_key})
-                status_res.raise_for_status()
-                
-                # OT commonly returns 'Running', 'Completed', or 'Failed'
-                status = status_res.text.strip()
-                if status.lower() == 'completed':
-                    is_complete = True
-                elif status.lower() in ['failed', 'error']:
-                    logger.error(f"OpenTopography declared PC Job Failed structurally: {job_id}")
-                    return output_dir
-                
-            # 3. Pulling the physical payload Binary Tarball
-            tar_target = output_dir / f"{dataset_id}_ot_payload.tar.gz"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            
-            logger.info(f"Job finalized. Natively downloading binary tarball chunks...")
-            with requests.get(download_url, params={"jobId": job_id, "API_Key": self.api_key}, stream=True) as r:
-                r.raise_for_status()
-                with open(tar_target, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192): 
-                        f.write(chunk)
-            
-            # 4. Extracting the binaries organically into the raw/ hive
-            logger.info(f"Extracting LAZ files from tarball payloads structurally into Hive...")
-            with tarfile.open(tar_target, "r:gz") as tar:
-                tar.extractall(path=output_dir)
-            
-            # 5. Safe Cleanup
-            tar_target.unlink()
-            logger.info(f"[SUCCESS] OpenTopography specific LAZ dataset extraction complete: {output_dir.absolute()}")
-            
-        except requests.RequestException as e:
-            logger.error(f"OpenTopography Extraction API structurally failed: {e}")
-            
-        return output_dir
+                    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                        zip_ref.extractall(tmpdir)
+                        
+                    shp_files = list(Path(tmpdir).glob("*.shp"))
+                    if shp_files:
+                        gdf = gpd.read_file(shp_files[0])
+                        # Coerce standard projection explicitly for intersect bindings
+                        gdf = gdf.to_crs(4326)
+                        gdf_roi = gpd.GeoDataFrame(geometry=[roi], crs="EPSG:4326")
+                        gdf_intersect = gpd.overlay(gdf, gdf_roi, how='intersection')
+                        
+                        logger.info(f"OpenTopography intersected precisely {len(gdf_intersect)} .laz physical tiles via geometry index.")
+                        
+                        # Most OT shapes leverage 'URL', 'FileName', 'Location', or 'Filename' attributes
+                        id_col = next((c for c in ['URL', 'FileName', 'Location', 'Filename'] if c in gdf.columns), None)
+                        if id_col:
+                            from concurrent.futures import ThreadPoolExecutor
+                            
+                            def get_head_size(val):
+                                laz_name = val.split('/')[-1] if '/' in val else val
+                                exact_url = f"{base_s3}/{alt_name}/{laz_name}"
+                                target = hive_dir / laz_name
+                                try:
+                                    r = requests.head(exact_url, timeout=5)
+                                    if r.status_code == 200:
+                                        sz = int(r.headers.get('Content-Length', 0))
+                                        return (exact_url, target, sz)
+                                except Exception:
+                                    pass
+                                return (exact_url, target, 0)
+                                
+                            with ThreadPoolExecutor(max_workers=10) as executor:
+                                urls.extend(list(executor.map(get_head_size, gdf_intersect[id_col])))
+                        else:
+                            mode_b_failed = True
+                    else:
+                        mode_b_failed = True
+            except Exception as e:
+                logger.warning(f"Shapefile subsetting explicitly failed structurally: {e}. Defaulting to un-segmented array acquisition limits.")
+                mode_b_failed = True
+        
+        # Mode A: Full S3 Acquisition recursively isolating native payload bounds organically
+        if not roi or mode_b_failed:
+            logger.info("Engaging full SDSC Object XML native acquisition matrix. Extracting absolute nodes.")
+            ns = {'s3': 'http://s3.amazonaws.com/doc/2006-03-01/'}
+            marker = ""
+            while True:
+                req_url = f"{base_s3}/?prefix={prefix}&marker={marker}" if marker else f"{base_s3}/?prefix={prefix}"
+                try:
+                    r = requests.get(req_url)
+                    r.raise_for_status()
+                    root = ET.fromstring(r.text)
+                    
+                    for content in root.findall('s3:Contents', ns):
+                        key = content.find('s3:Key', ns).text
+                        size_el = content.find('s3:Size', ns)
+                        size_b = int(size_el.text) if size_el is not None else 0
+                        if key.endswith('.laz') or key.endswith('.las'):
+                            exact_url = f"{base_s3}/{key}"
+                            target = hive_dir / key.split('/')[-1]
+                            urls.append((exact_url, target, size_b))
+                            
+                    trunc = root.find('s3:IsTruncated', ns)
+                    if trunc is None or trunc.text == 'false':
+                        break
+                    
+                    nm = root.find('s3:NextMarker', ns)
+                    if nm is not None:
+                        marker = nm.text
+                    else:
+                        break
+                except Exception as e:
+                    logger.error(f"MinIO pagination strictly aborted organically: {e}")
+                    break
+                    
+        return urls
