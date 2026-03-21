@@ -154,7 +154,7 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --start-date 2015-01-01 -
 =================================================================================================================
 ```
 
-### 3. Filtering by Point Density & Quality Level (`--density` / `--ql`)
+### 4. Filtering by Point Density & Quality Level (`--density`)
 You can natively isolate datasets bounded by mathematical spatial resolutions. `als-finder` supports both raw point density bounds (`pts/m2`) or explicit **USGS 3DEP Topographic Quality Levels (QL0-QL3)**.
 
 #### Filtering via USGS Topographic Quality Level (`--ql`)
@@ -212,7 +212,7 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --density 2/10 --workspac
 =================================================================================================================
 ```
 
-### 4. Filtering by Registry (`--provider`)
+### 5. Filtering by Registry (`--provider`)
 To exclusively target high-density scientific sets hosted via USGS EPT bounds, supply explicit string overrides:
 
 ```bash
@@ -239,7 +239,7 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider usgs --workspa
 =================================================================================================================
 ```
 
-### 5. Updating Catalogs (Atomic Rollbacks)
+### 6. Updating Catalogs (Atomic Rollbacks)
 The generated `manifest.json` permanently logs your original parameters (`roi`, `dates`, `densities`, `providers`). To explicitly query the federal registries for *newly published data* structurally merging onto your bounds later, rely on the implicit sequence:
 ```bash
 als-finder update --workspace ./my_lidar_project/

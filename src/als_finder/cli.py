@@ -24,11 +24,12 @@ def cli(verbose):
 
 @cli.command()
 @click.option('--roi', required=True, help='Path to ROI file (GeoJSON/Shapefile) or BBox string')
+@click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex e.g. ~^USGS)')
 @click.option('--date', help='Temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
 @click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
 @click.option('--workspace', help='Path to project workspace directory')
 @click.option('--provider', multiple=True, default=['usgs', 'noaa', 'opentopography'], help='Provider(s) to search')
-def search(roi, date, density, workspace, provider):
+def search(roi, name, date, density, workspace, provider):
     """Search for available LiDAR data."""
     start_date, end_date = None, None
     if date:
@@ -160,20 +161,39 @@ def search(roi, date, density, workspace, provider):
             except Exception as e:
                 logger.debug(f"Failed calculating density: {e}")
 
-        # Apply Date and Density Filters
+        # Apply Name, Date and Density Filters
         filtered_results = []
         for item in unique_results:
-            # Date filter natively intercepts standard sort_date formatting
+            dataset_name_raw = item.get('name') or item.get('dataset_id', '')
+            
+            # 1. Dataset Name filter natively resolving fnmatch closures and compiled regex arrays
+            if name:
+                import fnmatch, re
+                pattern = name.strip()
+                target = str(dataset_name_raw).strip()
+                
+                if pattern.startswith('~'):
+                    try:
+                        if not bool(re.search(pattern[1:], target, re.IGNORECASE)):
+                            continue
+                    except re.error:
+                        logger.warning(f"Invalid regex pattern provided: {pattern[1:]}")
+                        continue
+                else:
+                    if not fnmatch.fnmatch(target.lower(), pattern.lower()):
+                        continue
+
+            # 2. Date filter natively intercepts standard sort_date formatting
             item_date = item.get('sort_date', '')
             if start_date and item_date < start_date:
                 continue
             if end_date and item_date > end_date:
                 continue
                 
-            # Density filter inherently requires PyProj parsing execution first
+            # 3. Density filter inherently requires PyProj parsing execution first
             pts_m2 = item.get('point_density')
             if (min_density is not None or max_density is not None) and pts_m2 is None:
-                logger.warning(f"Dropping {item.get('name')} due to missing density metadata.")
+                logger.warning(f"Dropping {dataset_name_raw} due to missing density metadata.")
                 continue
             if pts_m2 is not None:
                 if min_density is not None and float(pts_m2) < min_density:
@@ -277,6 +297,7 @@ def search(roi, date, density, workspace, provider):
         manifest_payload = {
             "search_parameters": {
                 "roi": roi,
+                "name": name,
                 "date": date,
                 "density": density,
                 "providers": list(provider)
@@ -367,11 +388,12 @@ def search(roi, date, density, workspace, provider):
 
 @cli.command()
 @click.option('--workspace', required=True, help='Path to existing als-finder workspace')
+@click.option('--name', help='Override dataset name filter (Supports wildcards, or regex via ~)')
 @click.option('--date', help='Override temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
 @click.option('--density', help='Override point density filter or QL Level (e.g. QL1)')
 @click.option('--provider', multiple=True, help='Override provider(s)')
 @click.pass_context
-def update(ctx, workspace, date, density, provider):
+def update(ctx, workspace, name, date, density, provider):
     """Update an existing workspace catalog, preserving historical parameters and invoking atomic rollbacks."""
     catalog_dir = os.path.join(workspace, 'catalog')
     manifest_path = os.path.join(catalog_dir, 'manifest.json')
@@ -398,6 +420,7 @@ def update(ctx, workspace, date, density, provider):
     if not final_roi:
         raise click.ClickException("Historic ROI not found in manifest headers. Cannot update.")
         
+    final_name = name if name else params.get('name')
     final_date = date if date else params.get('date')
     final_density = density if density else params.get('density')
     final_providers = list(provider) if provider else params.get('providers', ['usgs', 'noaa', 'opentopography'])
@@ -416,7 +439,7 @@ def update(ctx, workspace, date, density, provider):
     logger.info(f"Atomic Rollback successful. Historic catalog mapped to timestamp {historic_utc}.")
     
     # Execute native search bypass via explicit Context invocation
-    ctx.invoke(search, roi=final_roi, date=final_date, density=final_density, workspace=workspace, provider=final_providers)
+    ctx.invoke(search, roi=final_roi, name=final_name, date=final_date, density=final_density, workspace=workspace, provider=final_providers)
 
 
 @cli.command()
