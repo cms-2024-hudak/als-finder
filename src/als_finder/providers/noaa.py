@@ -197,7 +197,11 @@ class NOAAProvider(BaseProvider):
             if not point_count and url:
                 ept_url = url if url.endswith('ept.json') else url.rstrip('/') + '/ept.json'
                 try:
-                    ept_resp = self.session.get(ept_url, timeout=4).json()
+                    resp = self.session.get(ept_url, timeout=4)
+                    if resp.status_code == 404:
+                        logger.warning(f"NOAA S3 Ghost 404 (Missing Data). Purging native bounds for: {ept_url}")
+                        continue
+                    ept_resp = resp.json()
                     point_count = ept_resp.get('points')
                 except Exception as e:
                     logger.debug(f"NOAA EPT extraction failed for {ept_url}: {e}")

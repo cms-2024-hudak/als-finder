@@ -77,7 +77,20 @@ als-finder search --roi ./lake_tahoe_boundary.gpkg --workspace ./my_lidar_projec
  | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  10.4100 |   26768.13 |
  | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
  | NOAA_STAC       | DigitalCoast_DAV:id_9036               | 2018-07-07   |        N/A |      N/A |  159752.00 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9067               | 2018-07-07   |     723.53 |   1.2600 |   77212.96 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9269               | 2018-01-22   |      40.74 |   0.0300 |  182391.32 |
+ | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
+ | OpenTopography  | Walker Fault System, Nevada, 2015      | 2017-07-28   |      35.77 |   7.2700 |     660.41 |
+ | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_8979               | 2017-03-03   |       2.94 |   0.0033 |  120829.31 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_6259               | 2016-04-28   |     233.77 |   0.0300 | 1135103.73 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_5022               | 2015-06-19   |      63.84 |   0.0200 |  363554.90 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_2612               | 2013-10-30   |     151.38 |   0.0300 |  698668.47 |
+ | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
  | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_1124               | 2009-09-01   |     141.08 |   0.0300 |  687536.10 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_4                  | 1998-04-08   |       2.31 |   0.0003 | 1038061.18 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_3                  | 1997-10-12   |       0.64 |   0.0001 | 1001673.78 |
 =================================================================================================================
  TOTAL DATASETS: 24 | ESTIMATED PAYLOAD: 10463.93 GB 
 =================================================================================================================
