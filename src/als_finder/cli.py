@@ -154,7 +154,7 @@ def search(roi, start_date, end_date, workspace, provider):
                 "Area km2": 10
             }
             
-            header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Date':<{col_widths['Date']}} | {'Est (GB)':<{col_widths['Est (GB)']}} | {'pts/m2':<{col_widths['pts/m2']}} | {'Area km2':<{col_widths['Area km2']}} |"
+            header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Date':<{col_widths['Date']}} | {'Est (GB)':>{col_widths['Est (GB)']}} | {'pts/m2':>{col_widths['pts/m2']}} | {'Area km2':>{col_widths['Area km2']}} |"
             print("\n" + "=" * len(header))
             print(" LiDAR Data Search Results ")
             print("=" * len(header))
@@ -190,17 +190,23 @@ def search(roi, start_date, end_date, workspace, provider):
                 name = str(item.get('name') or item.get('dataset_id', 'Unknown'))[:col_widths['Name']]
                 date = item.get('display_date')[:col_widths['Date']]
                 
-                size_gb = 'N/A'
-                if item.get('size'):
+                size_gb_str = 'N/A'
+                if item.get('size') is not None:
                      try:
-                         size_gb = f"{int(item.get('size')) / (1024**3):.2f}"
+                         val = float(item.get('size')) / (1024**3)
+                         size_gb_str = f"{val:.2f}"
                      except:
                          pass
                        
-                density = str(item.get('point_density', 'N/A'))[:col_widths['pts/m2']]
-                area = str(item.get('area_sqkm', 'N/A'))[:col_widths['Area km2']]
+                density_str = 'N/A'
+                if item.get('point_density') is not None:
+                    density_str = f"{float(item.get('point_density')):.4f}"
+                    
+                area_str = 'N/A'
+                if item.get('area_sqkm') is not None:
+                    area_str = f"{float(item.get('area_sqkm')):.2f}"
                 
-                print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_gb:<{col_widths['Est (GB)']}} | {density:<{col_widths['pts/m2']}} | {area:<{col_widths['Area km2']}} |")
+                print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_gb_str:>{col_widths['Est (GB)']}} | {density_str:>{col_widths['pts/m2']}} | {area_str:>{col_widths['Area km2']}} |")
             
             print("=" * len(header))
             print(f" TOTAL DATASETS: {len(unique_results)} | ESTIMATED PAYLOAD: {total_size_gb:.2f} GB ")
