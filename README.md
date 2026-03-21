@@ -57,7 +57,7 @@ pip install als-finder
 The simplest way to discover LiDAR is dropping an Area-of-Interest (ROI) and a target `workspace` isolated natively on your drive:
 
 ```bash
-als-finder search --roi ./lake_tahoe_boundary.gpkg --workspace ./my_lidar_project/
+als-finder search --roi ./examples/my_study_area.geojson --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -100,10 +100,10 @@ als-finder search --roi ./lake_tahoe_boundary.gpkg --workspace ./my_lidar_projec
 ### 2. Filtering by Chronology
 
 #### Defining a Hard Start Date (`--start-date`)
-If you only need modern datasets acquired *after* a specific fire or structural event, isolate the bounds strictly mathematically:
+If you only need modern datasets acquired *after* a specific project mapping date, isolate the bounds strictly mathematically:
 
 ```bash
-als-finder search --roi ./lake_tahoe_boundary.gpkg --start-date 2020-01-01 --workspace ./recent_lidar/
+als-finder search --roi ./examples/my_study_area.geojson --start-date 2020-01-01 --workspace ./recent_lidar/
 ```
 
 **Console Output:**
@@ -124,10 +124,10 @@ als-finder search --roi ./lake_tahoe_boundary.gpkg --start-date 2020-01-01 --wor
 ```
 
 #### Defining a Temporal Range (`--start-date` & `--end-date`)
-You can explicitly isolate historical windows (e.g., exclusively target point clouds mapping the 2015-2019 drought cycle):
+You can explicitly isolate historical windows (e.g., exclusively target point clouds mapping a specific 5-year observation cycle):
 
 ```bash
-als-finder search --roi ./lake_tahoe_boundary.gpkg --start-date 2015-01-01 --end-date 2019-12-31 --workspace ./historic_lidar/
+als-finder search --roi ./examples/my_study_area.geojson --start-date 2015-01-01 --end-date 2019-12-31 --workspace ./historic_lidar/
 ```
 
 **Console Output:**
@@ -154,11 +154,69 @@ als-finder search --roi ./lake_tahoe_boundary.gpkg --start-date 2015-01-01 --end
 =================================================================================================================
 ```
 
-### 3. Filtering by Registry (`--provider`)
+### 3. Filtering by Point Density & Quality Level (`--density` / `--ql`)
+You can natively isolate datasets bounded by mathematical spatial resolutions. `als-finder` supports both raw point density bounds (`pts/m2`) or explicit **USGS 3DEP Topographic Quality Levels (QL0-QL3)**.
+
+#### Filtering via USGS Topographic Quality Level (`--ql`)
+If you require strict federal fidelity (e.g., `QL1` representing `≥8.0 pts/m²`):
+
+```bash
+als-finder search --roi ./examples/my_study_area.geojson --ql QL1 --workspace ./high_res/
+```
+
+**Console Output:**
+```text
+=================================================================================================================
+ LiDAR Data Search Results 
+=================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+-----------------------------------------------------------------------------------------------------------------
+ | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
+ | OpenTopography  | USFS Freds Fire Lidar, CA 2015         | 2022-06-07   |     150.04 |  31.3700 |     641.96 |
+ | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
+ | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  10.4100 |   26768.13 |
+ | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
+ | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
+ | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
+ | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
+=================================================================================================================
+ TOTAL DATASETS: 11 | ESTIMATED PAYLOAD: 9192.89 GB 
+=================================================================================================================
+```
+
+#### Filtering via Exact Point Density Ranges (`--density`)
+You can supply an explicit bounds using a standard ISO-8601 interval vector string (`min/max`):
+
+```bash
+als-finder search --roi ./examples/my_study_area.geojson --density 2/10 --workspace ./mid_res/
+```
+
+**Console Output:**
+```text
+=================================================================================================================
+ LiDAR Data Search Results 
+=================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+-----------------------------------------------------------------------------------------------------------------
+ | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
+ | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
+ | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
+ | OpenTopography  | Walker Fault System, Nevada, 2015      | 2017-07-28   |      35.77 |   7.2700 |     660.41 |
+ | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
+ | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
+=================================================================================================================
+ TOTAL DATASETS: 6 | ESTIMATED PAYLOAD: 881.36 GB 
+=================================================================================================================
+```
+
+### 4. Filtering by Registry (`--provider`)
 To exclusively target high-density scientific sets hosted via USGS EPT bounds, supply explicit string overrides:
 
 ```bash
-als-finder search --roi ./lake_tahoe_boundary.gpkg --provider usgs --workspace ./usgs_only/
+als-finder search --roi ./examples/my_study_area.geojson --provider usgs --workspace ./usgs_only/
 ```
 
 **Console Output:**
@@ -181,8 +239,8 @@ als-finder search --roi ./lake_tahoe_boundary.gpkg --provider usgs --workspace .
 =================================================================================================================
 ```
 
-### 4. Updating Catalogs (Atomic Rollbacks)
-The generated `manifest.json` permanently logs your original parameters (`roi`, `dates`, `providers`). To explicitly query the federal registries for *newly published data* structurally merging onto your bounds later, rely on the implicit sequence:
+### 5. Updating Catalogs (Atomic Rollbacks)
+The generated `manifest.json` permanently logs your original parameters (`roi`, `dates`, `densities`, `providers`). To explicitly query the federal registries for *newly published data* structurally merging onto your bounds later, rely on the implicit sequence:
 ```bash
 als-finder update --workspace ./my_lidar_project/
 ```

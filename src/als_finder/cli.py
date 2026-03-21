@@ -24,12 +24,35 @@ def cli(verbose):
 
 @cli.command()
 @click.option('--roi', required=True, help='Path to ROI file (GeoJSON/Shapefile) or BBox string')
-@click.option('--start-date', help='Start date (YYYY-MM-DD)')
-@click.option('--end-date', help='End date (YYYY-MM-DD)')
+@click.option('--date', help='Temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
+@click.option('--density', help='Point density filter pts/m2 (e.g. 8.0 or 2.0/10.0)')
+@click.option('--ql', type=click.Choice(['QL0', 'QL1', 'QL2', 'QL3'], case_sensitive=False), help='USGS Topo Quality Level shorthand (e.g. QL1)')
 @click.option('--workspace', help='Path to project workspace directory')
 @click.option('--provider', multiple=True, default=['usgs', 'noaa', 'opentopography'], help='Provider(s) to search')
-def search(roi, start_date, end_date, workspace, provider):
+def search(roi, date, density, ql, workspace, provider):
     """Search for available LiDAR data."""
+    start_date, end_date = None, None
+    if date:
+        if '/' in date:
+            start_date, end_date = date.split('/')
+        else:
+            start_date = date
+            
+    min_density, max_density = None, None
+    if density:
+        if '/' in density:
+            mn, mx = density.split('/')
+            min_density, max_density = float(mn), float(mx)
+        else:
+            min_density = float(density)
+            
+    if ql:
+        ql_map = {'QL0': 8.0, 'QL1': 8.0, 'QL2': 2.0, 'QL3': 0.5}
+        ql_threshold = ql_map.get(ql.upper())
+        if ql_threshold is not None:
+            if min_density is None or min_density < ql_threshold:
+                min_density = ql_threshold
+
     logger.info(f"Searching for data in ROI: {roi}")
     logger.info(f"Providers: {provider}")
     
@@ -140,9 +163,41 @@ def search(roi, start_date, end_date, workspace, provider):
             except Exception as e:
                 logger.debug(f"Failed calculating density: {e}")
 
+        # Apply Date and Density Filters
+        filtered_results = []
+        for item in unique_results:
+            # Date filter natively intercepts standard sort_date formatting
+            item_date = item.get('sort_date', '')
+            if start_date and item_date < start_date:
+                continue
+            if end_date and item_date > end_date:
+                continue
+                
+            # Density filter inherently requires PyProj parsing execution first
+            pts_m2 = item.get('point_density')
+            if (min_density is not None or max_density is not None) and pts_m2 is None:
+                logger.warning(f"Dropping {item.get('name')} due to missing density metadata.")
+                continue
+            if pts_m2 is not None:
+                if min_density is not None and float(pts_m2) < min_density:
+                    continue
+                if max_density is not None and float(pts_m2) > max_density:
+                    continue
+                    
+            filtered_results.append(item)
+            
+        unique_results = filtered_results
+        
+        # Recalculate total bytes based on filtered explicitly 
+        total_size_bytes = 0
+        for item in unique_results:
+            if item.get('size'):
+                total_size_bytes += item.get('size')
+        total_size_gb = total_size_bytes / (1024**3)
+
         # Pretty Print Table
         logger.info(f"Total Raw Datasets Found: {len(final_results)}")
-        logger.info(f"Unique Datasets after deduplication: {len(unique_results)}")
+        logger.info(f"Unique Datasets after filtering: {len(unique_results)}")
         
         if unique_results:
             col_widths = {
@@ -225,8 +280,9 @@ def search(roi, start_date, end_date, workspace, provider):
         manifest_payload = {
             "search_parameters": {
                 "roi": roi,
-                "start_date": start_date,
-                "end_date": end_date,
+                "date": date,
+                "density": density,
+                "ql": ql,
                 "providers": list(provider)
             },
             "execution_metadata": {
@@ -315,11 +371,12 @@ def search(roi, start_date, end_date, workspace, provider):
 
 @cli.command()
 @click.option('--workspace', required=True, help='Path to existing als-finder workspace')
-@click.option('--start-date', help='Override start date (YYYY-MM-DD)')
-@click.option('--end-date', help='Override end date (YYYY-MM-DD)')
+@click.option('--date', help='Override temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
+@click.option('--density', help='Override point density filter (e.g. 8.0 or 2.0/10.0)')
+@click.option('--ql', type=click.Choice(['QL0', 'QL1', 'QL2', 'QL3'], case_sensitive=False), help='Override USGS QL shorthand')
 @click.option('--provider', multiple=True, help='Override provider(s)')
 @click.pass_context
-def update(ctx, workspace, start_date, end_date, provider):
+def update(ctx, workspace, date, density, ql, provider):
     """Update an existing workspace catalog, preserving historical parameters and invoking atomic rollbacks."""
     catalog_dir = os.path.join(workspace, 'catalog')
     manifest_path = os.path.join(catalog_dir, 'manifest.json')
@@ -346,8 +403,9 @@ def update(ctx, workspace, start_date, end_date, provider):
     if not final_roi:
         raise click.ClickException("Historic ROI not found in manifest headers. Cannot update.")
         
-    final_start = start_date if start_date else params.get('start_date')
-    final_end = end_date if end_date else params.get('end_date')
+    final_date = date if date else params.get('date')
+    final_density = density if density else params.get('density')
+    final_ql = ql if ql else params.get('ql')
     final_providers = list(provider) if provider else params.get('providers', ['usgs', 'noaa', 'opentopography'])
     
     logger.info(f"Executing Full-Replacement Update natively over Workspace: {workspace}")
@@ -364,7 +422,7 @@ def update(ctx, workspace, start_date, end_date, provider):
     logger.info(f"Atomic Rollback successful. Historic catalog mapped to timestamp {historic_utc}.")
     
     # Execute native search bypass via explicit Context invocation
-    ctx.invoke(search, roi=final_roi, start_date=final_start, end_date=final_end, workspace=workspace, provider=final_providers)
+    ctx.invoke(search, roi=final_roi, date=final_date, density=final_density, ql=final_ql, workspace=workspace, provider=final_providers)
 
 
 @cli.command()
