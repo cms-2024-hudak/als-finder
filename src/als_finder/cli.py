@@ -108,6 +108,28 @@ def search(roi, start_date, end_date, output_manifest, output_csv, output_gpkg, 
         else:
             print("\nNo datasets found for the given ROI.\n")
 
+        # Calculate Universal Area & Density Metrics structurally
+        from pyproj import Geod
+        from shapely.geometry import shape
+        geod = Geod(ellps="WGS84")
+        
+        for item in unique_results:
+            try:
+                geom_dict = item.get('geometry')
+                count = item.get('point_count')
+                
+                if geom_dict and not item.get('area_sqkm'):
+                    poly = shape(geom_dict)
+                    area_sqm = abs(geod.geometry_area_perimeter(poly)[0])
+                    item['area_sqkm'] = round(area_sqm / 1e6, 2)
+                    
+                    if count and not item.get('point_density') and area_sqm > 0:
+                        density = float(count) / area_sqm
+                        item['point_density'] = round(density, 2)
+            except Exception as e:
+                logger.debug(f"Failed calculating density: {e}")
+
+
         # Save manifest
         with open(output_manifest, 'w') as f:
             json.dump(unique_results, f, indent=2, default=str)
