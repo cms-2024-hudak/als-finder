@@ -49,56 +49,98 @@ pip install als-finder
 
 ---
 
-## ⚡ Usage
+## ⚡ Usage & Full Tutorial
 
-The CLI supports filtering, metadata catalog generation, and direct file downloading natively.
+`als-finder` is architected around a **Workspace Paradigm**. Instead of juggling multiple disparate output flags, you simply define your geometry and the destination folder. The software mathematically queries all indices, explicitly deduplicates inputs, and constructs a secure GeoPackage directory structure automatically.
 
-### 1. The Workspace Paradigm (Discovery)
-Instead of forcing users to juggle multiple output flags, `als-finder` natively constructs a secure, structured workspace for your project. Simply define your ROI and the target workspace folder:
+### 1. The Base Execution (All Providers & Dates)
+The simplest way to discover LiDAR is dropping an Area-of-Interest (ROI) and a target `workspace` isolated natively on your drive:
 
 ```bash
-als-finder search \
-    --roi /path/to/my_roi.geojson \
-    --start-date 2015-01-01 \
-    --end-date 2023-12-31 \
-    --workspace ./my_lidar_project/
+als-finder search --roi ./lake_tahoe_boundary.gpkg --workspace ./my_lidar_project/
 ```
-The script will silently generate a nested `catalog/` directory natively containing `manifest.json`, `catalog.csv`, and a QGIS-ready spatial `catalog.gpkg` index showing the explicit polygonal boundaries of available LiDAR.
 
-### OpenTopography Authentication Validation
-`als-finder` natively detects OpenTopography API keys recursively. For maximum organizational security, do not place keys in global folders! Simply drop a `.env` text file containing `OPENTOPOGRAPHY_API_KEY=your_key_here` strictly inside your `./my_lidar_project/` folder. The parser securely loads it only when interacting with that specific workspace automatically.
+**Console Output:**
+```text
+=================================================================================================================
+ LiDAR Data Search Results 
+=================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+-----------------------------------------------------------------------------------------------------------------
+ | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
+ | OpenTopography  | USFS Freds Fire Lidar, CA 2015         | 2022-06-07   |     150.04 |  31.3700 |     641.96 |
+ | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
+ | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
+ | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  10.4100 |   26768.13 |
+ | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9036               | 2018-07-07   |        N/A |      N/A |  159752.00 |
+ | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
+=================================================================================================================
+ TOTAL DATASETS: 24 | ESTIMATED PAYLOAD: 10463.93 GB 
+=================================================================================================================
+```
+*(Notice the `NOAA_STAC id_9036` footprint. If a dataset is cataloged but physically `404` deleted internally off AWS S3 by NOAA, `als-finder` dynamically falls back to a secure `N/A` without catastrophically crashing the orchestration pipeline).*
 
-### 2. Updating Catalogs & Atomic Rollbacks
-The generated `manifest.json` permanently logs your original search coordinates and boundaries. To query the federal registries for newly published datasets later, execute:
+### 2. Filtering by Chronology (`--start-date`)
+If you only need modern datasets acquired *after* a specific fire or structural event, isolate the bounds strictly mathematically:
+
+```bash
+als-finder search --roi ./lake_tahoe_boundary.gpkg --start-date 2020-01-01 --workspace ./recent_lidar/
+```
+
+**Console Output:**
+```text
+=================================================================================================================
+ LiDAR Data Search Results 
+=================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+-----------------------------------------------------------------------------------------------------------------
+ | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
+ | OpenTopography  | USFS Freds Fire Lidar, CA 2015         | 2022-06-07   |     150.04 |  31.3700 |     641.96 |
+ | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
+=================================================================================================================
+ TOTAL DATASETS: 5 | ESTIMATED PAYLOAD: 4271.48 GB 
+=================================================================================================================
+```
+
+### 3. Filtering by Registry (`--provider`)
+To exclusively target high-density scientific sets hosted via USGS EPT bounds, supply explicit string overrides:
+
+```bash
+als-finder search --roi ./lake_tahoe_boundary.gpkg --provider usgs --workspace ./usgs_only/
+```
+
+**Console Output:**
+```text
+=================================================================================================================
+ LiDAR Data Search Results 
+=================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+-----------------------------------------------------------------------------------------------------------------
+ | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
+ | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
+ | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
+ | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
+ | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
+ | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
+=================================================================================================================
+ TOTAL DATASETS: 8 | ESTIMATED PAYLOAD: 7028.40 GB 
+=================================================================================================================
+```
+
+### 4. Updating Catalogs (Atomic Rollbacks)
+The generated `manifest.json` permanently logs your original parameters (`roi`, `dates`, `providers`). To explicitly query the federal registries for *newly published data* structurally merging onto your bounds later, rely on the implicit sequence:
 ```bash
 als-finder update --workspace ./my_lidar_project/
 ```
-*(Note: To protect your data mathematically, an update physically generates a historical backup of the old catalog uniquely stamped with UTC extraction times before overwriting it natively).*
-
-**Expected Metadata (Catalog & GeoPackage):**
-Running the search universally yields standard attributes mapped across all 3 disparate government APIs natively:
-| Field | Description |
-| :--- | :--- |
-| `provider` | The source database (`USGS_EPT`, `NOAA_STAC`, `OpenTopography`). |
-| `dataset_id` | The unique identifier string for the acquisition. |
-| `geometry` / `bounds` | The mathematically accurate acquisition boundary polygon (WGS84). |
-| `area_sqkm` | Geodesic WGS84 native metric area calculation. |
-| `date` | Standardized chronological timestamps proactively extracted. |
-| `point_count` | Total raw LiDAR points in the acquisition. |
-| `point_density` | Points-Per-Square-Meter (mathematically derived). |
-| `description` | The deep semantic paragraph describing the original flight/purpose. |
-| `url` | The direct cloud-streaming URL (e.g. `ept.json` or Copc link). |
-
-### 2. Downloading LAZ Tiles (Download Mode)
-Currently, `als-finder` is architected as a **cloud-native** discovery tool. The URIs it returns (e.g. USGS `ept.json` paths) are designed to be natively streamed over the internet using PDAL pipelines (like in `voxelFuel`) without ever forcing you to physically download terabytes of raw `.laz` data to your hard drive. 
-
-If you explicitly choose to physically download the `.laz` files, you can utilize the download capabilities:
-```bash
-# Download all valid URLs natively mapped in your JSON catalog into Hive-style structures
-als-finder download \
-    --manifest ./catalog.json \
-    --output-dir ./lidar_acquisitions/
-```
+*(Note: To explicitly guard your indexing traces natively, an `update` mathematically generates a historical backup of the old `manifest.json`, `catalog.csv`, and `catalog.gpkg` logically stamped with immutable UTC bounds before overwriting the primary vectors).*
 
 ---
 
