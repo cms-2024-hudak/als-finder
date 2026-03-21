@@ -69,15 +69,12 @@ def search(roi, start_date, end_date, workspace, provider):
         
         final_results = []
         for p in active_providers:
-            # Check access first
             if not p.check_access():
-                if not quiet:
-                    logger.warning(f"Skipping {p.__class__.__name__} due to access/auth issues.")
+                logger.warning(f"Skipping {p.__class__.__name__} due to access/auth issues.")
                 continue
 
             try:
-                if not quiet:
-                    logger.info(f"Searching {p.__class__.__name__}...")
+                logger.info(f"Searching {p.__class__.__name__}...")
                 results = p.search(roi_geom)
                 final_results.extend(results)
             except Exception as e:
@@ -136,73 +133,72 @@ def search(roi, start_date, end_date, workspace, provider):
                 logger.debug(f"Failed calculating density: {e}")
 
         # Pretty Print Table
-        if not quiet:
-            logger.info(f"Total Raw Datasets Found: {len(final_results)}")
-            logger.info(f"Unique Datasets after deduplication: {len(unique_results)}")
+        logger.info(f"Total Raw Datasets Found: {len(final_results)}")
+        logger.info(f"Unique Datasets after deduplication: {len(unique_results)}")
+        
+        if unique_results:
+            col_widths = {
+                "Provider": 15,
+                "Name": 38,
+                "Date": 12,
+                "Est (GB)": 10,
+                "pts/m2": 8,
+                "Area km2": 10
+            }
             
-            if unique_results:
-                col_widths = {
-                    "Provider": 15,
-                    "Name": 38,
-                    "Date": 12,
-                    "Est (GB)": 10,
-                    "pts/m2": 8,
-                    "Area km2": 10
-                }
-                
-                header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Date':<{col_widths['Date']}} | {'Est (GB)':<{col_widths['Est (GB)']}} | {'pts/m2':<{col_widths['pts/m2']}} | {'Area km2':<{col_widths['Area km2']}} |"
-                print("\n" + "=" * len(header))
-                print(" LiDAR Data Search Results ")
-                print("=" * len(header))
-                print(header)
-                print("-" * len(header))
-                
-                # Pre-format dates and Sort Descending
-                for item in unique_results:
-                    raw_date = str(item.get('date') or '').strip()
-                    if not raw_date or raw_date.lower() == 'none' or raw_date == 'XXXX-XX-XX':
-                        display_date = '????-??-??'
-                        sort_date = '0000-00-00'
-                    else:
-                        if ' ' in raw_date:
-                            raw_date = raw_date.split(' ')[0]
-                        elif 'T' in raw_date:
-                            raw_date = raw_date.split('T')[0]
-                        display_date = raw_date
-                        sort_date = raw_date
-                        
-                    # Handle USGS single-year dates natively (e.g. '2022')
-                    if len(display_date) == 4 and display_date.isdigit():
-                        sort_date = f"{display_date}-12-31"
-                        display_date = f"{display_date}-??-??"
-                        
-                    item['display_date'] = display_date
-                    item['sort_date'] = sort_date
-                
-                unique_results.sort(key=lambda k: k.get('sort_date', '0000-00-00'), reverse=True)
-                
-                for item in unique_results:
-                    prov = str(item.get('provider', 'Unknown'))[:col_widths['Provider']]
-                    name = str(item.get('name') or item.get('dataset_id', 'Unknown'))[:col_widths['Name']]
-                    date = item.get('display_date')[:col_widths['Date']]
+            header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Date':<{col_widths['Date']}} | {'Est (GB)':<{col_widths['Est (GB)']}} | {'pts/m2':<{col_widths['pts/m2']}} | {'Area km2':<{col_widths['Area km2']}} |"
+            print("\n" + "=" * len(header))
+            print(" LiDAR Data Search Results ")
+            print("=" * len(header))
+            print(header)
+            print("-" * len(header))
+            
+            # Pre-format dates and Sort Descending
+            for item in unique_results:
+                raw_date = str(item.get('date') or '').strip()
+                if not raw_date or raw_date.lower() == 'none' or raw_date == 'XXXX-XX-XX':
+                    display_date = '????-??-??'
+                    sort_date = '0000-00-00'
+                else:
+                    if ' ' in raw_date:
+                        raw_date = raw_date.split(' ')[0]
+                    elif 'T' in raw_date:
+                        raw_date = raw_date.split('T')[0]
+                    display_date = raw_date
+                    sort_date = raw_date
                     
-                    size_gb = 'N/A'
-                    if item.get('size'):
-                         try:
-                             size_gb = f"{int(item.get('size')) / (1024**3):.2f}"
-                         except:
-                             pass
-                           
-                    density = str(item.get('point_density', 'N/A'))[:col_widths['pts/m2']]
-                    area = str(item.get('area_sqkm', 'N/A'))[:col_widths['Area km2']]
+                # Handle USGS single-year dates natively (e.g. '2022')
+                if len(display_date) == 4 and display_date.isdigit():
+                    sort_date = f"{display_date}-12-31"
+                    display_date = f"{display_date}-??-??"
                     
-                    print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_gb:<{col_widths['Est (GB)']}} | {density:<{col_widths['pts/m2']}} | {area:<{col_widths['Area km2']}} |")
+                item['display_date'] = display_date
+                item['sort_date'] = sort_date
+            
+            unique_results.sort(key=lambda k: k.get('sort_date', '0000-00-00'), reverse=True)
+            
+            for item in unique_results:
+                prov = str(item.get('provider', 'Unknown'))[:col_widths['Provider']]
+                name = str(item.get('name') or item.get('dataset_id', 'Unknown'))[:col_widths['Name']]
+                date = item.get('display_date')[:col_widths['Date']]
                 
-                print("=" * len(header))
-                print(f" TOTAL DATASETS: {len(unique_results)} | ESTIMATED PAYLOAD: {total_size_gb:.2f} GB ")
-                print("=" * len(header) + "\n")
-            else:
-                print("\nNo datasets found for the given ROI.\n")
+                size_gb = 'N/A'
+                if item.get('size'):
+                     try:
+                         size_gb = f"{int(item.get('size')) / (1024**3):.2f}"
+                     except:
+                         pass
+                       
+                density = str(item.get('point_density', 'N/A'))[:col_widths['pts/m2']]
+                area = str(item.get('area_sqkm', 'N/A'))[:col_widths['Area km2']]
+                
+                print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_gb:<{col_widths['Est (GB)']}} | {density:<{col_widths['pts/m2']}} | {area:<{col_widths['Area km2']}} |")
+            
+            print("=" * len(header))
+            print(f" TOTAL DATASETS: {len(unique_results)} | ESTIMATED PAYLOAD: {total_size_gb:.2f} GB ")
+            print("=" * len(header) + "\n")
+        else:
+            print("\nNo datasets found for the given ROI.\n")
 
         # Construct JSON Metadata Headers
         now_utc = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -230,8 +226,7 @@ def search(roi, start_date, end_date, workspace, provider):
         with open(output_manifest, 'w') as f:
             json.dump(manifest_payload, f, indent=2, default=str)
             
-        if not quiet:
-            logger.info(f"Manifest written to {output_manifest}")
+        logger.info(f"Manifest written to {output_manifest}")
         
         # Save CSV globally
         import csv
@@ -257,8 +252,7 @@ def search(roi, start_date, end_date, workspace, provider):
                     item.get('url', '')
                 ])
                 
-        if not quiet:
-            logger.info(f"CSV manifest written to {output_csv}")
+        logger.info(f"CSV manifest written to {output_csv}")
         
         # Save GPKG globally
         try:
@@ -293,11 +287,9 @@ def search(roi, start_date, end_date, workspace, provider):
             if records:
                 gdf = gpd.GeoDataFrame(records, crs="EPSG:4326")
                 gdf.to_file(output_gpkg, driver="GPKG")
-                if not quiet:
-                    logger.info(f"GeoPackage catalog written to {output_gpkg}")
+                logger.info(f"GeoPackage catalog written to {output_gpkg}")
             else:
-                if not quiet:
-                    logger.warning(f"No valid geometries found; GeoPackage not created.")
+                logger.warning(f"No valid geometries found; GeoPackage not created.")
         except ImportError as e:
             logger.error(f"Missing geospatial dependencies: {e}. Ensure geopandas is installed.")
         except Exception as e:
@@ -312,9 +304,8 @@ def search(roi, start_date, end_date, workspace, provider):
 @click.option('--start-date', help='Override start date (YYYY-MM-DD)')
 @click.option('--end-date', help='Override end date (YYYY-MM-DD)')
 @click.option('--provider', multiple=True, help='Override provider(s)')
-@click.option('--quiet', is_flag=True, help='Suppress output')
 @click.pass_context
-def update(ctx, workspace, start_date, end_date, provider, quiet):
+def update(ctx, workspace, start_date, end_date, provider):
     """Update an existing workspace catalog, preserving historical parameters and invoking atomic rollbacks."""
     catalog_dir = os.path.join(workspace, 'catalog')
     manifest_path = os.path.join(catalog_dir, 'manifest.json')
@@ -345,8 +336,7 @@ def update(ctx, workspace, start_date, end_date, provider, quiet):
     final_end = end_date if end_date else params.get('end_date')
     final_providers = list(provider) if provider else params.get('providers', ['usgs', 'noaa', 'opentopography'])
     
-    if not quiet:
-        logger.info(f"Executing Full-Replacement Update natively over Workspace: {workspace}")
+    logger.info(f"Executing Full-Replacement Update natively over Workspace: {workspace}")
         
     # Atomic Rollbacks
     backup_manifest = os.path.join(catalog_dir, f'manifest_{historic_utc}.json')
@@ -357,11 +347,10 @@ def update(ctx, workspace, start_date, end_date, provider, quiet):
     if os.path.exists(os.path.join(catalog_dir, 'catalog.gpkg')): shutil.move(os.path.join(catalog_dir, 'catalog.gpkg'), backup_gpkg)
     if os.path.exists(os.path.join(catalog_dir, 'catalog.csv')): shutil.move(os.path.join(catalog_dir, 'catalog.csv'), backup_csv)
     
-    if not quiet:
-        logger.info(f"Atomic Rollback successful. Historic catalog mapped to timestamp {historic_utc}.")
+    logger.info(f"Atomic Rollback successful. Historic catalog mapped to timestamp {historic_utc}.")
     
     # Execute native search bypass via explicit Context invocation
-    ctx.invoke(search, roi=final_roi, start_date=final_start, end_date=final_end, workspace=workspace, quiet=quiet, provider=final_providers)
+    ctx.invoke(search, roi=final_roi, start_date=final_start, end_date=final_end, workspace=workspace, provider=final_providers)
 
 
 @cli.command()
