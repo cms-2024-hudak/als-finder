@@ -97,7 +97,9 @@ als-finder search --roi ./lake_tahoe_boundary.gpkg --workspace ./my_lidar_projec
 ```
 *(Notice the `NOAA_STAC id_9036` footprint. If a dataset is cataloged but physically `404` deleted internally off AWS S3 by NOAA, `als-finder` dynamically falls back to a secure `N/A` without catastrophically crashing the orchestration pipeline).*
 
-### 2. Filtering by Chronology (`--start-date`)
+### 2. Filtering by Chronology
+
+#### Defining a Hard Start Date (`--start-date`)
 If you only need modern datasets acquired *after* a specific fire or structural event, isolate the bounds strictly mathematically:
 
 ```bash
@@ -118,6 +120,37 @@ als-finder search --roi ./lake_tahoe_boundary.gpkg --start-date 2020-01-01 --wor
  | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
 =================================================================================================================
  TOTAL DATASETS: 5 | ESTIMATED PAYLOAD: 4271.48 GB 
+=================================================================================================================
+```
+
+#### Defining a Temporal Range (`--start-date` & `--end-date`)
+You can explicitly isolate historical windows (e.g., exclusively target point clouds mapping the 2015-2019 drought cycle):
+
+```bash
+als-finder search --roi ./lake_tahoe_boundary.gpkg --start-date 2015-01-01 --end-date 2019-12-31 --workspace ./historic_lidar/
+```
+
+**Console Output:**
+```text
+=================================================================================================================
+ LiDAR Data Search Results 
+=================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+-----------------------------------------------------------------------------------------------------------------
+ | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
+ | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  10.4100 |   26768.13 |
+ | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9067               | 2018-07-07   |     723.53 |   1.2600 |   77212.96 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9269               | 2018-01-22   |      40.74 |   0.0300 |  182391.32 |
+ | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
+ | OpenTopography  | Walker Fault System, Nevada, 2015      | 2017-07-28   |      35.77 |   7.2700 |     660.41 |
+ | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_8979               | 2017-03-03   |       2.94 |   0.0033 |  120829.31 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_6259               | 2016-04-28   |     233.77 |   0.0300 | 1135103.73 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_5022               | 2015-06-19   |      63.84 |   0.0200 |  363554.90 |
+=================================================================================================================
+ TOTAL DATASETS: 12 | ESTIMATED PAYLOAD: 6270.20 GB 
 =================================================================================================================
 ```
 
