@@ -144,14 +144,14 @@ def search(roi, start_date, end_date, workspace, quiet, provider):
             if unique_results:
                 col_widths = {
                     "Provider": 15,
-                    "Name": 40,
-                    "Size (MB)": 10,
-                    "Pts (M)": 10,
+                    "Name": 38,
+                    "Date": 12,
+                    "Size (GB)": 10,
                     "Density": 8,
                     "Area km2": 10
                 }
                 
-                header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Date':<{col_widths['Date']}} | {'Size (MB)':<{col_widths['Size (MB)']}} | {'Pts (M)':<{col_widths['Pts (M)']}} | {'Density':<{col_widths['Density']}} | {'Area km2':<{col_widths['Area km2']}} |"
+                header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Date':<{col_widths['Date']}} | {'Size (GB)':<{col_widths['Size (GB)']}} | {'Density':<{col_widths['Density']}} | {'Area km2':<{col_widths['Area km2']}} |"
                 print("\n" + "=" * len(header))
                 print(" LiDAR Data Search Results ")
                 print("=" * len(header))
@@ -172,24 +172,17 @@ def search(roi, start_date, end_date, workspace, quiet, provider):
                         
                     date = raw_date[:col_widths['Date']]
                     
-                    size_mb = 'N/A'
+                    size_gb = 'N/A'
                     if item.get('size'):
                          try:
-                             size_mb = f"{int(item.get('size')) / (1024*1024):.1f}"
+                             size_gb = f"{int(item.get('size')) / (1024**3):.2f}"
                          except:
                              pass
-                             
-                    pts_m = 'N/A'
-                    if item.get('point_count'):
-                        try:
-                            pts_m = f"{int(item.get('point_count')) / 1e6:.1f}"
-                        except:
-                            pass
                             
                     density = str(item.get('point_density', 'N/A'))[:col_widths['Density']]
                     area = str(item.get('area_sqkm', 'N/A'))[:col_widths['Area km2']]
                     
-                    print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_mb:<{col_widths['Size (MB)']}} | {pts_m:<{col_widths['Pts (M)']}} | {density:<{col_widths['Density']}} | {area:<{col_widths['Area km2']}} |")
+                    print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_gb:<{col_widths['Size (GB)']}} | {density:<{col_widths['Density']}} | {area:<{col_widths['Area km2']}} |")
                 
                 print("=" * len(header))
                 print(f" TOTAL DATASETS: {len(unique_results)} | ESTIMATED PAYLOAD: {total_size_gb:.2f} GB ")
