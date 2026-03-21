@@ -97,54 +97,25 @@ def search(roi, start_date, end_date, workspace, quiet, provider):
                 continue
             seen_names.add(name_key)
             unique_results.append(item)
+            
+            # Impute bytes mathematically 
             if item.get('size'):
                 try:
                     total_size_bytes += int(item.get('size'))
                 except:
                     pass
+            elif item.get('point_count'):
+                try:
+                    # Estimate ~8 bytes per point for a compressed LAZ v1.4 natively
+                    estimated_bytes = int(item.get('point_count')) * 8
+                    total_size_bytes += estimated_bytes
+                    item['size'] = estimated_bytes  # Inject the estimate dynamically for the table
+                except:
+                    pass
 
         total_size_gb = total_size_bytes / (1024**3)
 
-        # Pretty Print Table
-        if not quiet:
-            logger.info(f"Total Raw Datasets Found: {len(final_results)}")
-            logger.info(f"Unique Datasets after deduplication: {len(unique_results)}")
-            
-            if unique_results:
-                col_widths = {
-                    "Provider": 15,
-                    "Name": 50,
-                    "Date": 22,
-                    "Size (MB)": 10
-                }
-                
-                header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Date':<{col_widths['Date']}} | {'Size (MB)':<{col_widths['Size (MB)']}} |"
-                print("\n" + "=" * len(header))
-                print(" LiDAR Data Search Results ")
-                print("=" * len(header))
-                print(header)
-                print("-" * len(header))
-                
-                for item in unique_results:
-                    prov = str(item.get('provider', 'Unknown'))[:col_widths['Provider']]
-                    name = str(item.get('name') or item.get('dataset_id', 'Unknown'))[:col_widths['Name']]
-                    date = str(item.get('date') or 'N/A')[:col_widths['Date']]
-                    size_mb = 'N/A'
-                    if item.get('size'):
-                         try:
-                             size_mb = f"{int(item.get('size')) / (1024*1024):.1f}"
-                         except:
-                             pass
-                    
-                    print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_mb:<{col_widths['Size (MB)']}} |")
-                
-                print("=" * len(header))
-                print(f" TOTAL DATASETS: {len(unique_results)} | ESTIMATED PAYLOAD: {total_size_gb:.2f} GB ")
-                print("=" * len(header) + "\n")
-            else:
-                print("\nNo datasets found for the given ROI.\n")
-
-        # Calculate Universal Area & Density Metrics structurally
+        # Calculate Universal Area & Density Metrics structurally first so the table can print them
         from pyproj import Geod
         from shapely.geometry import shape
         geod = Geod(ellps="WGS84")
@@ -164,6 +135,67 @@ def search(roi, start_date, end_date, workspace, quiet, provider):
                         item['point_density'] = round(density, 2)
             except Exception as e:
                 logger.debug(f"Failed calculating density: {e}")
+
+        # Pretty Print Table
+        if not quiet:
+            logger.info(f"Total Raw Datasets Found: {len(final_results)}")
+            logger.info(f"Unique Datasets after deduplication: {len(unique_results)}")
+            
+            if unique_results:
+                col_widths = {
+                    "Provider": 15,
+                    "Name": 40,
+                    "Size (MB)": 10,
+                    "Pts (M)": 10,
+                    "Density": 8,
+                    "Area km2": 10
+                }
+                
+                header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Date':<{col_widths['Date']}} | {'Size (MB)':<{col_widths['Size (MB)']}} | {'Pts (M)':<{col_widths['Pts (M)']}} | {'Density':<{col_widths['Density']}} | {'Area km2':<{col_widths['Area km2']}} |"
+                print("\n" + "=" * len(header))
+                print(" LiDAR Data Search Results ")
+                print("=" * len(header))
+                print(header)
+                print("-" * len(header))
+                
+                for item in unique_results:
+                    prov = str(item.get('provider', 'Unknown'))[:col_widths['Provider']]
+                    name = str(item.get('name') or item.get('dataset_id', 'Unknown'))[:col_widths['Name']]
+                    
+                    raw_date = str(item.get('date') or '').strip()
+                    if not raw_date or raw_date == 'None':
+                        raw_date = 'XXXX-XX-XX'
+                    elif ' ' in raw_date:
+                        raw_date = raw_date.split(' ')[0]
+                    elif 'T' in raw_date:
+                        raw_date = raw_date.split('T')[0]
+                        
+                    date = raw_date[:col_widths['Date']]
+                    
+                    size_mb = 'N/A'
+                    if item.get('size'):
+                         try:
+                             size_mb = f"{int(item.get('size')) / (1024*1024):.1f}"
+                         except:
+                             pass
+                             
+                    pts_m = 'N/A'
+                    if item.get('point_count'):
+                        try:
+                            pts_m = f"{int(item.get('point_count')) / 1e6:.1f}"
+                        except:
+                            pass
+                            
+                    density = str(item.get('point_density', 'N/A'))[:col_widths['Density']]
+                    area = str(item.get('area_sqkm', 'N/A'))[:col_widths['Area km2']]
+                    
+                    print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_mb:<{col_widths['Size (MB)']}} | {pts_m:<{col_widths['Pts (M)']}} | {density:<{col_widths['Density']}} | {area:<{col_widths['Area km2']}} |")
+                
+                print("=" * len(header))
+                print(f" TOTAL DATASETS: {len(unique_results)} | ESTIMATED PAYLOAD: {total_size_gb:.2f} GB ")
+                print("=" * len(header) + "\n")
+            else:
+                print("\nNo datasets found for the given ROI.\n")
 
         # Construct JSON Metadata Headers
         now_utc = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
