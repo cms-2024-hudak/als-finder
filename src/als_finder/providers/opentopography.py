@@ -106,8 +106,8 @@ class OpenTopographyProvider(BaseProvider):
                     "bounds": None, # Complex to fetch full bounds from the json-ld spatialCoverage without parsing GeoJSON
                     "geometry": meta.get('spatialCoverage', {}).get('geo', {}).get('geojson', {}),
                     "date": meta.get('dateCreated'),
-                    "point_count": None, # OT doesn't provide these easily in the standard catalog search
-                    "point_density": None,
+                    "point_count": meta.get('ptCount') or meta.get('pointCount'), 
+                    "point_density": meta.get('pointDensity'),
                     "area_sqkm": area,
                     # Store raw for full context
                     "raw_metadata": meta
