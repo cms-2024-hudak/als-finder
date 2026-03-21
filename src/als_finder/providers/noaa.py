@@ -158,7 +158,7 @@ class NOAAProvider(BaseProvider):
             
         logger.info(f"Successfully cached {len(features)} NOAA datasets.")
 
-    def search(self, roi: Polygon, **kwargs) -> List[Dict[str, Any]]:
+    def search(self, roi: Optional[Polygon] = None, **kwargs) -> List[Dict[str, Any]]:
         """
         Search for NOAA LiDAR data by querying the local spatial index.
         """
@@ -180,13 +180,16 @@ class NOAAProvider(BaseProvider):
         if gdf.crs is None:
              gdf.set_crs(epsg=4326, inplace=True)
 
-        # Create a GeoDataFrame for the ROI
-        roi_gdf = gpd.GeoDataFrame(index=[0], crs="EPSG:4326", geometry=[roi])
-
-        # Perform spatial intersection
-        intersecting = gpd.sjoin(gdf, roi_gdf, how="inner", predicate="intersects")
-        
-        logger.info(f"Found {len(intersecting)} items from NOAA.")
+        if roi:
+            # Create a GeoDataFrame for the ROI natively
+            roi_gdf = gpd.GeoDataFrame(index=[0], crs="EPSG:4326", geometry=[roi])
+    
+            # Perform spatial intersection
+            intersecting = gpd.sjoin(gdf, roi_gdf, how="inner", predicate="intersects")
+            logger.info(f"Found {len(intersecting)} items from NOAA structurally spanning the ROI.")
+        else:
+            logger.info(f"No spatial constraints formally provided. Filtering all {len(gdf)} global NOAA STAC distributions directly.")
+            intersecting = gdf
         
         results = []
         for idx, row in intersecting.iterrows():

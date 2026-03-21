@@ -34,16 +34,20 @@ class USGSProvider(BaseProvider):
             gdf = gpd.read_file(self.REGISTRY_URL)
             logger.info(f"Loaded {len(gdf)} entire USGS acquisitions natively.")
             
-            roi_gdf = gpd.GeoDataFrame(geometry=[roi], crs="EPSG:4326")
-            
-            if gdf.crs is None:
-                gdf.set_crs("EPSG:4326", inplace=True)
-            elif gdf.crs != roi_gdf.crs:
-                gdf = gdf.to_crs(roi_gdf.crs)
+            if roi:
+                roi_gdf = gpd.GeoDataFrame(geometry=[roi], crs="EPSG:4326")
                 
-            logger.info("Intersecting spatial boundaries natively...")
-            intersecting = gdf[gdf.intersects(roi)]
-            logger.info(f"Found {len(intersecting)} USGS datasets spanning the ROI.")
+                if gdf.crs is None:
+                    gdf.set_crs("EPSG:4326", inplace=True)
+                elif gdf.crs != roi_gdf.crs:
+                    gdf = gdf.to_crs(roi_gdf.crs)
+                    
+                logger.info("Intersecting spatial boundaries natively...")
+                intersecting = gdf[gdf.intersects(roi)]
+                logger.info(f"Found {len(intersecting)} USGS datasets spanning the ROI.")
+            else:
+                logger.info("No spatial constraint natively mapped. Evaluating the entire mathematical footprint.")
+                intersecting = gdf
             
             import re
             results = []

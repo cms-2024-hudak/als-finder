@@ -1,0 +1,9 @@
+Provider,Name,DatasetID,Date,SizeMB,PointCount,PointDensity,AreaSqKm,URL
+USGS_EPT,CA_SierraNevada_5_2022,CA_SierraNevada_5_2022,2022,1413327.6,185247678989,29.17,6349.79,https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SierraNevada_5_2022/ept.json
+USGS_EPT,CA_SierraNevada_6_2022,CA_SierraNevada_6_2022,2022,1163738.6,152533548398,26.08,5849.29,https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SierraNevada_6_2022/ept.json
+USGS_EPT,CA_SierraNevada_8_2022,CA_SierraNevada_8_2022,2022,1199736.6,157251870834,25.14,6255.39,https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SierraNevada_8_2022/ept.json
+USGS_EPT,NV_WestCentralEarthMRI_3_2020,NV_WestCentralEarthMRI_3_2020,2020,443556.2,58137798772,5.34,10890.04,https://s3-us-west-2.amazonaws.com/usgs-lidar-public/NV_WestCentralEarthMRI_3_2020/ept.json
+USGS_EPT,CA_UpperSouthAmerican_Eldorado_2019,CA_UpperSouthAmerican_Eldorado_2019,2019,2125095.9,278540573208,43.16,6454.2,https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_UpperSouthAmerican_Eldorado_2019/ept.json
+USGS_EPT,USGS_LPC_CA_NoCAL_Wildfires_B1_2018,USGS_LPC_CA_NoCAL_Wildfires_B1_2018,2018,659003.5,86376910091,10.89,7928.51,https://s3-us-west-2.amazonaws.com/usgs-lidar-public/USGS_LPC_CA_NoCAL_Wildfires_B1_2018/ept.json
+USGS_EPT,USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2018,USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2018,2017,154773.9,20286530383,9.54,2126.64,https://s3-us-west-2.amazonaws.com/usgs-lidar-public/USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2018/ept.json
+USGS_EPT,CA_PlacerCo_2012,CA_PlacerCo_2012,2012,37851.2,4961233219,3.95,1254.54,https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_PlacerCo_2012/ept.json

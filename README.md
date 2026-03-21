@@ -2,7 +2,7 @@
 
 **A high-performance, cloud-native CLI engine for discovering and downloading raw LiDAR point cloud data across the globe.**
 
-`als-finder` maps complete acquisition footprints (master project boundaries), true WGS84 point densities, and deep semantic narrative descriptions universally from **USGS**, **NOAA**, and **OpenTopography** natively into clean `.json` manifests and `QGIS`-ready `.gpkg` tables.
+`als-finder` gathers complete acquisition footprints (project boundaries), true WGS84 point densities, and metadata from **USGS**, **NOAA**, and **OpenTopography** into clean `.json` manifests and `QGIS`-ready `.gpkg` tables.
 
 ---
 
@@ -10,15 +10,11 @@
 To pull datasets from OpenTopography, you must provide a free authorization token. 
 1. Create an account at [OpenTopography.org](https://opentopography.org).
 2. Navigate to **MyAccount** -> **Request API Key**.
-3. You can supply this key to `als-finder` in two standard ways:
-   - **Environment Variable (All OS)**: Export it directly in your terminal:
-     ```bash
-     export OPENTOPOGRAPHY_API_KEY="your_token_here"
-     ```
-   - **Local `.env` File**: Create a `.env` file in the folder where you run the tool:
-     ```env
-     OPENTOPOGRAPHY_API_KEY=your_token_here
-     ```
+3. Supply this key to `als-finder` using the `--ot-key` flag during your first search. The engine will transparently cache it into a local `.env` file directly in your active working directory for all future executions:
+
+```bash
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --ot-key "your_token_here" --workspace ./my_lidar_project/
+```
 
 ---
 
@@ -51,10 +47,10 @@ pip install als-finder
 
 ## ⚡ Usage & Full Tutorial
 
-`als-finder` is architected around a **Workspace Paradigm**. Instead of juggling multiple disparate output flags, you simply define your geometry and the destination folder. The software mathematically queries all indices, explicitly deduplicates inputs, and constructs a secure GeoPackage directory structure automatically.
+`als-finder` uses a workspace approach. Instead of managing multiple output flags, you simply define your search criteria and the destination folder. The software queries all indices, deduplicates overlapping datasets, and generates a clean tracking directory automatically.
 
 ### 1. The Base Execution (All Providers & Dates)
-The simplest way to discover LiDAR is dropping an Area-of-Interest (ROI) and a target `workspace` isolated natively on your drive. An example boundary (`ltbmu_boundary.gpkg`) is explicitly bundled natively with all distributions (pip, conda, docker, git) so you can directly reproduce this tutorial locally:
+The easiest way to search for LiDAR is to provide an Area of Interest (ROI) boundary and a target output `workspace`. An example boundary (`ltbmu_boundary.gpkg`) is bundled with the package so you can follow along with this tutorial locally:
 
 ```bash
 als-finder search --roi ./examples/ltbmu_boundary.gpkg --workspace ./my_lidar_project/
@@ -62,11 +58,11 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --workspace ./my_lidar_pr
 
 **Console Output:**
 ```text
-=================================================================================================================
+=======================================================================================================================================
  LiDAR Data Search Results 
-=================================================================================================================
+=======================================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
  | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
@@ -76,7 +72,6 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --workspace ./my_lidar_pr
  | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
  | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  10.4100 |   26768.13 |
  | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
- | NOAA_STAC       | DigitalCoast_DAV:id_9036               | 2018-07-07   |        N/A |      N/A |  159752.00 |
  | NOAA_STAC       | DigitalCoast_DAV:id_9067               | 2018-07-07   |     723.53 |   1.2600 |   77212.96 |
  | NOAA_STAC       | DigitalCoast_DAV:id_9269               | 2018-01-22   |      40.74 |   0.0300 |  182391.32 |
  | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
@@ -91,14 +86,43 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --workspace ./my_lidar_pr
  | NOAA_STAC       | DigitalCoast_DAV:id_1124               | 2009-09-01   |     141.08 |   0.0300 |  687536.10 |
  | NOAA_STAC       | DigitalCoast_DAV:id_4                  | 1998-04-08   |       2.31 |   0.0003 | 1038061.18 |
  | NOAA_STAC       | DigitalCoast_DAV:id_3                  | 1997-10-12   |       0.64 |   0.0001 | 1001673.78 |
-=================================================================================================================
- TOTAL DATASETS: 24 | ESTIMATED PAYLOAD: 10463.93 GB 
-=================================================================================================================
+=======================================================================================================================================
+ TOTAL DATASETS: 23 | ESTIMATED PAYLOAD: 11059.03 GB | QUERY TIME: 13.50s 
+---------------------------------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
+=======================================================================================================================================
 ```
-*(Notice the `NOAA_STAC id_9036` footprint. If a dataset is cataloged but physically `404` deleted internally off AWS S3 by NOAA, `als-finder` dynamically falls back to a secure `N/A` without catastrophically crashing the orchestration pipeline).*
+
+*Note on column values:*
+* **Date**: If a provider only reports the collection year, missing months or days are displayed as `??` (e.g., `2022-??-??`).
+* **Est (GB)**: This is an estimated payload size. Because registries don't always publish exact file sizes, this is approximated using the total project area and point density.
+* **pts/m2**: Point density. Depending on the provider, this may be an exact metadata value or an estimated average across the entire project footprint.
 
 ### 2. Filtering by Dataset Name (`--name`)
-If you specifically know the title format of your target distributions, you can aggressively intercept queries before discovery utilizing wildcards `*`, exact phrases, or fully-compiled Regular Expressions (prefixed with `~`).
+If you know the title of your target dataset, you can filter the search using wildcards `*`, exact names, or regular expressions (prefixed with `~`).
+
+#### Finding Names via Exact String
+You can find a specific point cloud acquisition by using its exact title:
+```bash
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "CA_SierraNevada_5_2022" --workspace ./exact_sierra/
+```
+
+**Console Output:**
+```text
+=======================================================================================================================================
+ LiDAR Data Search Results 
+=======================================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+---------------------------------------------------------------------------------------------------------------------------------------
+ | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
+=======================================================================================================================================
+ TOTAL DATASETS: 1 | ESTIMATED PAYLOAD: 1380.20 GB | QUERY TIME: 3.14s
+---------------------------------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /home/user/exact_sierra/catalog/catalog.gpkg
+ JSON METADATA: /home/user/exact_sierra/catalog/manifest.json
+=======================================================================================================================================
+```
 
 #### Finding Names via Wildcard Strings
 ```bash
@@ -107,79 +131,88 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "*Tahoe*" --worksp
 
 **Console Output:**
 ```text
-=================================================================================================================
+=======================================================================================================================================
  LiDAR Data Search Results 
-=================================================================================================================
+=======================================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------
  | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
  | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
-=================================================================================================================
- TOTAL DATASETS: 2 | ESTIMATED PAYLOAD: 403.57 GB 
-=================================================================================================================
+=======================================================================================================================================
+ TOTAL DATASETS: 2 | ESTIMATED PAYLOAD: 403.57 GB | QUERY TIME: 4.12s 
+---------------------------------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /home/user/tahoe_wildcards/catalog/catalog.gpkg
+ JSON METADATA: /home/user/tahoe_wildcards/catalog/manifest.json
+=======================================================================================================================================
 ```
 
 #### Finding Names via Explicit Regex
-Prefix the query mathematically with a tilde `~` to securely compile advanced Python regex matchers (e.g. isolating exact `CA_Sierra` string structures):
+Prefix the query with a tilde `~` to use a python regular expression (e.g., finding datasets starting with `CA_Sierra`):
 ```bash
 als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "~^CA_Sierra.*" --workspace ./sierra_regex/
 ```
 
 **Console Output:**
 ```text
-=================================================================================================================
+=======================================================================================================================================
  LiDAR Data Search Results 
-=================================================================================================================
+=======================================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
  | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
-=================================================================================================================
- TOTAL DATASETS: 3 | ESTIMATED PAYLOAD: 3688.28 GB 
-=================================================================================================================
+=======================================================================================================================================
+ TOTAL DATASETS: 3 | ESTIMATED PAYLOAD: 3688.28 GB | QUERY TIME: 3.51s
+---------------------------------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /home/user/sierra_regex/catalog/catalog.gpkg
+ JSON METADATA: /home/user/sierra_regex/catalog/manifest.json
+=======================================================================================================================================
 ```
 
 ### 3. Filtering by Chronology
 
-#### Defining a Hard Start Date (`--start-date`)
-If you only need modern datasets acquired *after* a specific project mapping date, isolate the bounds strictly mathematically:
+#### Defining a Hard Start Date (`--date`)
+If you only need modern datasets acquired *after* a specific date:
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --start-date 2020-01-01 --workspace ./recent_lidar/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2020-01-01 --workspace ./recent_lidar/
 ```
 
 **Console Output:**
 ```text
-=================================================================================================================
+=======================================================================================================================================
  LiDAR Data Search Results 
-=================================================================================================================
+=======================================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
  | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
  | OpenTopography  | USFS Freds Fire Lidar, CA 2015         | 2022-06-07   |     150.04 |  31.3700 |     641.96 |
  | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
-=================================================================================================================
- TOTAL DATASETS: 5 | ESTIMATED PAYLOAD: 4271.48 GB 
-=================================================================================================================
+=======================================================================================================================================
+ TOTAL DATASETS: 5 | ESTIMATED PAYLOAD: 4271.48 GB | QUERY TIME: 4.89s
+---------------------------------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /home/user/recent_lidar/catalog/catalog.gpkg
+ JSON METADATA: /home/user/recent_lidar/catalog/manifest.json
+=======================================================================================================================================
 ```
 
-#### Defining a Temporal Range (`--start-date` & `--end-date`)
-You can explicitly isolate historical windows (e.g., exclusively target point clouds mapping a specific 5-year observation cycle):
+#### Defining a Temporal Range (`--date`)
+You can also search within specific historical windows (e.g., target point clouds collected during a 5-year span):
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --start-date 2015-01-01 --end-date 2019-12-31 --workspace ./historic_lidar/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2015-01-01/2019-12-31 --workspace ./historic_lidar/
 ```
 
 **Console Output:**
 ```text
-=================================================================================================================
+=======================================================================================================================================
  LiDAR Data Search Results 
-=================================================================================================================
+=======================================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
  | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
  | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  10.4100 |   26768.13 |
@@ -192,16 +225,19 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --start-date 2015-01-01 -
  | NOAA_STAC       | DigitalCoast_DAV:id_8979               | 2017-03-03   |       2.94 |   0.0033 |  120829.31 |
  | NOAA_STAC       | DigitalCoast_DAV:id_6259               | 2016-04-28   |     233.77 |   0.0300 | 1135103.73 |
  | NOAA_STAC       | DigitalCoast_DAV:id_5022               | 2015-06-19   |      63.84 |   0.0200 |  363554.90 |
-=================================================================================================================
- TOTAL DATASETS: 12 | ESTIMATED PAYLOAD: 6270.20 GB 
-=================================================================================================================
+=======================================================================================================================================
+ TOTAL DATASETS: 12 | ESTIMATED PAYLOAD: 6270.20 GB | QUERY TIME: 4.41s
+---------------------------------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /home/user/historic_lidar/catalog/catalog.gpkg
+ JSON METADATA: /home/user/historic_lidar/catalog/manifest.json
+=======================================================================================================================================
 ```
 
 ### 4. Filtering by Point Density & Quality Level (`--density`)
-You can natively isolate datasets bounded by mathematical spatial resolutions. `als-finder` supports both raw point density bounds (`pts/m2`) or explicit **USGS 3DEP Topographic Quality Levels (QL0-QL3)**.
+You can filter datasets based on target spatial resolutions. `als-finder` supports both numeric point density bounds (`pts/m2`) or USGS 3DEP Topographic Quality Levels (QL0-QL3).
 
-#### Filtering via USGS Topographic Quality Level (`--ql`)
-If you require strict federal fidelity (e.g., `QL1` representing `≥8.0 pts/m²`):
+#### Filtering via USGS Topographic Quality Level
+If you need a specific USGS Quality Level (e.g., `QL1` which guarantees `≥8.0 pts/m²`):
 
 ```bash
 als-finder search --roi ./examples/ltbmu_boundary.gpkg --density QL1 --workspace ./high_res/
@@ -209,11 +245,11 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --density QL1 --workspace
 
 **Console Output:**
 ```text
-=================================================================================================================
+=======================================================================================================================================
  LiDAR Data Search Results 
-=================================================================================================================
+=======================================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
  | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
@@ -225,13 +261,16 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --density QL1 --workspace
  | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
  | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
  | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
-=================================================================================================================
- TOTAL DATASETS: 11 | ESTIMATED PAYLOAD: 9192.89 GB 
-=================================================================================================================
+=======================================================================================================================================
+ TOTAL DATASETS: 11 | ESTIMATED PAYLOAD: 9192.89 GB | QUERY TIME: 3.98s
+---------------------------------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /home/user/high_res/catalog/catalog.gpkg
+ JSON METADATA: /home/user/high_res/catalog/manifest.json
+=======================================================================================================================================
 ```
 
 #### Filtering via Exact Point Density Ranges (`--density`)
-You can supply an explicit bounds using a standard ISO-8601 interval vector string (`min/max`):
+You can supply an explicit density range using a `min/max` format:
 
 ```bash
 als-finder search --roi ./examples/ltbmu_boundary.gpkg --density 2/10 --workspace ./mid_res/
@@ -239,36 +278,40 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --density 2/10 --workspac
 
 **Console Output:**
 ```text
-=================================================================================================================
+=======================================================================================================================================
  LiDAR Data Search Results 
-=================================================================================================================
+=======================================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
  | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
  | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
  | OpenTopography  | Walker Fault System, Nevada, 2015      | 2017-07-28   |      35.77 |   7.2700 |     660.41 |
  | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
  | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
-=================================================================================================================
- TOTAL DATASETS: 6 | ESTIMATED PAYLOAD: 881.36 GB 
-=================================================================================================================
+=======================================================================================================================================
+ TOTAL DATASETS: 6 | ESTIMATED PAYLOAD: 881.36 GB | QUERY TIME: 4.54s
+---------------------------------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /home/user/mid_res/catalog/catalog.gpkg
+ JSON METADATA: /home/user/mid_res/catalog/manifest.json
+=======================================================================================================================================
 ```
 
 ### 5. Filtering by Registry (`--provider`)
-To exclusively target high-density scientific sets hosted via USGS EPT bounds, supply explicit string overrides:
+To only search specific registries, supply the short-hand provider flags (`usgs`, `noaa`, or `opentopography`). These map directly to the formal output Table `Provider` columns (`USGS_EPT`, `NOAA_STAC`, `OpenTopography`).
 
+#### Single Provider
 ```bash
 als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider usgs --workspace ./usgs_only/
 ```
 
 **Console Output:**
 ```text
-=================================================================================================================
+=======================================================================================================================================
  LiDAR Data Search Results 
-=================================================================================================================
+=======================================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
------------------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
  | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
@@ -277,25 +320,123 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider usgs --workspa
  | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
  | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
  | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
-=================================================================================================================
- TOTAL DATASETS: 8 | ESTIMATED PAYLOAD: 7028.40 GB 
-=================================================================================================================
+=======================================================================================================================================
+ TOTAL DATASETS: 8 | ESTIMATED PAYLOAD: 7028.40 GB | QUERY TIME: 3.01s
+---------------------------------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /home/user/usgs_only/catalog/catalog.gpkg
+ JSON METADATA: /home/user/usgs_only/catalog/manifest.json
+=======================================================================================================================================
+```
+
+#### Multiple Providers
+You can pass the flag multiple times to search a specific combination of registries (e.g., pulling only `usgs` and `opentopography`):
+
+```bash
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider usgs --provider opentopography --workspace ./combo/
+```
+
+**Console Output:**
+```text
+=======================================================================================================================================
+ LiDAR Data Search Results 
+=======================================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+---------------------------------------------------------------------------------------------------------------------------------------
+ | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
+ | OpenTopography  | USFS Freds Fire Lidar, CA 2015         | 2022-06-07   |     150.04 |  31.3700 |     641.96 |
+ | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
+ | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
+ | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
+ | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
+ | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
+ | OpenTopography  | Walker Fault System, Nevada, 2015      | 2017-07-28   |      35.77 |   7.2700 |     660.41 |
+ | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
+ | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
+ | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
+=======================================================================================================================================
+ TOTAL DATASETS: 13 | ESTIMATED PAYLOAD: 7623.49 GB | QUERY TIME: 12.81s 
+---------------------------------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /home/user/combo/catalog/catalog.gpkg
+ JSON METADATA: /home/user/combo/catalog/manifest.json
+=======================================================================================================================================
 ```
 
 ### 6. Updating Catalogs (Atomic Rollbacks)
-The generated `manifest.json` permanently logs your original parameters (`roi`, `dates`, `densities`, `providers`). To explicitly query the federal registries for *newly published data* structurally merging onto your bounds later, rely on the implicit sequence:
+The generated `manifest.json` logs your original parameters (`roi`, `dates`, `densities`, `providers`). To quickly check the federal registries for newly published data in your project area, simply run:
 ```bash
 als-finder update --workspace ./my_lidar_project/
 ```
-*(Note: To explicitly guard your indexing traces natively, an `update` mathematically generates a historical backup of the old `manifest.json`, `catalog.csv`, and `catalog.gpkg` logically stamped with immutable UTC bounds before overwriting the primary vectors).*
+*(Note: During an `update`, `als-finder` makes a timestamped backup of your old `manifest.json`, `catalog.csv`, and `catalog.gpkg` before pulling new indexing results, ensuring your old references are never lost).*
+
+---
+
+## 💾 Stage 2: Downloading & Subsetting
+
+To prevent catastrophic hard drive consumption and perfectly align local executions with High-Performance Computing (HPC) workflows, `als-finder` enforces a strict, unbreakable safety barrier between "Search" and "Download".
+
+### The Two-Step Safety Pipeline
+1. **The Search**: Run `search` to establish a project and dynamically locate the metadata array.
+2. **The Subsetting Generation**: Run `download`. The pipeline will **never** physical download binary LiDAR data by default. It mathematically clips the target acquisitions against your input `--roi` polygon, generating a tiny list of intersecting `.laz` file URLs mapped strictly to a `fetch_array.csv`. 
+3. **The Execution**: You explicitly execute the CSV locally by appending the `--execute` flag, or seamlessly feed the `.csv` text list into an HPC scheduler for raw distribution.
+
+### 7.1 Generating the Fetch List
+Assume you executed a tight search query dropping a 1km x 1km bounding box square strictly over an area of interest inside the `CA_SierraNevada_5_2022` USGS footprint:
+
+```bash
+als-finder search --roi "-120.0,39.0,-119.99,39.01" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
+als-finder download --workspace ./tiny_subset/
+```
+
+**Console Output:**
+```text
+[INFO] Parsed 1 target dataset from manifest.json.
+[INFO] Resolving spatial tile index for USGS_EPT CA_SierraNevada_5_2022...
+[SUCCESS] Identified 2 overlapping .laz tiles geographically intersecting your ROI bounds.
+[SUCCESS] Generated target URI list: /home/user/tiny_subset/catalog/fetch_array.csv
+[================================================================================]
+[WARNING] Dry-run generated. No physical binaries were formally downloaded to your PC. 
+[WARNING] To automatically pull this payload, re-run with: --execute
+[================================================================================]
+```
+
+### 7.2 Executing a Local Download (`--execute`)
+If you visually verify the tile payload is safe for your local hard drive capacity, you formally pull the arrays into a strict `Hive-Partitioned` database struct:
+
+```bash
+als-finder download --workspace ./tiny_subset/ --execute
+```
+
+**Resulting Hive Workspace Structure:**
+```text
+tiny_subset/
+├── catalog/
+│   ├── catalog.gpkg
+│   ├── fetch_array.csv
+│   └── manifest.json
+└── data/
+    └── USGS_EPT/
+        └── CA_SierraNevada_5_2022/
+            ├── LAZ_0001.laz
+            └── LAZ_0002.laz
+```
+
+### 7.3 HPC Array Workflows (Expanse / Slurm)
+Because `als-finder` natively isolates the source URLs against precise `data/...` output routing paths inside the CSV, you never use the `--execute` flag on an HPC Head Node. You securely build your `fetch_array.csv` offline, and simply push that list natively into `sbatch`:
+
+```bash
+# Example generic fetching parallelization loop on Expanse
+sbatch --array=1-1000 wget_fetcher.sh ./tiny_subset/catalog/fetch_array.csv
+```
 
 ---
 
 ## 🏛️ Acknowledgements & Authorship
 
-This software is released under the open-source **MIT License**, with active copyright assignment physically granted to **Jonathan Greenberg**. 
+This software is released under the open-source **MIT License**. Copyright **Jonathan Greenberg**. 
 
 **Project Authors & Contributors:**
 * **Jonathan Greenberg** (University of Nevada, Reno): Lead Developer and Core Project Architect.
 * **Andrew Hudak** (US Forest Service): Provided critical advisory feedback and domain tracking under joint grant alignment.
-* **Antigravity (Google DeepMind)**: Acted as the primary Staff AI Software Engineer physically architecting the pipeline dependencies, cloud-native endpoints, and metadata matrices alongside Jonathan.
+* **Antigravity (Google DeepMind)**: Acted as the primary AI Software Engineer alongside Jonathan.

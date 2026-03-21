@@ -7,16 +7,16 @@ class BaseProvider(ABC):
     """Abstract base class for LiDAR data providers."""
 
     @abstractmethod
-    def search(self, roi: Polygon, **kwargs) -> List[Dict[str, Any]]:
+    def search(self, roi: Optional[Polygon] = None, **kwargs) -> List[Dict[str, Any]]:
         """
-        Search for datasets within the ROI.
+        Search for datasets within the ROI or across global footprints using mathematical API intercepts.
 
         Args:
-            roi (Polygon): Region of Interest.
-            **kwargs: Additional search parameters (dates, density, etc.)
+            roi (Optional[Polygon]): Region of Interest boundary mapping. If None, queries mathematically skip initial geometric intercept arrays bounding universally.
+            **kwargs: Additional search parameters mapped natively into local provider filter mechanisms (e.g., `name`, `start_date`, `end_date`, `min_density`, `max_density`).
 
         Returns:
-            List[Dict]: A list of metadata dictionaries for found datasets.
+            List[Dict]: A list of metadata dictionaries uniformly mapping exactly found datasets dynamically intercepted natively.
         """
         pass
 

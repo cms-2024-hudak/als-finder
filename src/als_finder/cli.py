@@ -3,6 +3,7 @@ import logging
 import json
 import os
 import shutil
+from pathlib import Path
 from datetime import datetime
 import time
 from dotenv import load_dotenv
@@ -10,6 +11,7 @@ from als_finder.core.input_manager import load_roi, ROIError
 from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvider
 
 from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvider
+from als_finder.download import generate_fetch_array, execute_fetch_array
 
 # Configure logging
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s:%(name)s:%(message)s')
@@ -23,14 +25,28 @@ def cli(verbose):
         logging.getLogger().setLevel(logging.INFO)
 
 @cli.command()
-@click.option('--roi', required=True, help='Path to ROI file (GeoJSON/Shapefile) or BBox string')
+@click.option('--roi', required=False, help='Path to ROI file (GeoJSON/Shapefile) or BBox string')
 @click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex e.g. ~^USGS)')
 @click.option('--date', help='Temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
 @click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
 @click.option('--workspace', help='Path to project workspace directory')
 @click.option('--provider', multiple=True, default=['usgs', 'noaa', 'opentopography'], help='Provider(s) to search')
-def search(roi, name, date, density, workspace, provider):
+@click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
+@click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
+def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
     """Search for available LiDAR data."""
+    start_time_exec = time.time()
+    
+    if ot_key:
+        env_path = Path.cwd() / '.env'
+        with open(env_path, 'a') as f:
+            f.write(f"\nOPENTOPOGRAPHY_API_KEY={ot_key}\n")
+        os.environ['OPENTOPOGRAPHY_API_KEY'] = ot_key
+        logger.info(f"OpenTopography API key successfully cached locally to {env_path}")
+        
+    if not (roi or name or date or density):
+        raise click.UsageError("At least one filter (--roi, --name, --date, or --density) must be provided to execute a pipeline search securely avoiding arbitrary global extraction ceilings.")
+
     start_date, end_date = None, None
     if date:
         if '/' in date:
@@ -76,8 +92,14 @@ def search(roi, name, date, density, workspace, provider):
     
     try:
         # Parse and validate the ROI
-        roi_geom = load_roi(roi)
-        logger.info(f"ROI Loaded: {roi_geom.geom_type} with bounds {roi_geom.bounds}")
+        roi_geom = None
+        if roi:
+            roi_geom = load_roi(roi)
+            logger.info(f"ROI Loaded: {roi_geom.geom_type} with bounds {roi_geom.bounds}")
+        else:
+            logger.warning("No ROI provided! Querying the global index natively.")
+            if not click.confirm("Are you sure you want to query the entire global index without a spatial boundary?"):
+                raise click.Abort()
         
         # Initialize Providers
         active_providers = []
@@ -96,7 +118,15 @@ def search(roi, name, date, density, workspace, provider):
 
             try:
                 logger.info(f"Searching {p.__class__.__name__}...")
-                results = p.search(roi_geom)
+                results = p.search(
+                    roi=roi_geom,
+                    name=name,
+                    start_date=start_date,
+                    end_date=end_date,
+                    min_density=min_density,
+                    max_density=max_density,
+                    cloud_native=cloud_native
+                )
                 final_results.extend(results)
             except Exception as e:
                 logger.error(f"Search failed for {p.__class__.__name__}: {e}")
@@ -281,10 +311,15 @@ def search(roi, name, date, density, workspace, provider):
                 print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_gb_str:>{col_widths['Est (GB)']}} | {density_str:>{col_widths['pts/m2']}} | {area_str:>{col_widths['Area km2']}} |")
             
             print("=" * len(header))
-            print(f" TOTAL DATASETS: {len(unique_results)} | ESTIMATED PAYLOAD: {total_size_gb:.2f} GB ")
+            query_time = time.time() - start_time_exec
+            print(f" TOTAL DATASETS: {len(unique_results)} | ESTIMATED PAYLOAD: {total_size_gb:.2f} GB | QUERY TIME: {query_time:.2f}s ")
+            print("-" * len(header))
+            print(f" CATALOG TBL: {os.path.abspath(output_gpkg)}")
+            print(f" JSON METADATA: {os.path.abspath(output_manifest)}")
             print("=" * len(header) + "\n")
         else:
-            print("\nNo datasets found for the given ROI.\n")
+            query_time = time.time() - start_time_exec
+            print(f"\n=================================================================================================================\n TOTAL DATASETS: 0 | ESTIMATED PAYLOAD: 0.00 GB | QUERY TIME: {query_time:.2f}s \n=================================================================================================================\n")
 
         # Construct JSON Metadata Headers
         now_utc = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
@@ -392,11 +427,19 @@ def search(roi, name, date, density, workspace, provider):
 @click.option('--date', help='Override temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
 @click.option('--density', help='Override point density filter or QL Level (e.g. QL1)')
 @click.option('--provider', multiple=True, help='Override provider(s)')
+@click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
 @click.pass_context
-def update(ctx, workspace, name, date, density, provider):
+def update(ctx, workspace, name, date, density, provider, ot_key):
     """Update an existing workspace catalog, preserving historical parameters and invoking atomic rollbacks."""
     catalog_dir = os.path.join(workspace, 'catalog')
     manifest_path = os.path.join(catalog_dir, 'manifest.json')
+    
+    if ot_key:
+        env_path = Path.cwd() / '.env'
+        with open(env_path, 'a') as f:
+            f.write(f"\nOPENTOPOGRAPHY_API_KEY={ot_key}\n")
+        os.environ['OPENTOPOGRAPHY_API_KEY'] = ot_key
+        logger.info(f"OpenTopography API key successfully cached locally to {env_path}")
     
     # Secure API Key Isolation
     env_path = os.path.join(workspace, '.env')
@@ -443,50 +486,41 @@ def update(ctx, workspace, name, date, density, provider):
 
 
 @cli.command()
-@click.option('--manifest', help='Path to generated manifest.json from search step')
-@click.option('--tile-url', help='Download a single specific tile laz URL')
-@click.option('--output-dir', default='./data/input/lidar/source=usgs', help='Output directory for downloaded .laz files')
-def download(manifest, tile_url, output_dir):
-    """Download LiDAR data from manifest or single URL."""
-    if not manifest and not tile_url:
-        raise click.UsageError("Must provide either --manifest or --tile-url")
+@click.pass_context
+@click.option('--workspace', required=True, help='Path to target workspace directory containing the manifest.json')
+@click.option('--roi', help='Path to spatial boundary file (.geojson, .gpkg, .shp) to dynamically mask downloads.')
+@click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex e.g. ~^USGS)')
+@click.option('--date', help='Date filter YYYY-MM-DD or range YYYY-MM-DD/YYYY-MM-DD')
+@click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
+@click.option('--provider', multiple=True, default=['usgs', 'noaa', 'opentopography'], help='Provider(s) to search')
+@click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
+@click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
+@click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats to the local drive natively.')
+@click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull the entirely comprehensive upstream dataset payload natively.')
+def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full):
+    """Generate target fetch arrays or physically download filtered binary segments directly to the Hive local cache."""
+    workspace_path = Path(workspace)
+    fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
+    manifest_path = workspace_path / 'catalog' / 'manifest.json'
     
-    logger.info(f"Starting download process to {output_dir}...")
-    
-    urls_to_download = []
-    
-    if tile_url:
-        urls_to_download.append(tile_url)
-    
-    if manifest:
-        try:
-            with open(manifest, 'r') as f:
-                data = json.load(f)
-                datasets = data.get('datasets', data) # Support both legacy and new header structural schemas natively
-                for item in datasets:
-                    if item.get('url'):
-                        urls_to_download.append(item['url'])
-        except Exception as e:
-            logger.error(f"Failed to read manifest {manifest}: {e}")
-            raise click.ClickException(str(e))
+    # Always naturally generate the dry-run array matrix organically unless explicitly instructed to blindly execute 
+    # (And even then, if it doesn't physically exist, mathematically generate it first)
+    if not fetch_array_path.exists() or not execute:
+        
+        if not manifest_path.exists():
+            logger.info(f"No existing manifest.json found at {workspace_path}. Seamlessly spawning a dynamic search...")
+            ctx.invoke(search, roi=roi, name=name, date=date, density=density, workspace=workspace, provider=provider, cloud_native=cloud_native, ot_key=ot_key)
             
-    logger.info(f"Collected {len(urls_to_download)} tiles to download.")
-    
-    usgs_provider = USGSProvider()
-    
-    success_count = 0
-    for url in urls_to_download:
-        if "doi.org" in url or "opentopography.org" in url:
-            logger.warning(f"Skipping OpenTopography DOI download ({url}). OT does not export direct streaming endpoints internally natively.")
-            continue
-            
-        try:
-            usgs_provider.download(tile_url=url, output_dir=output_dir)
-            success_count += 1
-        except Exception as e:
-            logger.error(f"Failed to download {url}: {e}")
-            
-    logger.info(f"Download complete. {success_count}/{len(urls_to_download)} successful.")
+            if not manifest_path.exists():
+                logger.error("The internal search failed to establish a rigid catalog boundary. Aborting download generation.")
+                sys.exit(1)
+                
+        logger.info("Executing Mode C: Array Fetch Generation (Dry-Run)")
+        generate_fetch_array(workspace_path=workspace_path, roi_path=roi, full_acquisition=full)
+        
+    if execute:
+        logger.info("Executing Mode A/B: Physical Core Download Protocol")
+        execute_fetch_array(workspace_path=workspace_path)
 
 if __name__ == '__main__':
     cli()
