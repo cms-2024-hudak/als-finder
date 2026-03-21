@@ -147,11 +147,11 @@ def search(roi, start_date, end_date, workspace, quiet, provider):
                     "Name": 38,
                     "Date": 12,
                     "Est (GB)": 10,
-                    "Density": 8,
+                    "pts/m2": 8,
                     "Area km2": 10
                 }
                 
-                header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Date':<{col_widths['Date']}} | {'Est (GB)':<{col_widths['Est (GB)']}} | {'Density':<{col_widths['Density']}} | {'Area km2':<{col_widths['Area km2']}} |"
+                header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Date':<{col_widths['Date']}} | {'Est (GB)':<{col_widths['Est (GB)']}} | {'pts/m2':<{col_widths['pts/m2']}} | {'Area km2':<{col_widths['Area km2']}} |"
                 print("\n" + "=" * len(header))
                 print(" LiDAR Data Search Results ")
                 print("=" * len(header))
@@ -193,11 +193,11 @@ def search(roi, start_date, end_date, workspace, quiet, provider):
                              size_gb = f"{int(item.get('size')) / (1024**3):.2f}"
                          except:
                              pass
-                            
-                    density = str(item.get('point_density', 'N/A'))[:col_widths['Density']]
+                           
+                    density = str(item.get('point_density', 'N/A'))[:col_widths['pts/m2']]
                     area = str(item.get('area_sqkm', 'N/A'))[:col_widths['Area km2']]
                     
-                    print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_gb:<{col_widths['Est (GB)']}} | {density:<{col_widths['Density']}} | {area:<{col_widths['Area km2']}} |")
+                    print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_gb:<{col_widths['Est (GB)']}} | {density:<{col_widths['pts/m2']}} | {area:<{col_widths['Area km2']}} |")
                 
                 print("=" * len(header))
                 print(f" TOTAL DATASETS: {len(unique_results)} | ESTIMATED PAYLOAD: {total_size_gb:.2f} GB ")

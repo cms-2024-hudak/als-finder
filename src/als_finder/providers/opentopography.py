@@ -126,17 +126,43 @@ class OpenTopographyProvider(BaseProvider):
                 if geom and geom.get('type') == 'FeatureCollection' and geom.get('features'):
                     geom = geom['features'][0].get('geometry')
 
+                point_count = meta.get('ptCount') or meta.get('pointCount')
+                point_density = meta.get('pointDensity')
+
+                # STAC/XML often drops High-Res Point Data. Let's dynamically regex the OpenTopography HTML Portal!
+                dataset_url = meta.get('url')
+                if not point_density and dataset_url:
+                    try:
+                        import re
+                        html_resp = self.session.get(dataset_url, timeout=4).text
+                        density_match = re.search(r'([\d\.,]+)\s*pts/m', html_resp, re.IGNORECASE)
+                        if density_match:
+                            point_density = float(density_match.group(1).replace(',', ''))
+                        
+                        pts_match = re.search(r'Point Count(?:<[^>]+>\s*)*[:]*\s*([0-9,]+)', html_resp, re.IGNORECASE)
+                        if pts_match:
+                            point_count = int(pts_match.group(1).replace(',', ''))
+                    except Exception as e:
+                        logger.debug(f"Failed OT DOM Intercept for {dataset_url}: {e}")
+
+                # Impute missing point counts geometrically using Density * Area (m2)
+                if point_density and area and not point_count:
+                    try:
+                        point_count = int(float(point_density) * float(area) * 1e6)
+                    except:
+                        pass
+
                 results.append({
                     "provider": "OpenTopography",
                     "dataset_id": dataset_id,
                     "name": meta.get('name') or meta.get('alternateName'),
                     "description": meta.get('description', ''),
-                    "url": meta.get('url'),
+                    "url": dataset_url,
                     "bounds": None, 
                     "geometry": geom,
                     "date": meta.get('dateCreated'),
-                    "point_count": meta.get('ptCount') or meta.get('pointCount'), 
-                    "point_density": meta.get('pointDensity'),
+                    "point_count": point_count, 
+                    "point_density": point_density,
                     "area_sqkm": area,
                     # Store raw for full context
                     "raw_metadata": meta
