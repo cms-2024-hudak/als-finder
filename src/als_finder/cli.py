@@ -12,26 +12,26 @@ from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvi
 from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvider
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
 
 @click.group()
-def cli():
+@click.option('-v', '--verbose', is_flag=True, help='Enable verbose execution logging')
+def cli(verbose):
     """LiDAR Data Finder CLI"""
-    pass
+    if verbose:
+        logging.getLogger().setLevel(logging.INFO)
 
 @cli.command()
 @click.option('--roi', required=True, help='Path to ROI file (GeoJSON/Shapefile) or BBox string')
 @click.option('--start-date', help='Start date (YYYY-MM-DD)')
 @click.option('--end-date', help='End date (YYYY-MM-DD)')
 @click.option('--workspace', help='Path to project workspace directory')
-@click.option('--quiet', is_flag=True, help='Suppress standard terminal output')
 @click.option('--provider', multiple=True, default=['usgs', 'noaa', 'opentopography'], help='Provider(s) to search')
-def search(roi, start_date, end_date, workspace, quiet, provider):
+def search(roi, start_date, end_date, workspace, provider):
     """Search for available LiDAR data."""
-    if not quiet:
-        logger.info(f"Searching for data in ROI: {roi}")
-        logger.info(f"Providers: {provider}")
+    logger.info(f"Searching for data in ROI: {roi}")
+    logger.info(f"Providers: {provider}")
     
     # Workspace Validation
     if not workspace:
@@ -56,8 +56,7 @@ def search(roi, start_date, end_date, workspace, quiet, provider):
     try:
         # Parse and validate the ROI
         roi_geom = load_roi(roi)
-        if not quiet:
-            logger.info(f"ROI Loaded: {roi_geom.geom_type} with bounds {roi_geom.bounds}")
+        logger.info(f"ROI Loaded: {roi_geom.geom_type} with bounds {roi_geom.bounds}")
         
         # Initialize Providers
         active_providers = []

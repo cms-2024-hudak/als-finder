@@ -134,7 +134,7 @@ class OpenTopographyProvider(BaseProvider):
                 if not point_density and dataset_url:
                     try:
                         import re
-                        html_resp = self.session.get(dataset_url, timeout=4).text
+                        html_resp = self.session.get(dataset_url, timeout=15).text
                         density_match = re.search(r'([\d\.,]+)\s*pts/m', html_resp, re.IGNORECASE)
                         if density_match:
                             point_density = float(density_match.group(1).replace(',', ''))
