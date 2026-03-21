@@ -128,7 +128,15 @@ def search(roi, start_date, end_date, workspace, provider):
                     
                     if count and not item.get('point_density') and area_sqm > 0:
                         density = float(count) / area_sqm
-                        item['point_density'] = round(density, 2)
+                        if density < 0.01:
+                            item['point_density'] = round(density, 4)
+                        else:
+                            item['point_density'] = round(density, 2)
+                    elif item.get('point_density') and not count and area_sqm > 0:
+                        imputed_count = int(float(item.get('point_density')) * area_sqm)
+                        item['point_count'] = imputed_count
+                        # Automatically track the new sizes globally
+                        item['size'] = imputed_count * 8 
             except Exception as e:
                 logger.debug(f"Failed calculating density: {e}")
 

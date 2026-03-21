@@ -134,7 +134,7 @@ class OpenTopographyProvider(BaseProvider):
                 if not point_density and dataset_url:
                     try:
                         import re
-                        html_resp = self.session.get(dataset_url, timeout=15).text
+                        html_resp = requests.get(dataset_url, timeout=15).text
                         density_match = re.search(r'([\d\.,]+)\s*pts/m', html_resp, re.IGNORECASE)
                         if density_match:
                             point_density = float(density_match.group(1).replace(',', ''))
@@ -143,7 +143,7 @@ class OpenTopographyProvider(BaseProvider):
                         if pts_match:
                             point_count = int(pts_match.group(1).replace(',', ''))
                     except Exception as e:
-                        logger.debug(f"Failed OT DOM Intercept for {dataset_url}: {e}")
+                        logger.warning(f"Failed OT DOM Intercept for {dataset_url}: {e}")
 
                 # Impute missing point counts geometrically using Density * Area (m2)
                 if point_density and area and not point_count:
