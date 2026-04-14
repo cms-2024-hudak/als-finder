@@ -1,7 +1,7 @@
 geopandas
 shapely
 requests
-# pdal
+pdal
 laspy
 fiona
 boto3

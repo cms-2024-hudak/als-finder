@@ -8,6 +8,8 @@ dependencies:
   - shapely
   - pyproj
   - pyogrio
+  - pdal
+  - python-pdal
   - requests
   - click
   - python-dotenv

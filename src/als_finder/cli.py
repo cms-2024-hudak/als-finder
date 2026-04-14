@@ -3,6 +3,7 @@ import logging
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 from datetime import datetime
 import time
@@ -513,7 +514,9 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
 @click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats to the local drive natively.')
 @click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull the entirely comprehensive upstream dataset payload natively.')
-def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full):
+@click.option('--normalize', is_flag=True, help='Execute PDAL normalization concurrently after extracting binaries.')
+@click.option('--crs', help='Specify target output projection for normalization (e.g. EPSG:5070)')
+def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, normalize, crs):
     """Generate target fetch arrays or physically download filtered binary segments directly to the Hive local cache."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -537,6 +540,72 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
     if execute:
         logger.info("Executing Mode A/B: Physical Core Download Protocol")
         execute_fetch_array(workspace_path=workspace_path)
+        
+        if normalize:
+            logger.info("Executing Mode D: PDAL Normalization")
+            ctx.invoke(normalize_cmd, workspace=workspace, crs=crs, roi=roi)
+
+@cli.command(name='normalize')
+@click.option('--workspace', required=True, help='Path to target workspace containing downloaded raw binaries.')
+@click.option('--crs', required=False, help='Target coordinate projection (e.g. EPSG:5070)')
+@click.option('--roi', required=False, help='Geospatial boundary to crop overlapping points dynamically.')
+def normalize_cmd(workspace, crs, roi):
+    """Execute PDAL Normalization matrices on locally downloaded LiDAR binaries."""
+    workspace_path = Path(workspace)
+    fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
+    
+    if not fetch_array_path.exists():
+        raise click.ClickException(f"Missing fetch array in {workspace}. Execute a download structure first.")
+        
+    try:
+        import pdal
+    except ImportError:
+        raise click.ClickException("pdal library missing. You must install 'pdal' and 'python-pdal' via Conda to normalize.")
+        
+    logger.info("Initializing PDAL Pipeline Standardization")
+    if not crs:
+        # Default global recommendation dynamically applied
+        crs = "EPSG:5070"
+        logger.info(f"No explicit CRS selected. Defaulting safely to Standard CONUS Albers: {crs}")
+    else:
+        logger.info(f"Target CRS strictly enforced: {crs}")
+        
+    from als_finder.core.normalization import run_pdal_normalization
+    
+    roi_poly = None
+    if roi:
+        try:
+            roi_poly = load_roi(roi)
+            logger.info("Masking PDAL crop footprint to valid ROI bounds to eliminate buffered overlap.")
+        except ROIError as e:
+            logger.warning(f"ROI parsing failed: {e}. Skipping exact spatial crop.")
+            
+    import csv
+    with open(fetch_array_path, 'r') as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        
+    from concurrent.futures import ThreadPoolExecutor
+    
+    def norm_worker(row):
+        target_path = Path(row['target_path'])
+        prov = row['provider']
+        
+        if not target_path.exists():
+            return "MISSING_SOURCE"
+            
+        res = run_pdal_normalization(target_path, crs, roi_poly, prov)
+        return "SUCCESS" if res else "FAILED"
+        
+    logger.info(f"Processing {len(rows)} matrices into standard {crs} topologies...")
+    
+    s_ct = 0
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        for result in executor.map(norm_worker, rows):
+            if result == "SUCCESS":
+                s_ct += 1
+                
+    logger.info(f"[SUCCESS] Normalization Complete. {s_ct}/{len(rows)} payloads formatted natively.")
 
 if __name__ == '__main__':
     cli()
