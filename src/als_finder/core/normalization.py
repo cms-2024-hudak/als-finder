@@ -40,10 +40,25 @@ def run_pdal_normalization(
     
     # 1. Reprojection filter
     if crs:
+        # Dynamically intercept UTM requests
+        target_crs = crs
+        if crs.lower() == 'auto-utm':
+            if roi_poly:
+                import math
+                centroid = roi_poly.centroid
+                lon, lat = centroid.x, centroid.y
+                zone = math.floor((lon + 180) / 6.0) + 1
+                epsg = 32600 + zone if lat >= 0 else 32700 + zone
+                target_crs = f"EPSG:{epsg}"
+                logger.info(f"Dynamically mapped auto-utm to local zone: {target_crs}")
+            else:
+                logger.warning("auto-utm requested but no ROI supplied. Falling back to EPSG:3857")
+                target_crs = "EPSG:3857"
+                
         # Standardize strictly into meters using the target explicitly
         pipeline.append({
             "type": "filters.reprojection",
-            "out_srs": crs
+            "out_srs": target_crs
         })
         
     # 2. Classification Harmonization (Placeholder for robust taxonomy mapping)

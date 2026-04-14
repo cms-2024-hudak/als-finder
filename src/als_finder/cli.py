@@ -515,7 +515,7 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats to the local drive natively.')
 @click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull the entirely comprehensive upstream dataset payload natively.')
 @click.option('--normalize', is_flag=True, help='Execute PDAL normalization concurrently after extracting binaries.')
-@click.option('--crs', help='Specify target output projection for normalization (e.g. EPSG:5070)')
+@click.option('--crs', help='Specify target output projection for normalization (e.g. EPSG:3857, EPSG:5070, or auto-utm)')
 def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, normalize, crs):
     """Generate target fetch arrays or physically download filtered binary segments directly to the Hive local cache."""
     workspace_path = Path(workspace)
@@ -547,7 +547,7 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
 
 @cli.command(name='normalize')
 @click.option('--workspace', required=True, help='Path to target workspace containing downloaded raw binaries.')
-@click.option('--crs', required=False, help='Target coordinate projection (e.g. EPSG:5070)')
+@click.option('--crs', required=False, help='Target coordinate projection (e.g. EPSG:3857, EPSG:5070, or auto-utm)')
 @click.option('--roi', required=False, help='Geospatial boundary to crop overlapping points dynamically.')
 def normalize_cmd(workspace, crs, roi):
     """Execute PDAL Normalization matrices on locally downloaded LiDAR binaries."""
@@ -565,8 +565,8 @@ def normalize_cmd(workspace, crs, roi):
     logger.info("Initializing PDAL Pipeline Standardization")
     if not crs:
         # Default global recommendation dynamically applied
-        crs = "EPSG:5070"
-        logger.info(f"No explicit CRS selected. Defaulting safely to Standard CONUS Albers: {crs}")
+        crs = "EPSG:3857"
+        logger.info(f"No explicit CRS selected. Defaulting safely to Global Web Mercator natively: {crs}")
     else:
         logger.info(f"Target CRS strictly enforced: {crs}")
         
