@@ -32,7 +32,7 @@ def run_pdal_normalization(
         logger.error("Critical Error: 'pdal' or 'python-pdal' not found in environment. Please install pdal to use normalization.")
         return None
         
-    out_path = input_path.parent / f"{input_path.stem}_norm{input_path.suffix}"
+    out_path = input_path.parent / f"{input_path.stem}_norm.copc.laz"
     
     pipeline = [
         str(input_path.absolute())
@@ -63,12 +63,11 @@ def run_pdal_normalization(
             "polygon": roi_poly.wkt
         })
         
-    # Target Writer
+    # Target Writer (COPC: Cloud Optimized Point Cloud)
     pipeline.append({
-        "type": "writers.las",
+        "type": "writers.copc",
         "filename": str(out_path.absolute()),
-        "forward": "all",  # Forward all previous VLRs if possible
-        "extra_dims": "all" # Forward extra dimensions unconditionally
+        "forward": "all"
     })
     
     pdal_json = json.dumps(pipeline)
