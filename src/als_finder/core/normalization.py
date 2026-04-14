@@ -26,12 +26,6 @@ def run_pdal_normalization(
     Returns:
         Path to the newly normalized .laz file, or None if failed.
     """
-    try:
-        import pdal
-    except ImportError:
-        logger.error("Critical Error: 'pdal' or 'python-pdal' not found in environment. Please install pdal to use normalization.")
-        return None
-        
     out_path = input_path.parent / f"{input_path.stem}_norm.copc.laz"
     
     pipeline = [
@@ -75,7 +69,8 @@ def run_pdal_normalization(
     if roi_poly:
         pipeline.append({
             "type": "filters.crop",
-            "polygon": roi_poly.wkt
+            "polygon": roi_poly.wkt,
+            "a_srs": "EPSG:4326"
         })
         
     # Target Writer (COPC: Cloud Optimized Point Cloud)
@@ -88,10 +83,24 @@ def run_pdal_normalization(
     pdal_json = json.dumps(pipeline)
     
     try:
-        logger.info(f"Executing PDAL Normalization on {input_path.name} -> {crs}")
+        import pdal
+        logger.info(f"Executing standard python-pdal Normalization on {input_path.name} -> {target_crs}")
         p = pdal.Pipeline(pdal_json)
         p.execute()
         return out_path
+    except ImportError:
+        logger.warning("'python-pdal' not found natively; falling back directly to global PDAL CLI execution.")
+        import subprocess
+        try:
+            res = subprocess.run(['pdal', 'pipeline', '-s'], input=pdal_json.encode('utf-8'), capture_output=True, check=True)
+            logger.info(f"Successfully executed native PDAL pipeline on {input_path.name} -> {target_crs}")
+            return out_path
+        except FileNotFoundError:
+            logger.error("Critical Error: 'pdal' command not found globally or in Conda. Please install pdal to use normalization.")
+            return None
+        except subprocess.CalledProcessError as e:
+            logger.error(f"PDAL Pipeline execution failed natively for {input_path.name}: {e.stderr.decode('utf-8')}")
+            return None
     except Exception as e:
         logger.error(f"PDAL Pipeline execution failed natively for {input_path.name}: {e}")
         return None
