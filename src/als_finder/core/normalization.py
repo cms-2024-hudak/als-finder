@@ -26,7 +26,11 @@ def run_pdal_normalization(
     Returns:
         Path to the newly normalized .laz file, or None if failed.
     """
-    out_path = input_path.parent / f"{input_path.stem}_norm.copc.laz"
+    # Dynamically structuralize routing
+    raw_parent = str(input_path.parent)
+    standardized_parent = Path(raw_parent.replace('data/raw', 'data/standardized'))
+    standardized_parent.mkdir(parents=True, exist_ok=True)
+    out_path = standardized_parent / f"{input_path.stem}.copc.laz"
     
     pipeline = [
         str(input_path.absolute())
@@ -55,23 +59,35 @@ def run_pdal_normalization(
             "out_srs": target_crs
         })
         
-    # 2. Classification Harmonization (Placeholder for robust taxonomy mapping)
-    # E.g. if some provider uses 11 for ground, we map it to 2 per standard ASPRS.
-    if provider.upper() == 'NOAA_STAC':
-        # NOAA is typically decent, but example of how we could filter:
-        # pipeline.append({
-        #     "type": "filters.assign",
-        #     "assignment": "Classification[:]=2 WHERE Classification == 11"
-        # })
-        pass
-        
-    # 3. Crop geometrically if a polygon was physically declared
+    # 2. Crop geometrically if a polygon was physically declared natively to optimize algorithm boundaries
     if roi_poly:
         pipeline.append({
             "type": "filters.crop",
             "polygon": roi_poly.wkt,
             "a_srs": "EPSG:4326"
         })
+        
+    # 3. Scientific Taxonomy Overwrite & Morphological Surface Generation natively natively over local grids
+    pipeline.append({
+        "type": "filters.assign",
+        "assignment": "Classification[:]=1"  # Force wipe structural metadata to Unclassified
+    })
+    
+    pipeline.append({
+        "type": "filters.elm" # Identify massive isolated low points beneath the grid naturally assigning to class 7
+    })
+    
+    pipeline.append({
+        "type": "filters.outlier",
+        "method": "statistical",
+        "mean_k": 8,
+        "multiplier": 3.0 # Assign isolated airborne noise physically to class 18
+    })
+    
+    pipeline.append({
+        "type": "filters.smrf",
+        "ignore": "Classification[7:7], Classification[18:18]" # SMRF ignores noise actively scanning strictly for true ground (maps mapping mathematically to class 2)
+    })
         
     # Target Writer (COPC: Cloud Optimized Point Cloud)
     pipeline.append({

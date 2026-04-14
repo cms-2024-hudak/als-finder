@@ -557,9 +557,10 @@ def normalize_cmd(workspace, crs, roi):
     if not fetch_array_path.exists():
         raise click.ClickException(f"Missing fetch array in {workspace}. Execute a download structure first.")
         
+    import subprocess
     try:
-        import pdal
-    except ImportError:
+        subprocess.run(['pdal', '--version'], capture_output=True, check=True)
+    except Exception:
         raise click.ClickException("pdal library missing. You must install 'pdal' and 'python-pdal' via Conda to normalize.")
         
     logger.info("Initializing PDAL Pipeline Standardization")
