@@ -7,9 +7,9 @@ description: Project Directory Structure and Organization
 ## Top Level
 -   `src/`: **Source Code**. All application logic resides here.
     -   `als_finder/`: The main package.
--   `tests/`: **Tests**. Parallel structure to `src/`.
 -   `docs/`: **Documentation**. Plans, API docs, architecture notes.
 -   `.agent/`: **Agent Configuration**. Rules and workflows for the AI assistant.
+-   `scratch/`: **Scratch Space**. (Gitignored) Primary workspace for debugging scripts and local `tests/`.
 -   `data/`: **Local Data**. (Gitignored) Place to store input ROIs or output data during dev.
 -   `output/`: **Results**. (Gitignored) Default download destination.
 
