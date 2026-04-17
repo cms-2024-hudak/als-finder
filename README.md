@@ -419,8 +419,8 @@ als-finder update --workspace ./my_lidar_project/
 To prevent catastrophic hard drive consumption and perfectly align local executions with High-Performance Computing (HPC) workflows, `als-finder` enforces a strict, unbreakable safety barrier between "Search" and "Download".
 
 ### The Two-Step Safety Pipeline
-1. **The Search**: Run `search` to establish a project and dynamically locate the metadata array.
-2. **The Subsetting Generation**: Run `download`. The pipeline will **never** physical download binary LiDAR data by default. It mathematically clips the target acquisitions against your input `--roi` polygon, generating a tiny list of intersecting `.laz` file URLs mapped strictly to a `fetch_array.csv`. 
+1. **The Search**: Run `search` to establish a project and locate the metadata records.
+2. **The Subsetting Generation**: Run `download`. The pipeline will **never** physically download binary LiDAR data by default. It spatially intersects the target acquisitions against your input `--roi` polygon, generating a tiny list of overlapping `.laz` file URLs mapped to a `fetch_array.csv`. 
 3. **The Execution**: You explicitly execute the CSV locally by appending the `--execute` flag, or seamlessly feed the `.csv` text list into an HPC scheduler for raw distribution.
 
 ### 7.1 Generating the Fetch List
@@ -494,17 +494,17 @@ Because `als-finder` pulls data directly from decentralized public repositories 
 *   **Classification Constraints (ASPRS):** Different vendors use different classification integer mappings.
 *   **Format Bloat:** Some files are uncompressed `.las`, some are legacy `.laz`.
 
-To solve this completely, `als-finder` natively bundles an automated harmonization engine using PDAL.
+To solve this completely, `als-finder` includes an automated harmonization engine using PDAL.
 
 ---
 
 ## 🛠️ Stage 3: Normalization & Standardization
 
-The `normalize` command mathematically harmonizes your raw downloads into a strictly uniform standard. It executes the following pipeline on every single file in the `data/raw/` directory:
+The `normalize` command standardizes your raw downloads into a strictly uniform format. It executes the following pipeline on every single file in the `data/raw/` directory:
 
 1. **Format Upgrade:** Converts everything to Cloud Optimized Point Cloud (`.copc.laz`) for blazing-fast spatial indexing.
 2. **CRS Reprojection:** Reprojects everything to Web Mercator (`EPSG:3857`) by default, or dynamically calculates a local UTM zone using the `--crs auto-utm` flag.
-3. **Taxonomic Standardization:** Wipes legacy vendor classifications, dropping invalid points, and natively executing the SMRF (Simple Morphological Filter) algorithm to perfectly isolate the bare earth (Class 2) and vegetation (Class 1).
+3. **Taxonomic Standardization:** Wipes legacy vendor classifications, drops invalid points, and executes the SMRF (Simple Morphological Filter) algorithm to strictly classify the bare earth (Class 2) and vegetation (Class 1).
 
 ```bash
 als-finder normalize --workspace ./tiny_subset/
@@ -526,7 +526,7 @@ tiny_subset/
 
 ## 🌐 Stage 4: SpatioTemporal Asset Catalogs (`--stac`)
 
-By simply appending the `--stac` flag to your `normalize` command (or executing it natively), the engine structurally parses the normalized COPC files and generates formal `PySTAC` JSON Items. These can be dragged and dropped into QGIS or fed into cloud STAC APIs for immediate geographic indexing.
+By simply appending the `--stac` flag to your `normalize` command, the engine parses the normalized COPC files and generates formal `PySTAC` JSON Items. These can be dragged and dropped into QGIS or fed into cloud STAC APIs for immediate geographic indexing.
 
 ```bash
 als-finder normalize --workspace ./tiny_subset/ --stac
@@ -535,13 +535,13 @@ als-finder normalize --workspace ./tiny_subset/ --stac
 This populates a new directory natively in your catalog: `tiny_subset/catalog/stac/`.
 
 ### Why STAC?
-If you download 5,000 LiDAR tiles across 10 years and 8 different providers, manually finding the exact 4 tiles that cover a specific watershed on a specific date is nearly impossible without loading multi-gigabyte point clouds into GIS software. By generating a STAC catalog, `als-finder` creates lightweight JSON files that mathematically map the exact 3D bounding box, coordinate system, and acquisition date for every single point cloud, natively linking them together into a searchable hierarchy.
+If you download 5,000 LiDAR tiles across 10 years and 8 different providers, manually finding the exact 4 tiles that cover a specific watershed on a specific date is nearly impossible without loading multi-gigabyte point clouds into GIS software. By generating a STAC catalog, `als-finder` creates lightweight JSON files that store the exact 3D bounding box, coordinate system, and acquisition date for every single point cloud, linking them together into a searchable hierarchy.
 
 **1. The QGIS "Drag and Drop" Map Demo:**
 You can use the **QGIS STAC API Browser Plugin** and point it to the `catalog/stac/catalog.json` file. QGIS will instantly draw colored boxes over a basemap showing the exact footprint of every single LiDAR tile you downloaded, allowing you to visually browse your local database instantly.
 
 **2. The Python Data Science Query:**
-You can programmatically query your new local database natively without needing a SQL server using `pystac`:
+You can programmatically query your new local database without needing a SQL server using `pystac`:
 
 ```python
 import pystac
@@ -569,8 +569,8 @@ als-finder normalize --workspace ./tiny_subset/ --quicklook
 
 **What it generates:**
 1. **Ground Hillshade (DEM):** A shaded physical relief of the bare earth (Class 2).
-2. **Canopy Height Model (CHM):** A color-coded canopy height map (Blue=Earth, Green=Low Veg, Red=Tall Canopy) mathematically mapped using `filters.hag_nn`.
-3. **Master Catalog:** A beautiful HTML grid dynamically mapped into `catalog/quicklooks_index.html` displaying side-by-side previews, origin acquisition dates, and physical vs. estimated point densities for every tile.
+2. **Canopy Height Model (CHM):** A color-coded canopy height map (Blue=Earth, Green=Low Veg, Red=Tall Canopy) calculated using `filters.hag_nn`.
+3. **Master Catalog:** A simple HTML grid saved to `catalog/quicklooks_index.html` displaying side-by-side previews, origin acquisition dates, and physical vs. estimated point densities for every tile.
 
 ---
 
