@@ -585,6 +585,22 @@ als-finder normalize --workspace ./tiny_subset/ --quicklook
 
 ---
 
+## ⚡ The Mega Command (End-to-End Execution)
+
+If you have already defined your `--roi` and are ready to execute the entire lifecycle from public registry discovery to standard COPC, STAC indexing, and Quicklook generation without stopping at the safety barrier, you can chain the pipeline together:
+
+```bash
+# 1. Generate the Fetch List
+als-finder download --roi "-120.505, 39.015, -120.495, 39.016" --name "CA_SierraNevada_4_2022" --workspace ./my_lidar_project/
+
+# 2. Execute the Download, Harmonize, STAC index, and Preview
+als-finder normalize --workspace ./my_lidar_project/ --execute --stac --quicklook
+```
+
+*Note: The `--execute` flag can be passed directly to `normalize`. This tells the engine to first fulfill the pending `fetch_array.csv` downloads, and immediately transition into harmonization, STAC formatting, and QA/QC image generation natively.*
+
+---
+
 ## 🏛️ Acknowledgements & Authorship
 
 This software is released under the open-source **MIT License**. Copyright **Jonathan Greenberg**. 
