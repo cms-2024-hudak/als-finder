@@ -61,9 +61,13 @@ docker run --env-file .env -v $(pwd):/app/data als-finder:latest search --roi "-
 ```
 
 ### 2. Conda (Recommended for Local Dev)
-Conda natively handles downloading and compiling the complex C-binaries (GDAL) in the background automatically:
+Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. Since the package is currently in development, install it using the provided environment file:
+
 ```bash
-conda install -c conda-forge als-finder
+git clone https://github.com/cms-2024-hudak/als-finder.git
+cd als-finder
+conda env create -f environment.yml
+conda activate als-finder
 ```
 
 ### 3. Pip (Base Python/Linux)
