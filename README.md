@@ -71,8 +71,20 @@ conda activate als-finder
 ```
 
 ### 3. Pip (Base Python/Linux)
-*Note: Ensure you have GDAL and GEOS globally installed on your OS prior to running.*
+> [!WARNING]
+> **Important Note for Pip Users**
+> The pure `pip` installation is only recommended for running the `search` engine. The `normalize` engine heavily relies on the PDAL C++ library. While you can install the `python-pdal` binding via pip (`pip install als-finder[pdal]`), it will instantly fail unless you have manually installed the `libpdal-dev` binaries on your host OS. We highly recommend Docker or Conda for normalization tasks.
+
+To ensure a clean installation without conflicting with your system Python packages, always use a virtual environment:
+
 ```bash
+# 1. Create a clean virtual environment sandbox
+python3 -m venv .venv
+
+# 2. Activate the environment
+source .venv/bin/activate  # On Windows, use `.venv\Scripts\activate`
+
+# 3. Install the package
 pip install als-finder
 ```
 
