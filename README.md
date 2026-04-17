@@ -4,6 +4,17 @@
 
 `als-finder` gathers complete acquisition footprints (project boundaries), true WGS84 point densities, and metadata from **USGS**, **NOAA**, and **OpenTopography** into clean `.json` manifests and `QGIS`-ready `.gpkg` tables.
 
+## 📖 Table of Contents
+- [🔑 OpenTopography API Key Setup](#-opentopography-api-key-setup)
+- [🚀 Installation](#-installation)
+- [⚡ Usage & Full Tutorial (Stage 1)](#-usage--full-tutorial)
+- [💾 Stage 2: Downloading & Subsetting](#-stage-2-downloading--subsetting)
+- [⚠️ Data Processing: Caveats to Raw Downloads](#-data-processing-caveats-to-raw-downloads)
+- [🛠️ Stage 3: Normalization & Standardization](#-stage-3-normalization--standardization)
+- [🌐 Stage 4: SpatioTemporal Asset Catalogs (`--stac`)](#-stage-4-spatiotemporal-asset-catalogs--stac)
+- [📸 Stage 5: Visual QA/QC Quicklooks (`--quicklook`)](#-stage-5-visual-qaqc-quicklooks--quicklook)
+- [🏛️ Acknowledgements & Authorship](#-acknowledgements--authorship)
+
 ---
 
 ## 🔑 OpenTopography API Key Setup
