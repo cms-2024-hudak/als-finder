@@ -534,6 +534,29 @@ als-finder normalize --workspace ./tiny_subset/ --stac
 
 This populates a new directory natively in your catalog: `tiny_subset/catalog/stac/`.
 
+### Why STAC?
+If you download 5,000 LiDAR tiles across 10 years and 8 different providers, manually finding the exact 4 tiles that cover a specific watershed on a specific date is nearly impossible without loading multi-gigabyte point clouds into GIS software. By generating a STAC catalog, `als-finder` creates lightweight JSON files that mathematically map the exact 3D bounding box, coordinate system, and acquisition date for every single point cloud, natively linking them together into a searchable hierarchy.
+
+**1. The QGIS "Drag and Drop" Map Demo:**
+You can use the **QGIS STAC API Browser Plugin** and point it to the `catalog/stac/catalog.json` file. QGIS will instantly draw colored boxes over a basemap showing the exact footprint of every single LiDAR tile you downloaded, allowing you to visually browse your local database instantly.
+
+**2. The Python Data Science Query:**
+You can programmatically query your new local database natively without needing a SQL server using `pystac`:
+
+```python
+import pystac
+
+# Load the local master catalog
+catalog = pystac.Catalog.from_file("tiny_subset/catalog/stac/catalog.json")
+
+# Instantly iterate through thousands of LiDAR files locally
+for item in catalog.get_all_items():
+    print(f"Point Cloud: {item.id}")
+    print(f"Bounding Box: {item.bbox}")
+    print(f"Acquisition Date: {item.datetime}")
+    print(f"File Path: {item.assets['data'].href}")
+```
+
 ---
 
 ## 📸 Stage 5: Visual QA/QC Quicklooks (`--quicklook`)
