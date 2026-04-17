@@ -517,8 +517,8 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--normalize', is_flag=True, help='Execute PDAL normalization concurrently after extracting binaries.')
 @click.option('--crs', help='Specify target output projection for normalization (e.g. EPSG:3857, EPSG:5070, or auto-utm)')
 @click.option('--stac', is_flag=True, help='Dynamically generate PySTAC schema hierarchies out of the standardized payloads natively.')
-@click.option('--report', is_flag=True, help='Generate a rapid 2D visualization report for spot-checking.')
-def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, normalize, crs, stac, report):
+@click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
+def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, normalize, crs, stac, quicklook):
     """Generate target fetch arrays or physically download filtered binary segments directly to the Hive local cache."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -545,17 +545,17 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
         
         if normalize:
             logger.info("Executing Mode D: PDAL Normalization")
-            ctx.invoke(normalize_cmd, workspace=workspace, crs=crs, roi=roi, stac=stac, report=report)
-        elif stac or report:
-            logger.warning("STAC Generation and Reporting explicitly requires normalized .copc.laz entities. Ignoring --stac or --report flag without --normalize.")
+            ctx.invoke(normalize_cmd, workspace=workspace, crs=crs, roi=roi, stac=stac, quicklook=quicklook)
+        elif stac or quicklook:
+            logger.warning("STAC Generation and Quicklooks explicitly require normalized .copc.laz entities. Ignoring flags without --normalize.")
 
 @cli.command(name='normalize')
 @click.option('--workspace', required=True, help='Path to target workspace containing downloaded raw binaries.')
 @click.option('--crs', required=False, help='Target coordinate projection (e.g. EPSG:3857, EPSG:5070, or auto-utm)')
 @click.option('--roi', required=False, help='Geospatial boundary to crop overlapping points dynamically.')
 @click.option('--stac', is_flag=True, help='Dynamically generate PySTAC schema hierarchies out of the standardized payloads natively.')
-@click.option('--report', is_flag=True, help='Generate a rapid 2D visualization report for spot-checking.')
-def normalize_cmd(workspace, crs, roi, stac, report):
+@click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
+def normalize_cmd(workspace, crs, roi, stac, quicklook):
     """Execute PDAL Normalization matrices on locally downloaded LiDAR binaries."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -623,10 +623,10 @@ def normalize_cmd(workspace, crs, roi, stac, report):
         from als_finder.core.stac_generator import generate_catalog
         generate_catalog(workspace_path)
         
-    if report:
-        logger.info("Executing Mode F: Spot Check Reporting natively...")
-        from als_finder.core.reporting import generate_spotcheck_report
-        generate_spotcheck_report(workspace_path)
+    if quicklook:
+        logger.info("Executing Mode F: Quicklook QA/QC Generation natively...")
+        from als_finder.core.quicklooks import generate_quicklooks
+        generate_quicklooks(workspace_path)
 
 if __name__ == '__main__':
     cli()
