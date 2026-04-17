@@ -25,6 +25,15 @@ def generate_quicklooks(workspace: Path) -> bool:
         logger.warning(f"No standardized .copc.laz files found for quicklook generation.")
         return False
         
+    manifest_path = catalog_dir / "manifest.json"
+    manifest_data = {}
+    if manifest_path.exists():
+        with open(manifest_path, 'r') as f:
+            full_manifest = json.load(f)
+            datasets = full_manifest.get('datasets', [])
+            for ds in datasets:
+                manifest_data[ds.get('dataset_id')] = ds
+                
     success = True
     processed_reports = []
     
@@ -111,9 +120,17 @@ def generate_quicklooks(workspace: Path) -> bool:
             
             # --- 3. Extract Metadata ---
             logger.info(f"Extracting metadata for {sample_file.name}...")
+            
+            # Lookup origin metadata from manifest
+            dataset_name = sample_file.parent.name
+            origin_meta = manifest_data.get(dataset_name, {})
+            acq_date = origin_meta.get('date', 'Unknown')
+            provider_desc = origin_meta.get('description', '')
+            origin_density = origin_meta.get('pt_density', 'Unknown')
+            
             summary_res = subprocess.run(['pdal', 'info', '--summary', str(sample_file.absolute())], capture_output=True, check=True, text=True)
             summary_data = json.loads(summary_res.stdout).get('summary', {})
-            num_points = summary_data.get('summary', {}).get('num_points', 'Unknown')
+            num_points = summary_data.get('num_points', 'Unknown')
             if summary_data.get('bounds') and summary_data['bounds'].get('X'):
                 maxx = summary_data['bounds']['X'].get('max', 0)
                 minx = summary_data['bounds']['X'].get('min', 0)
@@ -133,8 +150,11 @@ def generate_quicklooks(workspace: Path) -> bool:
                 f.write(f"<p><strong>Source File:</strong> {sample_file.name}</p>")
                 f.write("<h3>Dataset Metadata</h3>")
                 f.write("<table border='1' cellpadding='5' style='border-collapse: collapse;'>")
-                f.write(f"<tr><td>Total Points</td><td>{num_points}</td></tr>")
-                f.write(f"<tr><td>Estimated Density</td><td>{density} pts/m²</td></tr>")
+                f.write(f"<tr><td>Acquisition Date</td><td>{acq_date}</td></tr>")
+                f.write(f"<tr><td>Description</td><td>{provider_desc}</td></tr>")
+                f.write(f"<tr><td>Origin Estimated Density</td><td>{origin_density} pts/m²</td></tr>")
+                f.write(f"<tr><td>Tile Total Points</td><td>{num_points}</td></tr>")
+                f.write(f"<tr><td>Tile Physical Density</td><td>{density} pts/m²</td></tr>")
                 f.write("</table>")
                 
                 f.write("<div style='display: flex; gap: 20px; margin-top: 20px;'>")
@@ -156,10 +176,13 @@ def generate_quicklooks(workspace: Path) -> bool:
                 "dataset": sample_file.parent.name,
                 "provider": sample_file.parent.parent.name,
                 "file": sample_file.name,
+                "date": acq_date,
+                "origin_density": origin_density,
                 "html": os.path.relpath(html_path, catalog_dir).replace('\\', '/'),
                 "dem_png": os.path.relpath(output_png, catalog_dir).replace('\\', '/'),
                 "chm_png": os.path.relpath(output_chm_png, catalog_dir).replace('\\', '/'),
-                "points": num_points
+                "points": num_points,
+                "tile_density": density
             })
             
         except subprocess.CalledProcessError as e:
@@ -183,7 +206,8 @@ def generate_quicklooks(workspace: Path) -> bool:
             for rep in processed_reports:
                 f.write("<div class='card'>")
                 f.write(f"<h3><a href='{rep['html']}'>{rep['dataset']}</a></h3>")
-                f.write(f"<p><strong>Provider:</strong> {rep['provider']} | <strong>Points:</strong> {rep['points']} | <strong>File:</strong> {rep['file']}</p>")
+                f.write(f"<p><strong>Provider:</strong> {rep['provider']} | <strong>Date:</strong> {rep['date']} | <strong>File:</strong> {rep['file']}</p>")
+                f.write(f"<p><strong>Tile Points:</strong> {rep['points']} | <strong>Tile Density:</strong> {rep['tile_density']} pts/m² | <strong>Origin Density:</strong> {rep['origin_density']} pts/m²</p>")
                 f.write("<div class='img-container'>")
                 f.write(f"<div><strong>Ground DEM</strong><br><img src='{rep['dem_png']}' /></div>")
                 f.write(f"<div><strong>Canopy Height</strong><br><img src='{rep['chm_png']}' /></div>")
