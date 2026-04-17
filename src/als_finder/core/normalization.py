@@ -73,17 +73,6 @@ def run_pdal_normalization(
         "assignment": "Classification[:]=1"  # Force wipe structural metadata to Unclassified
     })
     
-    pipeline.append({
-        "type": "filters.elm" # Identify massive isolated low points beneath the grid naturally assigning to class 7
-    })
-    
-    pipeline.append({
-        "type": "filters.outlier",
-        "method": "statistical",
-        "mean_k": 8,
-        "multiplier": 3.0 # Assign isolated airborne noise physically to class 18
-    })
-    
     # SMRF explicitly requires valid return numbers to operate. Filter out invalid 0s to prevent pipeline crashes.
     pipeline.append({
         "type": "filters.expression",
@@ -91,8 +80,7 @@ def run_pdal_normalization(
     })
     
     pipeline.append({
-        "type": "filters.smrf",
-        "ignore": "Classification[7:7], Classification[18:18]" # SMRF ignores noise actively scanning strictly for true ground (maps mapping mathematically to class 2)
+        "type": "filters.smrf" # SMRF maps the mathematical ground surface to ASPRS Class 2
     })
         
     # Target Writer (COPC: Cloud Optimized Point Cloud)
