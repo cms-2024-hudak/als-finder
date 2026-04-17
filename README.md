@@ -477,7 +477,7 @@ tiny_subset/
 ```
 
 ### 7.3 HPC Array Workflows (Expanse / Slurm)
-Because `als-finder` natively isolates the source URLs against precise `data/...` output routing paths inside the CSV, you never use the `--execute` flag on an HPC Head Node. You securely build your `fetch_array.csv` offline, and simply push that list natively into `sbatch`:
+Because `als-finder` maps the source URLs to precise `data/...` output paths inside the CSV, you never use the `--execute` flag on an HPC Head Node. You can build your `fetch_array.csv` offline, and simply pass that list directly to `sbatch`:
 
 ```bash
 # Example generic fetching parallelization loop on Expanse
