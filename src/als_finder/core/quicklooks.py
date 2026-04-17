@@ -122,7 +122,7 @@ def generate_quicklooks(workspace: Path) -> bool:
             logger.info(f"Extracting metadata for {sample_file.name}...")
             
             # Lookup origin metadata from manifest
-            dataset_name = sample_file.parent.name
+            dataset_name = sample_file.parent.name.replace("dataset=", "")
             origin_meta = manifest_data.get(dataset_name, {})
             acq_date = origin_meta.get('date', 'Unknown')
             provider_desc = origin_meta.get('description', '')
@@ -131,11 +131,12 @@ def generate_quicklooks(workspace: Path) -> bool:
             summary_res = subprocess.run(['pdal', 'info', '--summary', str(sample_file.absolute())], capture_output=True, check=True, text=True)
             summary_data = json.loads(summary_res.stdout).get('summary', {})
             num_points = summary_data.get('num_points', 'Unknown')
-            if summary_data.get('bounds') and summary_data['bounds'].get('X'):
-                maxx = summary_data['bounds']['X'].get('max', 0)
-                minx = summary_data['bounds']['X'].get('min', 0)
-                maxy = summary_data['bounds']['Y'].get('max', 0)
-                miny = summary_data['bounds']['Y'].get('min', 0)
+            bounds = summary_data.get('bounds', {})
+            if bounds and 'maxx' in bounds:
+                maxx = bounds.get('maxx', 0)
+                minx = bounds.get('minx', 0)
+                maxy = bounds.get('maxy', 0)
+                miny = bounds.get('miny', 0)
                 area_sqm = (maxx - minx) * (maxy - miny)
                 density = round(num_points / area_sqm, 2) if area_sqm > 0 else 'Unknown'
             else:
@@ -173,8 +174,8 @@ def generate_quicklooks(workspace: Path) -> bool:
             
             import os
             processed_reports.append({
-                "dataset": sample_file.parent.name,
-                "provider": sample_file.parent.parent.name,
+                "dataset": sample_file.parent.name.replace("dataset=", ""),
+                "provider": sample_file.parent.parent.name.replace("provider=", ""),
                 "file": sample_file.name,
                 "date": acq_date,
                 "origin_density": origin_density,
