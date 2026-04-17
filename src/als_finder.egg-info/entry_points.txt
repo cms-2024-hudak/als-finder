@@ -1,3 +1,0 @@
-[console_scripts]
-als-finder = als_finder.cli:cli
-
