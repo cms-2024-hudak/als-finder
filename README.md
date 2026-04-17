@@ -41,7 +41,12 @@ The absolute safest way to execute spatial code without triggering dependency co
 **Option A: Pull Pre-Built Image (Recommended)**
 ```bash
 docker pull ghcr.io/cms-2024-hudak/als-finder:latest
+
+# Basic Run (Bypasses OpenTopography)
 docker run -v $(pwd):/app/data ghcr.io/cms-2024-hudak/als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
+
+# Run with OpenTopography API Key enabled
+docker run -e OPENTOPOGRAPHY_API_KEY="your_api_key_here" -v $(pwd):/app/data ghcr.io/cms-2024-hudak/als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
 ```
 
 **Option B: Build from Source**
@@ -50,7 +55,9 @@ If your enterprise firewall blocks GHCR or you are modifying the source code:
 git clone https://github.com/cms-2024-hudak/als-finder.git
 cd als-finder
 docker build -t als-finder:latest .
-docker run -v $(pwd):/app/data als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
+
+# Run with environment variables from a .env file
+docker run --env-file .env -v $(pwd):/app/data als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
 ```
 
 ### 2. Conda (Recommended for Local Dev)

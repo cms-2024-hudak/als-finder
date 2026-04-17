@@ -62,7 +62,7 @@ class NOAAProvider(BaseProvider):
         from botocore import UNSIGNED
         from botocore.config import Config
         
-        s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED))
+        s3 = boto3.client("s3", config=Config(signature_version=UNSIGNED, max_pool_connections=20))
         
         # Paginate through the S3 bucket to find the JSON items directly
         item_keys = []
