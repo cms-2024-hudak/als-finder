@@ -516,7 +516,9 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull the entirely comprehensive upstream dataset payload natively.')
 @click.option('--normalize', is_flag=True, help='Execute PDAL normalization concurrently after extracting binaries.')
 @click.option('--crs', help='Specify target output projection for normalization (e.g. EPSG:3857, EPSG:5070, or auto-utm)')
-def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, normalize, crs):
+@click.option('--stac', is_flag=True, help='Dynamically generate PySTAC schema hierarchies out of the standardized payloads natively.')
+@click.option('--report', is_flag=True, help='Generate a rapid 2D visualization report for spot-checking.')
+def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, normalize, crs, stac, report):
     """Generate target fetch arrays or physically download filtered binary segments directly to the Hive local cache."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -543,13 +545,17 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
         
         if normalize:
             logger.info("Executing Mode D: PDAL Normalization")
-            ctx.invoke(normalize_cmd, workspace=workspace, crs=crs, roi=roi)
+            ctx.invoke(normalize_cmd, workspace=workspace, crs=crs, roi=roi, stac=stac, report=report)
+        elif stac or report:
+            logger.warning("STAC Generation and Reporting explicitly requires normalized .copc.laz entities. Ignoring --stac or --report flag without --normalize.")
 
 @cli.command(name='normalize')
 @click.option('--workspace', required=True, help='Path to target workspace containing downloaded raw binaries.')
 @click.option('--crs', required=False, help='Target coordinate projection (e.g. EPSG:3857, EPSG:5070, or auto-utm)')
 @click.option('--roi', required=False, help='Geospatial boundary to crop overlapping points dynamically.')
-def normalize_cmd(workspace, crs, roi):
+@click.option('--stac', is_flag=True, help='Dynamically generate PySTAC schema hierarchies out of the standardized payloads natively.')
+@click.option('--report', is_flag=True, help='Generate a rapid 2D visualization report for spot-checking.')
+def normalize_cmd(workspace, crs, roi, stac, report):
     """Execute PDAL Normalization matrices on locally downloaded LiDAR binaries."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -589,7 +595,13 @@ def normalize_cmd(workspace, crs, roi):
     from concurrent.futures import ThreadPoolExecutor
     
     def norm_worker(row):
-        target_path = Path(row['target_path'])
+        target_raw = row['target_path']
+        if '|' in target_raw:
+            target_str, _ = target_raw.split('|')
+            target_path = Path(target_str)
+        else:
+            target_path = Path(target_raw)
+        
         prov = row['provider']
         
         if not target_path.exists():
@@ -600,13 +612,21 @@ def normalize_cmd(workspace, crs, roi):
         
     logger.info(f"Processing {len(rows)} matrices into standard {crs} topologies...")
     
-    s_ct = 0
+    results = []
     with ThreadPoolExecutor(max_workers=4) as executor:
-        for result in executor.map(norm_worker, rows):
-            if result == "SUCCESS":
-                s_ct += 1
-                
-    logger.info(f"[SUCCESS] Normalization Complete. {s_ct}/{len(rows)} payloads formatted natively.")
+        results = list(executor.map(norm_worker, rows))
+        
+    logger.info(f"[SUCCESS] Normalization Complete. {sum(1 for r in results if r == 'SUCCESS')}/{len(rows)} payloads formatted natively.")
+        
+    if stac:
+        logger.info("Executing Mode E: STAC Schema Generation natively...")
+        from als_finder.core.stac_generator import generate_catalog
+        generate_catalog(workspace_path)
+        
+    if report:
+        logger.info("Executing Mode F: Spot Check Reporting natively...")
+        from als_finder.core.reporting import generate_spotcheck_report
+        generate_spotcheck_report(workspace_path)
 
 if __name__ == '__main__':
     cli()

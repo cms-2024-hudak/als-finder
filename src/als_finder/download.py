@@ -10,7 +10,6 @@ from concurrent.futures import ThreadPoolExecutor
 from shapely.geometry import box
 
 from als_finder.core.input_manager import load_roi
-from als_finder.core.ept_parser import EPTParser
 
 logger = logging.getLogger(__name__)
 
@@ -88,20 +87,27 @@ def generate_fetch_array(workspace_path: Path, roi_path: Optional[str], full_acq
                     fetch_matrix_manifest[d_name]["Format"] = Path(target_path).suffix
                     total_estimated_bytes += byte_sz
                     total_tiles += 1
-            # EPT Subsetting physically isolates Octree bounds statically
+            # EPT Subsetting dynamically integrates with PDAL readers.ept natively
             elif "ept.json" in url and roi_poly is not None:
-                parser = EPTParser(url)
-                tiles = parser.find_intersecting_laz(roi_poly)
-                logger.info(f"Intercepted {len(tiles)} intersecting tiles for {d_name}.")
-                for (laz_url, count) in tiles:
-                    node_id = laz_url.split('/')[-1]
-                    hive_target = hive_dir / node_id
-                    f.write(f"{p_name},{d_name},{laz_url},{hive_target.absolute()}\n")
-                    est_sz = (int(count) * 8) if count else 0
-                    fetch_matrix_manifest[d_name]["Bytes"] += est_sz
-                    fetch_matrix_manifest[d_name]["Tiles"] += 1
-                    total_estimated_bytes += est_sz
-                    total_tiles += 1
+                import pyproj
+                from shapely.ops import transform
+                
+                # Transform to EPSG:3857 because USGS EPT native SRS is usually Web Mercator
+                project = pyproj.Transformer.from_crs(pyproj.CRS('EPSG:4326'), pyproj.CRS('EPSG:3857'), always_xy=True).transform
+                roi_native = transform(project, roi_poly)
+                
+                # Target the total comprehensive node root mathematically via native pipeline extraction
+                hive_target = hive_dir / f"{d_name}_subset.laz"
+                minx, miny, maxx, maxy = roi_native.bounds
+                bounds_str = f"([{minx:.4f}, {maxx:.4f}], [{miny:.4f}, {maxy:.4f}])"
+                # Encode bounds safely into target_path placeholder natively
+                f.write(f"{p_name},{d_name},{url},\"{hive_target.absolute()}|{bounds_str}\"\n")
+                
+                est_sz = int(item.get('size', 0))
+                fetch_matrix_manifest[d_name]["Bytes"] += est_sz
+                fetch_matrix_manifest[d_name]["Tiles"] += 1
+                total_estimated_bytes += est_sz
+                total_tiles += 1
             else:
                 # Target the total comprehensive node root
                 hive_target = hive_dir / f"{d_name}_subset.laz"
@@ -172,15 +178,40 @@ def execute_fetch_array(workspace_path: Path) -> None:
         
     def fetch_worker(row):
         source = row['source_url']
-        target = Path(row['target_path'])
+        target_raw = row['target_path']
         
+        # Unpack embedded bounds for EPT natively
+        bounds_str = None
+        if '|' in target_raw:
+            target_str, bounds_str = target_raw.split('|')
+            target = Path(target_str)
+        else:
+            target = Path(target_raw)
+            
         if target.exists():
             return "SKIPPED"
             
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
-            urllib.request.urlretrieve(source, target)
-            return "SUCCESS"
+            if "ept.json" in source and bounds_str:
+                import subprocess
+                # Using resolution=0 enforces max LOD directly from the cloud natively
+                pdal_cmd = [
+                    'pdal', 'translate',
+                    source,
+                    str(target),
+                    '--readers.ept.bounds=' + bounds_str,
+                    '--readers.ept.resolution=0'
+                ]
+                logger.info(f"Dynamically streaming unified EPT subset natively: {' '.join(pdal_cmd)}")
+                subprocess.run(pdal_cmd, check=True, capture_output=True)
+                return "SUCCESS"
+            else:
+                urllib.request.urlretrieve(source, target)
+                return "SUCCESS"
+        except subprocess.CalledProcessError as e:
+            logger.error(f"PDAL extraction physically failed natively for {source}: {e.stderr.decode('utf-8')}")
+            return "FAILED"
         except Exception as e:
             logger.error(f"Failed to fetch {source}: {e}")
             return "FAILED"
