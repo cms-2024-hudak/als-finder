@@ -5,7 +5,7 @@ setup(
     use_scm_version=True,
     setup_requires=["setuptools_scm"],
     description="A high-performance, cloud-native CLI engine for discovering and parsing raw LiDAR point cloud metadata.",
-    long_description=open("README.md").read(),
+    long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="Jonathan Greenberg",
     author_email="jgreenberg@unr.edu",
