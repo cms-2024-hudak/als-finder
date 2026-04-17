@@ -84,6 +84,12 @@ def run_pdal_normalization(
         "multiplier": 3.0 # Assign isolated airborne noise physically to class 18
     })
     
+    # SMRF explicitly requires valid return numbers to operate. Filter out invalid 0s to prevent pipeline crashes.
+    pipeline.append({
+        "type": "filters.expression",
+        "expression": "ReturnNumber > 0 && NumberOfReturns > 0"
+    })
+    
     pipeline.append({
         "type": "filters.smrf",
         "ignore": "Classification[7:7], Classification[18:18]" # SMRF ignores noise actively scanning strictly for true ground (maps mapping mathematically to class 2)
