@@ -488,14 +488,66 @@ sbatch --array=1-1000 wget_fetcher.sh ./tiny_subset/catalog/fetch_array.csv
 
 ## ⚠️ Data Processing: Caveats to Raw Downloads
 
-Because `als-finder` orchestrates transfers actively across deeply decentralized public multi-origin LiDAR repositories natively, the physically downloaded point clouds structurally mirror their origin locations mathematically. If you execute a payload extraction and cease computing there, you will encounter the following analytical bottlenecks:
+Because `als-finder` pulls data directly from decentralized public repositories (USGS, NOAA, OpenTopography), the raw `.laz` and `.las` files in your `data/raw/` folder are completely unconformed. If you stop at Stage 2, you will encounter severe analytical bottlenecks:
 
-*   **Coordinate Reference Systems (CRS) & Projections:** There is no universal geometric standard natively mapped across point clouds. Datasets sourced from USGS often arrive in rigid regional grids (e.g., `EPSG:6339` - NAD83(2011) / UTM zone 10N), whereas NOAA assets might globally orient onto `EPSG:4326`. You cannot safely merge these binaries natively without explicit, intensive mathematical reprojections organically bridging the grids.
-*   **Arbitrary File Naming Conventions:** As shown physically in prior terminal blocks, originating domains enforce entirely proprietary alphanumeric naming formats. Expect to ingest wildly disparate labels physically mapping to your identical spatial envelope (e.g., `ot_39119B8203.las` bounding perfectly parallel to `USGS_LPC_CA_SierraNevada_..._2022_LAS_2024.laz`).
-*   **Classification Constraints (ASPRS):** While most state-of-the-art acquisitions respect ASPRS classification protocols identifying geometric physical entities natively (e.g., Class 2 = Ground), older multi-generational matrices may allocate strictly disparate definitions to identical integer buckets natively corrupting ground-filtering integrations organically.
-*   **Format Variances & Data Bloat:** Formal dataset providers often deploy mixtures of `LAS 1.2` or `1.4` formats natively spanning entirely uncompressed `.las` binary schemas organically padding disk volumes compared exclusively against mathematically lossy or natively optimal `.laz` buffers.
+*   **Coordinate Reference Systems (CRS):** USGS data might be in `EPSG:6339` (UTM), while NOAA data might be in `EPSG:4326` (WGS84). You cannot safely merge them.
+*   **Classification Constraints (ASPRS):** Different vendors use different classification integer mappings.
+*   **Format Bloat:** Some files are uncompressed `.las`, some are legacy `.laz`.
 
-*Note: Formal future sequences integrating Point Data Abstraction Library (PDAL) normalization pipelines will cleanly dissolve these parameters targeting a unified `.laz` standard mathematically harmonizing CRS formats organically.*
+To solve this completely, `als-finder` natively bundles an automated harmonization engine using PDAL.
+
+---
+
+## 🛠️ Stage 3: Normalization & Standardization
+
+The `normalize` command mathematically harmonizes your raw downloads into a strictly uniform standard. It executes the following pipeline on every single file in the `data/raw/` directory:
+
+1. **Format Upgrade:** Converts everything to Cloud Optimized Point Cloud (`.copc.laz`) for blazing-fast spatial indexing.
+2. **CRS Reprojection:** Reprojects everything to Web Mercator (`EPSG:3857`) by default, or dynamically calculates a local UTM zone using the `--crs auto-utm` flag.
+3. **Taxonomic Standardization:** Wipes legacy vendor classifications, dropping invalid points, and natively executing the SMRF (Simple Morphological Filter) algorithm to perfectly isolate the bare earth (Class 2) and vegetation (Class 1).
+
+```bash
+als-finder normalize --workspace ./tiny_subset/
+```
+
+**Resulting Hive Workspace Structure:**
+```text
+tiny_subset/
+└── data/
+    ├── raw/
+    └── standardized/
+        └── provider=USGS_EPT/
+            └── dataset=CA_SierraNevada_5_2022/
+                ├── CA_SierraNevada_5_2022_subset.copc.laz
+                └── ... (Uniformly classified COPCs)
+```
+
+---
+
+## 🌐 Stage 4: SpatioTemporal Asset Catalogs (`--stac`)
+
+By simply appending the `--stac` flag to your `normalize` command (or executing it natively), the engine structurally parses the normalized COPC files and generates formal `PySTAC` JSON Items. These can be dragged and dropped into QGIS or fed into cloud STAC APIs for immediate geographic indexing.
+
+```bash
+als-finder normalize --workspace ./tiny_subset/ --stac
+```
+
+This populates a new directory natively in your catalog: `tiny_subset/catalog/stac/`.
+
+---
+
+## 📸 Stage 5: Visual QA/QC Quicklooks (`--quicklook`)
+
+You don't need expensive desktop software to verify the integrity of massive point clouds. Appending the `--quicklook` flag triggers an instantaneous preview engine. It leverages `readers.copc` to stream only the lowest-resolution spatial tiers, ensuring it generates previews in seconds regardless of payload size.
+
+```bash
+als-finder normalize --workspace ./tiny_subset/ --quicklook
+```
+
+**What it generates:**
+1. **Ground Hillshade (DEM):** A shaded physical relief of the bare earth (Class 2).
+2. **Canopy Height Model (CHM):** A color-coded canopy height map (Blue=Earth, Green=Low Veg, Red=Tall Canopy) mathematically mapped using `filters.hag_nn`.
+3. **Master Catalog:** A beautiful HTML grid dynamically mapped into `catalog/quicklooks_index.html` displaying side-by-side previews, origin acquisition dates, and physical vs. estimated point densities for every tile.
 
 ---
 
