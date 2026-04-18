@@ -119,6 +119,9 @@ pip install "als-finder[all]"
 
 ## ⚡ Usage & Full Tutorial
 
+> [!NOTE]
+> **Dynamic Outputs:** Because `als-finder` queries live upstream APIs and registries (USGS, NOAA, OpenTopography) which are constantly updated with new LiDAR acquisitions, the exact dataset counts, dates, and sizes shown in the tutorial console outputs below may not perfectly match what you see when you run the commands today.
+
 `als-finder` uses a workspace approach. Instead of managing multiple output flags, you simply define your search criteria and the destination folder. The software queries all indices, deduplicates overlapping datasets, and generates a clean tracking directory automatically.
 
 ### 1. The Base Execution (All Providers & Dates)
@@ -451,11 +454,11 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT,OpenT
 
 **Console Output:**
 ```text
-=======================================================================================================================================
+=================================================================================================================
  LiDAR Data Search Results 
-=======================================================================================================================================
+=================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
----------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
  | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
@@ -469,12 +472,12 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT,OpenT
  | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
  | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
  | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
-=======================================================================================================================================
- TOTAL DATASETS: 13 | ESTIMATED PAYLOAD: 7623.49 GB | QUERY TIME: 12.81s 
----------------------------------------------------------------------------------------------------------------------------------------
+=================================================================================================================
+ TOTAL DATASETS: 13 | ESTIMATED PAYLOAD: 7623.49 GB | QUERY TIME: 12.63s 
+-----------------------------------------------------------------------------------------------------------------
  CATALOG TBL: /home/user/combo/catalog/catalog.gpkg
  JSON METADATA: /home/user/combo/catalog/manifest.json
-=======================================================================================================================================
+=================================================================================================================
 ```
 
 ### 6. Updating Catalogs (Atomic Rollbacks)
