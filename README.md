@@ -443,10 +443,10 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT --wor
 ```
 
 #### Multiple Providers
-You can pass the flag multiple times to search a specific combination of registries (e.g., pulling only `USGS_EPT` and `OpenTopography`):
+You can pass the flag multiple times, or use a clean **comma-separated list** to search a specific combination of registries (e.g., pulling only `USGS_EPT` and `OpenTopography`):
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT --provider OpenTopography --workspace ./combo/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT,OpenTopography --workspace ./combo/
 ```
 
 **Console Output:**

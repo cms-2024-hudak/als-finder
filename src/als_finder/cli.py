@@ -18,6 +18,15 @@ from als_finder.download import generate_fetch_array, execute_fetch_array
 logging.basicConfig(level=logging.WARNING, format='%(levelname)s:%(name)s:%(message)s')
 logger = logging.getLogger(__name__)
 
+def parse_comma_separated(ctx, param, value):
+    """Click callback to parse comma-separated strings into a flattened tuple."""
+    if not value:
+        return value
+    parsed = []
+    for item in value:
+        parsed.extend([x.strip() for x in item.split(',') if x.strip()])
+    return tuple(parsed)
+
 @click.group()
 @click.option('-v', '--verbose', is_flag=True, help='Enable verbose execution logging')
 @click.option('-q', '--quiet', is_flag=True, help='Suppress standard logging to print exact payloads only.')
@@ -34,7 +43,7 @@ def cli(verbose, quiet):
 @click.option('--date', help='Temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
 @click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
 @click.option('--workspace', help='Path to project workspace directory')
-@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography'], help='Provider(s) to search')
+@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
 @click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
 def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
@@ -443,7 +452,7 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
 @click.option('--name', help='Override dataset name filter (Supports wildcards, or regex via ~)')
 @click.option('--date', help='Override temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
 @click.option('--density', help='Override point density filter or QL Level (e.g. QL1)')
-@click.option('--provider', multiple=True, help='Override provider(s)')
+@click.option('--provider', multiple=True, callback=parse_comma_separated, help='Override provider(s) (comma-separated allowed)')
 @click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
 @click.pass_context
 def update(ctx, workspace, name, date, density, provider, ot_key):
@@ -509,7 +518,7 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex e.g. ~^USGS)')
 @click.option('--date', help='Date filter YYYY-MM-DD or range YYYY-MM-DD/YYYY-MM-DD')
 @click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
-@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography'], help='Provider(s) to search')
+@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
 @click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
 @click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats to the local drive natively.')
