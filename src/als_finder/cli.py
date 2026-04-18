@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 import time
+import importlib.resources as pkg_resources
 from dotenv import load_dotenv
 from als_finder.core.input_manager import load_roi, ROIError
 from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvider
@@ -36,6 +37,26 @@ def cli(verbose, quiet):
         logging.getLogger().setLevel(logging.INFO)
     elif quiet:
         logging.getLogger().setLevel(logging.WARNING)
+@cli.command(name='get-example-roi')
+def get_example_roi():
+    """Extract the bundled example ROI to your current working directory."""
+    try:
+        if sys.version_info >= (3, 9):
+            source_path = pkg_resources.files('als_finder.data').joinpath('ltbmu_boundary.gpkg')
+            with pkg_resources.as_file(source_path) as gpkg_file:
+                dest_path = Path.cwd() / 'ltbmu_boundary.gpkg'
+                shutil.copy2(gpkg_file, dest_path)
+        else:
+            # Fallback for Python 3.8
+            import pkg_resources as legacy_pkg_resources
+            source_path = legacy_pkg_resources.resource_filename('als_finder', 'data/ltbmu_boundary.gpkg')
+            dest_path = Path.cwd() / 'ltbmu_boundary.gpkg'
+            shutil.copy2(source_path, dest_path)
+            
+        click.echo(click.style(f"Success! Example ROI extracted to: {dest_path}", fg="green"))
+    except Exception as e:
+        logger.error(f"Failed to extract example ROI. Ensure the package was installed correctly. Error: {e}")
+        sys.exit(1)
 
 @cli.command()
 @click.option('--roi', required=False, help='Path to ROI file (GeoJSON/Shapefile) or BBox string')

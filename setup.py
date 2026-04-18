@@ -12,6 +12,10 @@ setup(
     url="https://github.com/cms-2024-hudak/als-finder",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
+    package_data={
+        "als_finder": ["data/*.gpkg"]
+    },
+    include_package_data=True,
     install_requires=[
         "click",
         "requests",
