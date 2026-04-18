@@ -33,7 +33,11 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --ot-key "your_token_here
 
 Because `als-finder` relies on advanced spatial libraries (`geopandas`, `shapely`, `pyproj`), distributing it means managing complex C++ dependencies (GDAL and GEOS). 
 
-If you attempt a raw `pip install` on Windows or Mac without these underlying C++ compilers pre-installed, Python will throw catastrophic compiler errors ("dependency nightmares"). For this reason, we highly recommend **Docker** or **Conda**.
+> [!IMPORTANT]
+> **Windows Native (CMD/PowerShell) Users:**
+> Do **NOT** attempt to use `pip install als-finder[all]` on native Windows. The C++ dependencies for PDAL and GDAL cannot be easily compiled via Pip on Windows. If you are not using WSL2, you **must** use the **Conda** installation method below, which handles the Windows C++ binaries for you perfectly.
+
+If you attempt a raw `pip install` on Mac or Linux without these underlying C++ compilers pre-installed, Python will throw catastrophic compiler errors ("dependency nightmares"). For this reason, we highly recommend **Docker** or **Conda** for all platforms.
 
 ### 1. Docker (Recommended for HPC / Singularity)
 The absolute safest way to execute spatial code without triggering dependency conflicts on your local machine is through Docker.
@@ -91,6 +95,9 @@ sudo apt-get install -y libpdal-dev pdal
 ```bash
 brew install pdal
 ```
+
+**Windows (Native):**
+*(Not supported via Pip. Use the Conda installation method above.)*
 
 **B. Install the Python Wrappers**
 Once the C++ dependencies are satisfied on your host OS, you can safely install the python wrappers into a clean environment:
