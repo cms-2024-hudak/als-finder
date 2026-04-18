@@ -23,7 +23,9 @@ setup(
         "pyogrio",
     ],
     extras_require={
-        "dev": ["pytest", "setuptools_scm", "build"]
+        "dev": ["pytest", "setuptools_scm", "build"],
+        "pdal": ["pdal"],
+        "all": ["pdal"]
     },
     entry_points={
         "console_scripts": [

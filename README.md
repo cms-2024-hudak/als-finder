@@ -74,12 +74,26 @@ conda activate als-finder-env
 conda install -c conda-forge als-finder
 ```
 
-### 3. Pip (Base Python/Linux)
+### 3. Pip (Advanced / System-Level)
 > [!WARNING]
 > **Important Note for Pip Users**
-> The pure `pip` installation is only recommended for running the `search` engine. The `normalize` engine heavily relies on the PDAL C++ library. While you can install the `python-pdal` binding via pip (`pip install als-finder[pdal]`), it will instantly fail unless you have manually installed the `libpdal-dev` binaries on your host OS. We highly recommend Docker or Conda for normalization tasks.
+> There are no pre-compiled wheels for the PDAL C++ library on PyPI. If you wish to use pure `pip` to install the complete package (including the Stage 3 Normalization engine), you **MUST** pre-install the C++ PDAL binaries on your host operating system before running `pip install`. If you do not have these OS-level packages, the Python compilation step will fail catastrophically.
 
-To ensure a clean installation without conflicting with your system Python packages, always use a virtual environment:
+**A. Install System Binaries First**
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install -y libpdal-dev pdal
+```
+
+**MacOS:**
+```bash
+brew install pdal
+```
+
+**B. Install the Python Wrappers**
+Once the C++ dependencies are satisfied on your host OS, you can safely install the python wrappers into a clean environment:
 
 ```bash
 # 1. Create a clean virtual environment sandbox
@@ -88,9 +102,11 @@ python3 -m venv .venv
 # 2. Activate the environment
 source .venv/bin/activate  # On Windows, use `.venv\Scripts\activate`
 
-# 3. Install the package
-pip install als-finder
+# 3. Install the complete package with normalization engines
+pip install "als-finder[all]"
 ```
+
+*(Note: If you only need the Stage 1 search engine and do not want to compile C++ binaries, you can run `pip install als-finder` without the `[all]` tag.)*
 
 ---
 
