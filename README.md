@@ -60,14 +60,18 @@ docker build -t als-finder:latest .
 docker run --env-file .env -v $(pwd):/app/data als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
 ```
 
-### 2. Conda (Recommended for Local Dev)
-Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. Since the package is currently in development, install it using the provided environment file:
+### 2. Conda (Recommended)
+Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. We highly recommend installing `als-finder` into an isolated Conda environment to prevent dependency conflicts with your system Python packages.
 
 ```bash
-git clone https://github.com/cms-2024-hudak/als-finder.git
-cd als-finder
-conda env create -f environment.yml
-conda activate als-finder
+# 1. Create a clean Conda environment (Python 3.10+ recommended)
+conda create -n als-finder-env python=3.10 -y
+
+# 2. Activate the environment
+conda activate als-finder-env
+
+# 3. Install the package from conda-forge
+conda install -c conda-forge als-finder
 ```
 
 ### 3. Pip (Base Python/Linux)
