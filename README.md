@@ -37,7 +37,7 @@ Because `als-finder` relies on advanced spatial libraries (`geopandas`, `shapely
 > **Windows Native (CMD/PowerShell) Users:**
 > Do **NOT** attempt to use `pip install als-finder[all]` on native Windows. The C++ dependencies for PDAL and GDAL cannot be easily compiled via Pip on Windows. If you are not using WSL2, you **must** use the **Conda** installation method below, which handles the Windows C++ binaries for you perfectly.
 
-If you attempt a raw `pip install` on Mac or Linux without these underlying C++ compilers pre-installed, Python will throw catastrophic compiler errors ("dependency nightmares"). For this reason, we highly recommend **Docker** or **Conda** for all platforms.
+If you attempt a raw `pip install` on Mac or Linux without these underlying C++ compilers pre-installed, Python will throw compiler errors due to missing C++ dependencies. For this reason, we highly recommend **Docker** or **Conda** for all platforms.
 
 ### 1. Docker (Recommended for HPC / Singularity)
 The absolute safest way to execute spatial code without triggering dependency conflicts on your local machine is through Docker.
@@ -81,7 +81,7 @@ conda install -c conda-forge als-finder
 ### 3. Pip (Advanced / System-Level)
 > [!WARNING]
 > **Important Note for Pip Users**
-> There are no pre-compiled wheels for the PDAL C++ library on PyPI. If you wish to use pure `pip` to install the complete package (including the Stage 3 Normalization engine), you **MUST** pre-install the C++ PDAL binaries on your host operating system before running `pip install`. If you do not have these OS-level packages, the Python compilation step will fail catastrophically.
+> There are no pre-compiled wheels for the PDAL C++ library on PyPI. If you wish to use pure `pip` to install the complete package (including the Stage 3 Normalization engine), you **MUST** pre-install the C++ PDAL binaries on your host operating system before running `pip install`. If you do not have these OS-level packages, the Python compilation step will fail.
 
 **A. Install System Binaries First**
 
@@ -272,7 +272,7 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2020-01-01/ --work
 ```
 
 #### Defining a Hard End Date (`--date`)
-If you only need historic acquisitions cleanly evaluated *prior* to a specific threshold, simply prefix the slash naturally dropping the starting bounds organically:
+If you only need historic acquisitions prior to a specific date, omit the starting date:
 
 ```bash
 als-finder search --roi ./examples/ltbmu_boundary.gpkg --date /2020-01-01 --workspace ./historic_lidar/
@@ -488,12 +488,12 @@ als-finder update --workspace ./my_lidar_project/
 
 ## 💾 Stage 2: Downloading & Subsetting
 
-To prevent catastrophic hard drive consumption and perfectly align local executions with High-Performance Computing (HPC) workflows, `als-finder` enforces a strict, unbreakable safety barrier between "Search" and "Download".
+To prevent accidentally downloading massive datasets and to better support High-Performance Computing (HPC) workflows, `als-finder` separates the "Search" and "Download" phases.
 
 ### The Two-Step Safety Pipeline
 1. **The Search**: Run `search` to establish a project and locate the metadata records.
 2. **The Subsetting Generation**: Run `download`. The pipeline will **never** physically download binary LiDAR data by default. It spatially intersects the target acquisitions against your input `--roi` polygon, generating a tiny list of overlapping `.laz` file URLs mapped to a `fetch_array.csv`. 
-3. **The Execution**: You explicitly execute the CSV locally by appending the `--execute` flag, or seamlessly feed the `.csv` text list into an HPC scheduler for raw distribution.
+3. **Execution**: You can run the download locally by appending the `--execute` flag, or use the generated `.csv` to distribute the download tasks across an HPC cluster.
 
 ### 7.1 Generating the Fetch List
 Assume you executed a tight search query dropping a bounding box strictly over an area of interest inside the `CA_SierraNevada_5_2022` USGS footprint:
@@ -633,7 +633,7 @@ for item in catalog.get_all_items():
 
 ## 📸 Stage 5: Visual QA/QC Quicklooks (`--quicklook`)
 
-You don't need expensive desktop software to verify the integrity of massive point clouds. Appending the `--quicklook` flag triggers an instantaneous preview engine. It leverages `readers.copc` to stream only the lowest-resolution spatial tiers, ensuring it generates previews in seconds regardless of payload size.
+Appending the `--quicklook` flag generates a preview image of the point cloud. It uses `readers.copc` to stream only the lowest-resolution spatial tiers, generating previews in seconds without downloading the full dataset.
 
 ```bash
 als-finder normalize --workspace ./tiny_subset/ --quicklook
