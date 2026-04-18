@@ -412,11 +412,11 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --density 2/10 --workspac
 ```
 
 ### 5. Filtering by Registry (`--provider`)
-To only search specific registries, supply the short-hand provider flags (`usgs`, `noaa`, or `opentopography`). These map directly to the formal output Table `Provider` columns (`USGS_EPT`, `NOAA_STAC`, `OpenTopography`).
+To only search specific registries, supply the exact provider flags (`USGS_EPT`, `NOAA_STAC`, or `OpenTopography`). These map directly to the formal output Table `Provider` columns.
 
 #### Single Provider
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider usgs --workspace ./usgs_only/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT --workspace ./usgs_only/
 ```
 
 **Console Output:**
@@ -443,10 +443,10 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider usgs --workspa
 ```
 
 #### Multiple Providers
-You can pass the flag multiple times to search a specific combination of registries (e.g., pulling only `usgs` and `opentopography`):
+You can pass the flag multiple times to search a specific combination of registries (e.g., pulling only `USGS_EPT` and `OpenTopography`):
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider usgs --provider opentopography --workspace ./combo/
+als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT --provider OpenTopography --workspace ./combo/
 ```
 
 **Console Output:**
