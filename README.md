@@ -24,6 +24,10 @@ To pull datasets from OpenTopography, you must provide a free authorization toke
 3. Supply this key to `als-finder` using the `--ot-key` flag during your first search. The engine will transparently cache it into a local `.env` file directly in your active working directory for all future executions:
 
 ```bash
+# 1. Extract the example ROI to your local directory
+als-finder get-example-roi
+
+# 2. Run your search with the key
 als-finder search --roi ./ltbmu_boundary.gpkg --ot-key "your_token_here" --workspace ./my_lidar_project/
 ```
 
@@ -128,6 +132,10 @@ pip install "als-finder[all]"
 The easiest way to search for LiDAR is to provide an Area of Interest (ROI) boundary and a target output `workspace`. An example boundary (`ltbmu_boundary.gpkg`) is bundled with the package so you can follow along with this tutorial locally:
 
 ```bash
+# 1. Extract the natively bundled test polygon to your current directory
+als-finder get-example-roi
+
+# 2. Run the search using the newly extracted local file
 als-finder search --roi ./ltbmu_boundary.gpkg --workspace ./my_lidar_project/
 ```
 
