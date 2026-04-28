@@ -510,8 +510,8 @@ To prevent accidentally downloading massive datasets and to better support High-
 Assume you executed a tight search query dropping a bounding box strictly over an area of interest inside the `CA_SierraNevada_5_2022` USGS footprint:
 
 ```bash
-als-finder search --roi "-120.005, 39.015, -119.995, 39.016" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
-als-finder download --roi "-120.005, 39.015, -119.995, 39.016" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
+als-finder search --roi "-120.3019, 38.7696, -120.2919, 38.7796" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
+als-finder download --roi "-120.3019, 38.7696, -120.2919, 38.7796" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
 ```
 
 ```text
@@ -532,7 +532,7 @@ als-finder download --roi "-120.005, 39.015, -119.995, 39.016" --name "CA_Sierra
 If you visually verify the tile payload is safe for your local hard drive capacity, you formally pull the arrays into a strict `Hive-Partitioned` database struct:
 
 ```bash
-als-finder download --roi "-120.005, 39.015, -119.995, 39.016" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/ --execute
+als-finder download --roi "-120.3019, 38.7696, -120.2919, 38.7796" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/ --execute
 ```
 
 **Console Output:**
