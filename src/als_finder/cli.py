@@ -214,11 +214,11 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
                     item['area_sqkm'] = round(area_sqm / 1e6, 2)
                     
                     if count and not item.get('point_density') and area_sqm > 0:
-                        density = float(count) / area_sqm
-                        if density < 0.01:
-                            item['point_density'] = round(density, 4)
+                        calc_density = float(count) / area_sqm
+                        if calc_density < 0.01:
+                            item['point_density'] = round(calc_density, 4)
                         else:
-                            item['point_density'] = round(density, 2)
+                            item['point_density'] = round(calc_density, 2)
                     elif item.get('point_density') and not count and area_sqm > 0:
                         imputed_count = int(float(item.get('point_density')) * area_sqm)
                         item['point_count'] = imputed_count
@@ -336,8 +336,8 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
             
             for item in unique_results:
                 prov = str(item.get('provider', 'Unknown'))[:col_widths['Provider']]
-                name = str(item.get('name') or item.get('dataset_id', 'Unknown'))[:col_widths['Name']]
-                date = item.get('display_date')[:col_widths['Date']]
+                disp_name = str(item.get('name') or item.get('dataset_id', 'Unknown'))[:col_widths['Name']]
+                disp_date = item.get('display_date')[:col_widths['Date']]
                 
                 size_gb_str = 'N/A'
                 if item.get('size') is not None:
@@ -355,7 +355,7 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
                 if item.get('area_sqkm') is not None:
                     area_str = f"{float(item.get('area_sqkm')):.2f}"
                 
-                print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {date:<{col_widths['Date']}} | {size_gb_str:>{col_widths['Est (GB)']}} | {density_str:>{col_widths['pts/m2']}} | {area_str:>{col_widths['Area km2']}} |")
+                print(f" | {prov:<{col_widths['Provider']}} | {disp_name:<{col_widths['Name']}} | {disp_date:<{col_widths['Date']}} | {size_gb_str:>{col_widths['Est (GB)']}} | {density_str:>{col_widths['pts/m2']}} | {area_str:>{col_widths['Area km2']}} |")
             
             print("=" * len(header))
             query_time = time.time() - start_time_exec
@@ -529,7 +529,15 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
     logger.info(f"Atomic Rollback successful. Historic catalog mapped to timestamp {historic_utc}.")
     
     # Execute native search bypass via explicit Context invocation
-    ctx.invoke(search, roi=final_roi, name=final_name, date=final_date, density=final_density, workspace=workspace, provider=final_providers)
+    try:
+        ctx.invoke(search, roi=final_roi, name=final_name, date=final_date, density=final_density, workspace=workspace, provider=final_providers)
+    except Exception as e:
+        logger.error(f"Update failed during sub-search execution: {e}. Restoring previous catalog state natively.")
+        # Roll forward to restore state
+        if os.path.exists(backup_manifest): shutil.move(backup_manifest, manifest_path)
+        if os.path.exists(backup_gpkg): shutil.move(backup_gpkg, os.path.join(catalog_dir, 'catalog.gpkg'))
+        if os.path.exists(backup_csv): shutil.move(backup_csv, os.path.join(catalog_dir, 'catalog.csv'))
+        raise click.ClickException(f"Update failed and was safely rolled back. Original error: {str(e)}")
 
 
 @cli.command()
@@ -544,11 +552,11 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
 @click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats to the local drive natively.')
 @click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull the entirely comprehensive upstream dataset payload natively.')
-@click.option('--normalize', is_flag=True, help='Execute PDAL normalization concurrently after extracting binaries.')
+@click.option('--standardize', is_flag=True, help='Execute PDAL standardization concurrently after extracting binaries.')
 @click.option('--crs', help='Specify target output projection for normalization (e.g. EPSG:3857, EPSG:5070, or auto-utm)')
 @click.option('--stac', is_flag=True, help='Dynamically generate PySTAC schema hierarchies out of the standardized payloads natively.')
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
-def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, normalize, crs, stac, quicklook):
+def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, standardize, crs, stac, quicklook):
     """Generate target fetch arrays or physically download filtered binary segments directly to the Hive local cache."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -566,27 +574,26 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
                 logger.error("The internal search failed to establish a rigid catalog boundary. Aborting download generation.")
                 sys.exit(1)
                 
-        logger.info("Executing Mode C: Array Fetch Generation (Dry-Run)")
-        generate_fetch_array(workspace_path=workspace_path, roi_path=roi, full_acquisition=full)
+        logger.info("Executing Mode C: Array Fetch Generation (Dry-Run)" if not execute else "Executing Mode C: Array Fetch Generation")
+        generate_fetch_array(workspace_path=workspace_path, roi_path=roi, full_acquisition=full, execute=execute)
         
     if execute:
         logger.info("Executing Mode A/B: Physical Core Download Protocol")
         execute_fetch_array(workspace_path=workspace_path)
-        
-        if normalize:
-            logger.info("Executing Mode D: PDAL Normalization")
-            ctx.invoke(normalize_cmd, workspace=workspace, crs=crs, roi=roi, stac=stac, quicklook=quicklook)
+        if standardize:
+            logger.info("Executing Mode D: PDAL Standardization")
+            ctx.invoke(standardize_cmd, workspace=workspace, crs=crs, roi=roi, stac=stac, quicklook=quicklook)
         elif stac or quicklook:
-            logger.warning("STAC Generation and Quicklooks explicitly require normalized .copc.laz entities. Ignoring flags without --normalize.")
+            logger.warning("STAC Generation and Quicklooks explicitly require standardized .copc.laz entities. Ignoring flags without --standardize.")
 
-@cli.command(name='normalize')
-@click.option('--workspace', required=True, help='Path to target workspace containing downloaded raw binaries.')
-@click.option('--crs', required=False, help='Target coordinate projection (e.g. EPSG:3857, EPSG:5070, or auto-utm)')
-@click.option('--roi', required=False, help='Geospatial boundary to crop overlapping points dynamically.')
-@click.option('--stac', is_flag=True, help='Dynamically generate PySTAC schema hierarchies out of the standardized payloads natively.')
+@cli.command('standardize')
+@click.option('--workspace', required=True, type=click.Path(exists=True), help='Path to your local project workspace.')
+@click.option('--crs', default=None, help='Target Coordinate Reference System (e.g. EPSG:5070). Defaults to EPSG:3857.')
+@click.option('--roi', default=None, help='Optional path to ROI geometry to geometrically slice the point cloud footprint natively.')
+@click.option('--stac/--no-stac', default=True, help='Generate STAC compliant metadata schemas for the final standardized matrix.')
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
-def normalize_cmd(workspace, crs, roi, stac, quicklook):
-    """Execute PDAL Normalization matrices on locally downloaded LiDAR binaries."""
+def standardize_cmd(workspace, crs, roi, stac, quicklook):
+    """Execute PDAL Standardization matrices on locally downloaded LiDAR binaries."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
     
@@ -597,7 +604,7 @@ def normalize_cmd(workspace, crs, roi, stac, quicklook):
     try:
         subprocess.run(['pdal', '--version'], capture_output=True, check=True)
     except Exception:
-        raise click.ClickException("pdal library missing. You must install 'pdal' and 'python-pdal' via Conda to normalize.")
+        raise click.ClickException("pdal library missing. You must install 'pdal' and 'python-pdal' via Conda to standardize.")
         
     logger.info("Initializing PDAL Pipeline Standardization")
     if not crs:
@@ -607,7 +614,7 @@ def normalize_cmd(workspace, crs, roi, stac, quicklook):
     else:
         logger.info(f"Target CRS strictly enforced: {crs}")
         
-    from als_finder.core.normalization import run_pdal_normalization
+    from als_finder.core.standardization import run_pdal_standardization
     
     roi_poly = None
     if roi:
@@ -637,21 +644,29 @@ def normalize_cmd(workspace, crs, roi, stac, quicklook):
         if not target_path.exists():
             return "MISSING_SOURCE"
             
-        res = run_pdal_normalization(target_path, crs, roi_poly, prov)
+        res = run_pdal_standardization(target_path, crs, roi_poly, prov)
         return "SUCCESS" if res else "FAILED"
         
     logger.info(f"Processing {len(rows)} matrices into standard {crs} topologies...")
     
     results = []
+    from tqdm import tqdm
+    ctx = click.get_current_context(silent=True)
+    disable_tqdm = ctx.params.get('quiet', False) if ctx and hasattr(ctx, 'params') else False
+
     with ThreadPoolExecutor(max_workers=4) as executor:
-        results = list(executor.map(norm_worker, rows))
+        results = list(tqdm(executor.map(norm_worker, rows), total=len(rows), desc="Standardizing payloads", disable=disable_tqdm))
         
-    logger.info(f"[SUCCESS] Normalization Complete. {sum(1 for r in results if r == 'SUCCESS')}/{len(rows)} payloads formatted natively.")
+    logger.info(f"[SUCCESS] Standardization Complete. {sum(1 for r in results if r == 'SUCCESS')}/{len(rows)} payloads formatted natively.")
         
     if stac:
         logger.info("Executing Mode E: STAC Schema Generation natively...")
         from als_finder.core.stac_generator import generate_catalog
         generate_catalog(workspace_path)
+        
+    logger.info("Executing Mode G: Local Catalog Footprint Generation natively...")
+    from als_finder.core.local_catalog import generate_local_catalog
+    generate_local_catalog(workspace_path, crs)
         
     if quicklook:
         logger.info("Executing Mode F: Quicklook QA/QC Generation natively...")

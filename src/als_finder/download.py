@@ -13,7 +13,7 @@ from als_finder.core.input_manager import load_roi
 
 logger = logging.getLogger(__name__)
 
-def generate_fetch_array(workspace_path: Path, roi_path: Optional[str], full_acquisition: bool) -> Path:
+def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquisition: bool = False, execute: bool = False) -> Path:
     """
     Parses manifest.json natively and calculates the explicit physical intersection matrix 
     for all target binaries, returning the generated CSV path.
@@ -48,7 +48,18 @@ def generate_fetch_array(workspace_path: Path, roi_path: Optional[str], full_acq
     roi_poly = None
     if not full_acquisition:
         roi_poly = load_roi(target_roi_path)
-        logger.info(f"Isolating geographical intersections mathematically across: {roi_poly.bounds}")
+        
+        import pyproj
+        from shapely.ops import transform
+        # Buffer 50m to mitigate downstream edge artifacts (Issue #9)
+        project_to_metric = pyproj.Transformer.from_crs(pyproj.CRS('EPSG:4326'), pyproj.CRS('EPSG:3857'), always_xy=True).transform
+        project_to_wgs84 = pyproj.Transformer.from_crs(pyproj.CRS('EPSG:3857'), pyproj.CRS('EPSG:4326'), always_xy=True).transform
+        
+        roi_metric = transform(project_to_metric, roi_poly)
+        roi_metric_buffered = roi_metric.buffer(50.0)
+        roi_poly = transform(project_to_wgs84, roi_metric_buffered)
+        
+        logger.info(f"Isolating geographical intersections mathematically across 50m buffered bounds: {roi_poly.bounds}")
         
     logger.info(f"Parsed {len(datasets)} dataset(s). Commencing tile intersection protocols...")
     
@@ -148,8 +159,10 @@ def generate_fetch_array(workspace_path: Path, roi_path: Optional[str], full_acq
     print("================================================================================\n")
     
     logger.info(f"[SUCCESS] Array Generation Protocol Complete.")
-    logger.info("[WARNING] Dry-run natively executed. No physical binaries were formally downloaded to your hard drive.")
-    logger.info("[WARNING] To gracefully pull these payloads natively, execute exactly with: --execute")
+    
+    if not execute:
+        import click
+        click.secho("[NOTICE] Dry-run only. Review the table above, refine your search if necessary, or run the exact same command with the --execute flag to begin physical download.", fg="yellow", bold=True)
     
     return fetch_csv_path
 
@@ -219,8 +232,14 @@ def execute_fetch_array(workspace_path: Path) -> None:
     logger.info(f"Physically orchestrating multi-threaded download sequence for {len(rows)} nodes...")
     
     success_ct = 0
+    import click
+    from tqdm import tqdm
+    ctx = click.get_current_context(silent=True)
+    disable_tqdm = ctx.params.get('quiet', False) if ctx and hasattr(ctx, 'params') else False
+
     with ThreadPoolExecutor(max_workers=8) as executor:
-        for result in executor.map(fetch_worker, rows):
+        results = executor.map(fetch_worker, rows)
+        for result in tqdm(results, total=len(rows), desc="Downloading payloads", disable=disable_tqdm):
             if result in ["SUCCESS", "SKIPPED"]:
                 success_ct += 1
                 
