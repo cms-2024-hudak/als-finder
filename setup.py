@@ -25,6 +25,8 @@ setup(
         "python-dotenv",
         "tqdm",
         "pyogrio",
+        "pystac",
+        "stac-validator",
     ],
     extras_require={
         "dev": ["pytest", "setuptools_scm", "build"],
