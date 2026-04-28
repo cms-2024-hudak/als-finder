@@ -69,7 +69,7 @@ def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquis
     total_tiles = 0
     
     with open(fetch_csv_path, 'w') as f:
-        f.write("provider,dataset_id,source_url,target_path\n")
+        f.write("provider,dataset_id,source_url,target_path,est_size\n")
         
         for item in datasets:
             p_name = item.get('provider', 'UNKNOWN')
@@ -92,7 +92,7 @@ def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquis
                 provider = OpenTopographyProvider()
                 ot_urls = provider.get_fetch_urls(item.get('raw_metadata', {}), roi_poly, hive_dir)
                 for source_url, target_path, byte_sz in ot_urls:
-                    f.write(f"{p_name},{d_name},{source_url},{target_path.absolute()}\n")
+                    f.write(f"{p_name},{d_name},{source_url},{target_path.absolute()},{byte_sz}\n")
                     fetch_matrix_manifest[d_name]["Bytes"] += byte_sz
                     fetch_matrix_manifest[d_name]["Tiles"] += 1
                     fetch_matrix_manifest[d_name]["Format"] = Path(target_path).suffix
@@ -111,10 +111,11 @@ def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquis
                 hive_target = hive_dir / f"{d_name}_subset.laz"
                 minx, miny, maxx, maxy = roi_native.bounds
                 bounds_str = f"([{minx:.4f}, {maxx:.4f}], [{miny:.4f}, {maxy:.4f}])"
-                # Encode bounds safely into target_path placeholder natively
-                f.write(f"{p_name},{d_name},{url},\"{hive_target.absolute()}|{bounds_str}\"\n")
                 
                 est_sz = int(item.get('size', 0))
+                # Encode bounds safely into target_path placeholder natively
+                f.write(f"{p_name},{d_name},{url},\"{hive_target.absolute()}|{bounds_str}\",{est_sz}\n")
+                
                 fetch_matrix_manifest[d_name]["Bytes"] += est_sz
                 fetch_matrix_manifest[d_name]["Tiles"] += 1
                 total_estimated_bytes += est_sz
@@ -122,9 +123,9 @@ def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquis
             else:
                 # Target the total comprehensive node root
                 hive_target = hive_dir / f"{d_name}_subset.laz"
-                f.write(f"{p_name},{d_name},{url},{hive_target.absolute()}\n")
-                
                 est_sz = int(item.get('size', 0))
+                f.write(f"{p_name},{d_name},{url},{hive_target.absolute()},{est_sz}\n")
+                
                 fetch_matrix_manifest[d_name]["Bytes"] += est_sz
                 fetch_matrix_manifest[d_name]["Tiles"] += 1
                 total_estimated_bytes += est_sz
@@ -166,17 +167,24 @@ def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquis
     
     return fetch_csv_path
 
-def execute_fetch_array(workspace_path: Path) -> None:
+def execute_fetch_array(workspace_path: Path, workers: int = None):
     """
-    Reads the statically generated fetch_array.csv and actively downloads 
-    the targeted `.laz` URIs directly to the modeled local Hive layout.
+    Physically execute the fetch array natively, pulling LiDAR binaries directly to local disk.
     """
     fetch_csv_path = workspace_path / 'catalog' / 'fetch_array.csv'
     
     if not fetch_csv_path.exists():
-        logger.error(f"Critical Error: No fetch_array.csv found. Formally generate the dry-run matrix first.")
-        sys.exit(1)
+        logger.error(f"Missing fetch array in {workspace_path}. Run fetch generation first.")
+        return
         
+    import csv
+    import requests
+    import shutil
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+    import os
+    
     logger.info(f"Targeting fetch array: {fetch_csv_path}")
     total_bytes, used_bytes, free_bytes = shutil.disk_usage(workspace_path)
     logger.info(f"Verified local workspace capacity: {free_bytes / (1024**3):.2f} GB available.")
@@ -189,58 +197,124 @@ def execute_fetch_array(workspace_path: Path) -> None:
         logger.info("Fetch array structurally empty. Nothing to download.")
         return
         
-    def fetch_worker(row):
-        source = row['source_url']
-        target_raw = row['target_path']
-        
-        # Unpack embedded bounds for EPT natively
-        bounds_str = None
-        if '|' in target_raw:
-            target_str, bounds_str = target_raw.split('|')
-            target = Path(target_str)
-        else:
-            target = Path(target_raw)
-            
-        if target.exists():
-            return "SKIPPED"
-            
-        target.parent.mkdir(parents=True, exist_ok=True)
+    total_est_bytes = 0
+    for r in rows:
         try:
-            if "ept.json" in source and bounds_str:
-                import subprocess
-                # Using resolution=0 enforces max LOD directly from the cloud natively
-                pdal_cmd = [
-                    'pdal', 'translate',
-                    source,
-                    str(target),
-                    '--readers.ept.bounds=' + bounds_str,
-                    '--readers.ept.resolution=0'
-                ]
-                logger.info(f"Dynamically streaming unified EPT subset natively: {' '.join(pdal_cmd)}")
-                subprocess.run(pdal_cmd, check=True, capture_output=True)
-                return "SUCCESS"
-            else:
-                urllib.request.urlretrieve(source, target)
-                return "SUCCESS"
-        except subprocess.CalledProcessError as e:
-            logger.error(f"PDAL extraction physically failed natively for {source}: {e.stderr.decode('utf-8')}")
-            return "FAILED"
-        except Exception as e:
-            logger.error(f"Failed to fetch {source}: {e}")
-            return "FAILED"
-            
-    logger.info(f"Physically orchestrating multi-threaded download sequence for {len(rows)} nodes...")
-    
-    success_ct = 0
+            total_est_bytes += int(r.get('est_size', 0))
+        except ValueError:
+            pass
+
     import click
     from tqdm import tqdm
     ctx = click.get_current_context(silent=True)
     disable_tqdm = ctx.params.get('quiet', False) if ctx and hasattr(ctx, 'params') else False
 
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    pbar = tqdm(total=total_est_bytes, unit='iB', unit_scale=True, desc="Downloading payloads", disable=disable_tqdm)
+    lock = threading.Lock()
+
+    def fetch_worker(row):
+        source = row['source_url']
+        target_raw = row['target_path']
+        
+        try:
+            est_size = int(row.get('est_size', 0))
+        except ValueError:
+            est_size = 0
+            
+        # Unpack embedded bounds for EPT natively
+        bounds_str = None
+        if '|' in target_raw:
+            target_str, bounds_str = target_raw.split('|')
+            target = Path(target_str)
+            if target.suffix == '.laz':
+                target = target.with_suffix('.copc.laz')
+        else:
+            target = Path(target_raw)
+            if "ept.json" in source and target.suffix == '.laz':
+                target = target.with_suffix('.copc.laz')
+            
+        if target.exists():
+            if est_size > 0:
+                with lock:
+                    pbar.update(est_size)
+            return "SKIPPED"
+            
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if "ept.json" in source:
+                import subprocess
+                # Using resolution=0 enforces max LOD directly from the cloud natively
+                pdal_cmd = [
+                    'pdal', 'translate',
+                    source,
+                    str(target)
+                ]
+                if bounds_str:
+                    pdal_cmd.extend(['--readers.ept.bounds=' + bounds_str])
+                pdal_cmd.extend(['--readers.ept.resolution=0'])
+                # Enforce COPC writer to enable rapid phase 3 spatial indexing
+                pdal_cmd.extend(['--writers.copc.forward=all'])
+                
+                logger.info(f"Dynamically streaming EPT natively: {' '.join(pdal_cmd)}")
+                proc = subprocess.Popen(pdal_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                
+                # File polling thread for pdal translate to dynamically update byte-progress
+                last_size = 0
+                while proc.poll() is None:
+                    time.sleep(1)
+                    if target.exists():
+                        cur_size = os.path.getsize(target)
+                        diff = cur_size - last_size
+                        if diff > 0:
+                            with lock:
+                                pbar.update(diff)
+                        last_size = cur_size
+                
+                if proc.returncode != 0:
+                    err = proc.stderr.read().decode('utf-8')
+                    logger.error(f"PDAL extraction failed natively for {source}: {err}")
+                    return "FAILED"
+                    
+                # Flush remaining bytes
+                if target.exists():
+                    cur_size = os.path.getsize(target)
+                    diff = cur_size - last_size
+                    if diff > 0:
+                        with lock:
+                            pbar.update(diff)
+                return "SUCCESS"
+            else:
+                # Direct HTTP Chunking
+                with requests.get(source, stream=True) as r:
+                    r.raise_for_status()
+                    with target.open('ab') as file:
+                        for chunk in r.iter_content(chunk_size=1024*1024):
+                            if chunk:
+                                file.write(chunk)
+                                with lock:
+                                    pbar.update(len(chunk))
+                return "SUCCESS"
+        except Exception as e:
+            logger.error(f"Failed to fetch {source}: {e}")
+            return "FAILED"
+            
+    # Dynamically calculate Safe Network Workers
+    if workers is None:
+        try:
+            cpu_cores = os.cpu_count() or 4
+            workers = min(cpu_cores, 8) # Safely cap at 8 to prevent S3 HTTP Throttling and TCP exhaustion
+        except:
+            workers = 4
+            
+    logger.info(f"Physically orchestrating multi-threaded download sequence for {len(rows)} nodes using {workers} concurrent workers...")
+    
+    success_ct = 0
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
         results = executor.map(fetch_worker, rows)
-        for result in tqdm(results, total=len(rows), desc="Downloading payloads", disable=disable_tqdm):
+        for result in results:
             if result in ["SUCCESS", "SKIPPED"]:
                 success_ct += 1
                 
+    pbar.close()
     logger.info(f"[SUCCESS] Total Data Block Acquisition completed: {success_ct}/{len(rows)} matrices mapped.")
