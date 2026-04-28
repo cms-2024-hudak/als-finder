@@ -24,7 +24,11 @@ To pull datasets from OpenTopography, you must provide a free authorization toke
 3. Supply this key to `als-finder` using the `--ot-key` flag during your first search. The engine will transparently cache it into a local `.env` file directly in your active working directory for all future executions:
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --ot-key "your_token_here" --workspace ./my_lidar_project/
+# 1. Extract the example ROI to your local directory
+als-finder get-example-roi
+
+# 2. Run your search with the key
+als-finder search --roi ./ltbmu_boundary.gpkg --ot-key "your_token_here" --workspace ./my_lidar_project/
 ```
 
 ---
@@ -128,7 +132,11 @@ pip install "als-finder[all]"
 The easiest way to search for LiDAR is to provide an Area of Interest (ROI) boundary and a target output `workspace`. An example boundary (`ltbmu_boundary.gpkg`) is bundled with the package so you can follow along with this tutorial locally:
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --workspace ./my_lidar_project/
+# 1. Extract the natively bundled test polygon to your current directory
+als-finder get-example-roi
+
+# 2. Run the search using the newly extracted local file
+als-finder search --roi ./ltbmu_boundary.gpkg --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -180,7 +188,7 @@ If you know the title of your target dataset, you can filter the search using wi
 #### Finding Names via Exact String
 You can find a specific point cloud acquisition by using its exact title:
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "CA_SierraNevada_5_2022" --workspace ./exact_sierra/
+als-finder search --roi ./ltbmu_boundary.gpkg --name "CA_SierraNevada_5_2022" --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -194,14 +202,14 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "CA_SierraNevada_5
 =======================================================================================================================================
  TOTAL DATASETS: 1 | ESTIMATED PAYLOAD: 1380.20 GB | QUERY TIME: 3.14s
 ---------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/exact_sierra/catalog/catalog.gpkg
- JSON METADATA: /home/user/exact_sierra/catalog/manifest.json
+ CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
 =======================================================================================================================================
 ```
 
 #### Finding Names via Wildcard Strings
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "*Tahoe*" --workspace ./tahoe_wildcards/
+als-finder search --roi ./ltbmu_boundary.gpkg --name "*Tahoe*" --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -216,15 +224,15 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "*Tahoe*" --worksp
 =======================================================================================================================================
  TOTAL DATASETS: 2 | ESTIMATED PAYLOAD: 403.57 GB | QUERY TIME: 4.12s 
 ---------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/tahoe_wildcards/catalog/catalog.gpkg
- JSON METADATA: /home/user/tahoe_wildcards/catalog/manifest.json
+ CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
 =======================================================================================================================================
 ```
 
 #### Finding Names via Explicit Regex
 Prefix the query with a tilde `~` to use a python regular expression (e.g., finding datasets starting with `CA_Sierra`):
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "~^CA_Sierra.*" --workspace ./sierra_regex/
+als-finder search --roi ./ltbmu_boundary.gpkg --name "~^CA_Sierra.*" --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -240,8 +248,8 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "~^CA_Sierra.*" --
 =======================================================================================================================================
  TOTAL DATASETS: 3 | ESTIMATED PAYLOAD: 3688.28 GB | QUERY TIME: 3.51s
 ---------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/sierra_regex/catalog/catalog.gpkg
- JSON METADATA: /home/user/sierra_regex/catalog/manifest.json
+ CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
 =======================================================================================================================================
 ```
 
@@ -251,7 +259,7 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --name "~^CA_Sierra.*" --
 If you only need modern datasets acquired *after* a specific date, strictly append the terminal bounding slash explicitly leaving the termination threshold open-ended organically:
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2020-01-01/ --workspace ./recent_lidar/
+als-finder search --roi ./ltbmu_boundary.gpkg --date 2020-01-01/ --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -269,8 +277,8 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2020-01-01/ --work
 =======================================================================================================================================
  TOTAL DATASETS: 5 | ESTIMATED PAYLOAD: 4271.48 GB | QUERY TIME: 4.89s
 ---------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/recent_lidar/catalog/catalog.gpkg
- JSON METADATA: /home/user/recent_lidar/catalog/manifest.json
+ CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
 =======================================================================================================================================
 ```
 
@@ -278,7 +286,7 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2020-01-01/ --work
 If you only need historic acquisitions prior to a specific date, omit the starting date:
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --date /2020-01-01 --workspace ./historic_lidar/
+als-finder search --roi ./ltbmu_boundary.gpkg --date /2020-01-01 --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -318,7 +326,7 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --date /2020-01-01 --work
 You can also search within specific historical windows (e.g., target point clouds collected during a 5-year span):
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2015-01-01/2019-12-31 --workspace ./historic_lidar/
+als-finder search --roi ./ltbmu_boundary.gpkg --date 2015-01-01/2019-12-31 --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -343,8 +351,8 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --date 2015-01-01/2019-12
 =======================================================================================================================================
  TOTAL DATASETS: 12 | ESTIMATED PAYLOAD: 6270.20 GB | QUERY TIME: 4.41s
 ---------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/historic_lidar/catalog/catalog.gpkg
- JSON METADATA: /home/user/historic_lidar/catalog/manifest.json
+ CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
 =======================================================================================================================================
 ```
 
@@ -355,7 +363,7 @@ You can filter datasets based on target point densities. `als-finder` supports b
 If you need a specific USGS Quality Level (e.g., `QL1` which guarantees `≥8.0 pts/m²`):
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --density QL1 --workspace ./high_res/
+als-finder search --roi ./ltbmu_boundary.gpkg --density QL1 --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -379,8 +387,8 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --density QL1 --workspace
 =======================================================================================================================================
  TOTAL DATASETS: 11 | ESTIMATED PAYLOAD: 9192.89 GB | QUERY TIME: 3.98s
 ---------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/high_res/catalog/catalog.gpkg
- JSON METADATA: /home/user/high_res/catalog/manifest.json
+ CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
 =======================================================================================================================================
 ```
 
@@ -390,7 +398,7 @@ You can isolate structural quality matrices globally cleanly intercepting densit
 *Just like the `--date` flag, you can dynamically enforce open-ended parameters strictly mapping one-way thresholds (e.g., `2/` isolates datasets exclusively possessing ≥ 2 pts/m2, while `/10` evaluates payloads strictly containing ≤ 10 pts/m2).*
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --density 2/10 --workspace ./mid_res/
+als-finder search --roi ./ltbmu_boundary.gpkg --density 2/10 --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -409,8 +417,8 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --density 2/10 --workspac
 =======================================================================================================================================
  TOTAL DATASETS: 6 | ESTIMATED PAYLOAD: 881.36 GB | QUERY TIME: 4.54s
 ---------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/mid_res/catalog/catalog.gpkg
- JSON METADATA: /home/user/mid_res/catalog/manifest.json
+ CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
 =======================================================================================================================================
 ```
 
@@ -419,7 +427,7 @@ To only search specific registries, supply the exact provider flags (`USGS_EPT`,
 
 #### Single Provider
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT --workspace ./usgs_only/
+als-finder search --roi ./ltbmu_boundary.gpkg --provider USGS_EPT --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -440,8 +448,8 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT --wor
 =======================================================================================================================================
  TOTAL DATASETS: 8 | ESTIMATED PAYLOAD: 7028.40 GB | QUERY TIME: 3.01s
 ---------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/usgs_only/catalog/catalog.gpkg
- JSON METADATA: /home/user/usgs_only/catalog/manifest.json
+ CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
 =======================================================================================================================================
 ```
 
@@ -449,7 +457,7 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT --wor
 You can pass the flag multiple times, or use a clean **comma-separated list** to search a specific combination of registries (e.g., pulling only `USGS_EPT` and `OpenTopography`):
 
 ```bash
-als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT,OpenTopography --workspace ./combo/
+als-finder search --roi ./ltbmu_boundary.gpkg --provider USGS_EPT,OpenTopography --workspace ./my_lidar_project/
 ```
 
 **Console Output:**
@@ -475,8 +483,8 @@ als-finder search --roi ./examples/ltbmu_boundary.gpkg --provider USGS_EPT,OpenT
 =================================================================================================================
  TOTAL DATASETS: 13 | ESTIMATED PAYLOAD: 7623.49 GB | QUERY TIME: 12.63s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/combo/catalog/catalog.gpkg
- JSON METADATA: /home/user/combo/catalog/manifest.json
+ CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
