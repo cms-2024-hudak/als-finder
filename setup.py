@@ -27,6 +27,7 @@ setup(
         "pyogrio",
         "pystac",
         "stac-validator",
+        "psutil",
     ],
     extras_require={
         "dev": ["pytest", "setuptools_scm", "build"],

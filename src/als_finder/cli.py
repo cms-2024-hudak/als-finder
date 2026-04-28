@@ -556,7 +556,9 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--crs', help='Specify target output projection for normalization (e.g. EPSG:3857, EPSG:5070, or auto-utm)')
 @click.option('--stac', is_flag=True, help='Dynamically generate PySTAC schema hierarchies out of the standardized payloads natively.')
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
-def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, standardize, crs, stac, quicklook):
+@click.option('--preserve-raw', is_flag=True, help='Preserve the raw .laz binaries after successful standardization. By default, raw files are purged to save space.')
+@click.option('--workers', type=int, help='Override the number of concurrent thread workers. Defaults to dynamic scaling based on os.cpu_count()')
+def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, standardize, crs, stac, quicklook, preserve_raw, workers):
     """Generate target fetch arrays or physically download filtered binary segments directly to the Hive local cache."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -579,10 +581,10 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
         
     if execute:
         logger.info("Executing Mode A/B: Physical Core Download Protocol")
-        execute_fetch_array(workspace_path=workspace_path)
+        execute_fetch_array(workspace_path=workspace_path, workers=workers)
         if standardize:
             logger.info("Executing Mode D: PDAL Standardization")
-            ctx.invoke(standardize_cmd, workspace=workspace, crs=crs, roi=roi, stac=stac, quicklook=quicklook)
+            ctx.invoke(standardize_cmd, workspace=workspace, crs=crs, roi=roi, stac=stac, quicklook=quicklook, preserve_raw=preserve_raw, workers=workers)
         elif stac or quicklook:
             logger.warning("STAC Generation and Quicklooks explicitly require standardized .copc.laz entities. Ignoring flags without --standardize.")
 
@@ -592,7 +594,9 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
 @click.option('--roi', default=None, help='Optional path to ROI geometry to geometrically slice the point cloud footprint natively.')
 @click.option('--stac/--no-stac', default=True, help='Generate STAC compliant metadata schemas for the final standardized matrix.')
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
-def standardize_cmd(workspace, crs, roi, stac, quicklook):
+@click.option('--preserve-raw', is_flag=True, help='Preserve the raw .laz binaries after successful standardization. By default, raw files are purged to save space.')
+@click.option('--workers', type=int, help='Override the number of concurrent thread workers. Defaults to dynamic scaling based on os.cpu_count()')
+def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers):
     """Execute PDAL Standardization matrices on locally downloaded LiDAR binaries."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -614,51 +618,115 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook):
     else:
         logger.info(f"Target CRS strictly enforced: {crs}")
         
-    from als_finder.core.standardization import run_pdal_standardization
-    
-    roi_poly = None
-    if roi:
-        try:
-            roi_poly = load_roi(roi)
-            logger.info("Masking PDAL crop footprint to valid ROI bounds to eliminate buffered overlap.")
-        except ROIError as e:
-            logger.warning(f"ROI parsing failed: {e}. Skipping exact spatial crop.")
-            
+    from als_finder.core.standardization import generate_512m_grid, run_pdal_standardization, run_final_copc_merge
     import csv
+    import subprocess
+    import geopandas as gpd
+    import psutil
+    from concurrent.futures import ThreadPoolExecutor
+    from tqdm import tqdm
+    import shutil
+    from als_finder.core.spatial_search import load_roi
+    
+    # Phase 1: Universal Hive Ingestion
+    datasets = set()
     with open(fetch_array_path, 'r') as f:
         reader = csv.DictReader(f)
-        rows = list(reader)
-        
-    from concurrent.futures import ThreadPoolExecutor
-    
-    def norm_worker(row):
-        target_raw = row['target_path']
-        if '|' in target_raw:
-            target_str, _ = target_raw.split('|')
-            target_path = Path(target_str)
-        else:
-            target_path = Path(target_raw)
-        
-        prov = row['provider']
-        
-        if not target_path.exists():
-            return "MISSING_SOURCE"
-            
-        res = run_pdal_standardization(target_path, crs, roi_poly, prov)
-        return "SUCCESS" if res else "FAILED"
-        
-    logger.info(f"Processing {len(rows)} matrices into standard {crs} topologies...")
-    
-    results = []
-    from tqdm import tqdm
+        for row in reader:
+            target_raw = row['target_path']
+            if '|' in target_raw:
+                target_str, _ = target_raw.split('|')
+                target_path = Path(target_str)
+            else:
+                target_path = Path(target_raw)
+            provider = row['provider']
+            dataset_folder = target_path.parent.name
+            if 'dataset=' in dataset_folder:
+                dataset = dataset_folder.replace('dataset=', '')
+                datasets.add((provider, dataset))
+                
     ctx = click.get_current_context(silent=True)
     disable_tqdm = ctx.params.get('quiet', False) if ctx and hasattr(ctx, 'params') else False
-
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        results = list(tqdm(executor.map(norm_worker, rows), total=len(rows), desc="Standardizing payloads", disable=disable_tqdm))
+    
+    for provider, dataset in datasets:
+        logger.info(f"Standardizing dataset: {dataset} from {provider}")
+        raw_dir = workspace_path / "data" / "raw" / f"provider={provider}" / f"dataset={dataset}"
+        catalog_dir = workspace_path / "catalog" / "indices" / f"provider={provider}" / f"dataset={dataset}"
+        catalog_dir.mkdir(parents=True, exist_ok=True)
+        raw_index_path = catalog_dir / "raw_index.gpkg"
         
-    logger.info(f"[SUCCESS] Standardization Complete. {sum(1 for r in results if r == 'SUCCESS')}/{len(rows)} payloads formatted natively.")
+        if raw_index_path.exists():
+            raw_index_path.unlink()
+        subprocess.run(['pdal', 'tindex', 'create', str(raw_index_path), '-f', 'GPKG', '--t_srs', 'EPSG:3857', '--filespec', f"{raw_dir}/*.laz"], check=True)
+        # Some might be copc.laz
+        subprocess.run(['pdal', 'tindex', 'create', str(raw_index_path), '-f', 'GPKG', '--t_srs', 'EPSG:3857', '--filespec', f"{raw_dir}/*.copc.laz"], stderr=subprocess.DEVNULL)
         
+        # Phase 2: Python Orchestration (The 512m Grid)
+        if roi:
+            try:
+                roi_poly = load_roi(roi)
+                gdf = gpd.GeoDataFrame(index=[0], crs='EPSG:4326', geometry=[roi_poly])
+                gdf = gdf.to_crs('EPSG:3857')
+            except Exception as e:
+                logger.warning(f"ROI parsing failed: {e}. Falling back to dataset bounds.")
+                gdf = gpd.read_file(raw_index_path)
+        else:
+            gdf = gpd.read_file(raw_index_path)
+            
+        grid = generate_512m_grid(gdf)
+        
+        # Phase 3: RAM-Aware Distributed Processing
+        available_ram_gb = psutil.virtual_memory().available / (1024**3)
+        max_ram_workers = int((available_ram_gb - 4.0) / 1.5)
+        if max_ram_workers < 1:
+            max_ram_workers = 1
+            
+        cpu_cores = os.cpu_count() or 4
+        if workers is None:
+            n_workers = min(cpu_cores, max_ram_workers, 16)
+        else:
+            n_workers = workers
+            
+        logger.info(f"Processing {len(grid)} tiles using {n_workers} concurrent workers (RAM bounds: {max_ram_workers})...")
+            
+        interim_dir = workspace_path / "data" / "interim" / f"provider={provider}" / f"dataset={dataset}"
+        interim_dir.mkdir(parents=True, exist_ok=True)
+        
+        def worker_fn(item):
+            idx, (core_poly, buffered_poly) = item
+            out_path = interim_dir / f"tile_{idx}.laz"
+            return run_pdal_standardization(raw_index_path, out_path, crs, core_poly, buffered_poly, provider)
+            
+        with ThreadPoolExecutor(max_workers=n_workers) as executor:
+            list(tqdm(executor.map(worker_fn, enumerate(grid)), total=len(grid), desc=f"Standardizing {dataset}", disable=disable_tqdm))
+            
+        # Phase 4: Final COPC Aggregation
+        interim_index_path = catalog_dir / "interim_index.gpkg"
+        if interim_index_path.exists():
+            interim_index_path.unlink()
+            
+        # Check if any interim files exist
+        interim_files = list(interim_dir.glob("*.laz"))
+        if not interim_files:
+            logger.warning(f"No standardized tiles generated for {dataset}. Skipping merge.")
+            continue
+            
+        logger.info(f"Merging {len(interim_files)} tiles into monolithic COPC...")
+        subprocess.run(['pdal', 'tindex', 'create', str(interim_index_path), '-f', 'GPKG', '--filespec', f"{interim_dir}/*.laz"], check=True)
+        
+        final_copc_path = workspace_path / "data" / "standardized" / f"provider={provider}" / f"dataset={dataset}.copc.laz"
+        run_final_copc_merge(interim_index_path, final_copc_path)
+        
+        # Cleanup
+        shutil.rmtree(interim_dir)
+        if not preserve_raw:
+            try:
+                shutil.rmtree(raw_dir)
+            except Exception as e:
+                logger.warning(f"Failed to cleanly purge raw data: {e}")
+                
+    logger.info("[SUCCESS] Standardization Complete.")
+    
     if stac:
         logger.info("Executing Mode E: STAC Schema Generation natively...")
         from als_finder.core.stac_generator import generate_catalog
