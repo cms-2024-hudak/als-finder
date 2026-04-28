@@ -91,6 +91,13 @@ def run_pdal_standardization(
     pipeline.append({
         "type": "filters.smrf" # SMRF maps the mathematical ground surface to ASPRS Class 2
     })
+    
+    # Compute Height Above Ground (HAG) natively as a separate extra dimension.
+    # The industry standard preserves absolute Z elevation natively, while 
+    # appending the HAG calculation for downstream analytics.
+    pipeline.append({
+        "type": "filters.hag_nn"
+    })
         
     # Target Writer (COPC: Cloud Optimized Point Cloud)
     pipeline.append({
