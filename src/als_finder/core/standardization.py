@@ -7,7 +7,7 @@ from shapely.geometry import Polygon
 
 logger = logging.getLogger(__name__)
 
-def run_pdal_normalization(
+def run_pdal_standardization(
     input_path: Path, 
     crs: str, 
     roi_poly: Optional[Polygon] = None, 
@@ -59,15 +59,24 @@ def run_pdal_normalization(
             "out_srs": target_crs
         })
         
-    # 2. Crop geometrically if a polygon was physically declared natively to optimize algorithm boundaries
-    if roi_poly:
-        pipeline.append({
-            "type": "filters.crop",
-            "polygon": roi_poly.wkt,
-            "a_srs": "EPSG:4326"
-        })
+    # 2. (Skipped) Crop geometrically - Removed to keep the 50m buffer intact per Issue #9
         
-    # 3. Scientific Taxonomy Overwrite & Morphological Surface Generation natively natively over local grids
+    # 3. Density-Agnostic Noise Filtering (Issue #9)
+    # First, respect any vendor noise classifications (7=Low, 18=High) before wiping
+    pipeline.append({
+        "type": "filters.expression",
+        "expression": "Classification != 7 && Classification != 18"
+    })
+    
+    # Second, run a robust statistical outlier filter for unclassified ghost points natively
+    pipeline.append({
+        "type": "filters.outlier",
+        "method": "statistical",
+        "mean_k": 12,
+        "multiplier": 3.0
+    })
+    
+    # 4. Scientific Taxonomy Overwrite & Morphological Surface Generation natively natively over local grids
     pipeline.append({
         "type": "filters.assign",
         "assignment": "Classification[:]=1"  # Force wipe structural metadata to Unclassified
@@ -94,7 +103,7 @@ def run_pdal_normalization(
     
     try:
         import pdal
-        logger.info(f"Executing standard python-pdal Normalization on {input_path.name} -> {target_crs}")
+        logger.info(f"Executing standard python-pdal Standardization on {input_path.name} -> {target_crs}")
         p = pdal.Pipeline(pdal_json)
         p.execute()
         return out_path
@@ -106,7 +115,7 @@ def run_pdal_normalization(
             logger.info(f"Successfully executed native PDAL pipeline on {input_path.name} -> {target_crs}")
             return out_path
         except FileNotFoundError:
-            logger.error("Critical Error: 'pdal' command not found globally or in Conda. Please install pdal to use normalization.")
+            logger.error("Critical Error: 'pdal' command not found globally or in Conda. Please install pdal to use standardization.")
             return None
         except subprocess.CalledProcessError as e:
             logger.error(f"PDAL Pipeline execution failed natively for {input_path.name}: {e.stderr.decode('utf-8')}")

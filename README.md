@@ -510,8 +510,8 @@ To prevent accidentally downloading massive datasets and to better support High-
 Assume you executed a tight search query dropping a bounding box strictly over an area of interest inside the `CA_SierraNevada_5_2022` USGS footprint:
 
 ```bash
-als-finder search --roi "-120.01, 39.01, -119.99, 39.02" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
-als-finder download --roi "-120.01, 39.01, -119.99, 39.02" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
+als-finder search --roi "-120.005, 39.015, -119.995, 39.016" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
+als-finder download --roi "-120.005, 39.015, -119.995, 39.016" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
 ```
 
 ```text
@@ -532,7 +532,7 @@ als-finder download --roi "-120.01, 39.01, -119.99, 39.02" --name "CA_SierraNeva
 If you visually verify the tile payload is safe for your local hard drive capacity, you formally pull the arrays into a strict `Hive-Partitioned` database struct:
 
 ```bash
-als-finder download --roi "-120.01, 39.01, -119.99, 39.02" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/ --execute
+als-finder download --roi "-120.005, 39.015, -119.995, 39.016" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/ --execute
 ```
 
 **Console Output:**
@@ -583,14 +583,14 @@ To solve this completely, `als-finder` includes an automated harmonization engin
 
 ## 🛠️ Stage 3: Normalization & Standardization
 
-The `normalize` command standardizes your raw downloads into a strictly uniform format. It executes the following pipeline on every single file in the `data/raw/` directory:
+The `als-finder standardize` command standardizes your raw downloads into a strictly uniform format. It executes the following pipeline on every single file in the `data/raw/` directory:
 
 1. **Format Upgrade:** Converts everything to Cloud Optimized Point Cloud (`.copc.laz`) for blazing-fast spatial indexing.
 2. **CRS Reprojection:** Reprojects everything to Web Mercator (`EPSG:3857`) by default, or dynamically calculates a local UTM zone using the `--crs auto-utm` flag.
 3. **Taxonomic Standardization:** Wipes legacy vendor classifications, drops invalid points, and executes the SMRF (Simple Morphological Filter) algorithm to strictly classify the bare earth (Class 2) and vegetation (Class 1).
 
 ```bash
-als-finder normalize --workspace ./tiny_subset/
+als-finder standardize --workspace ./tiny_subset/
 ```
 
 **Resulting Hive Workspace Structure:**
@@ -609,10 +609,10 @@ tiny_subset/
 
 ## 🌐 Stage 4: SpatioTemporal Asset Catalogs (`--stac`)
 
-By simply appending the `--stac` flag to your `normalize` command, the engine parses the normalized COPC files and generates formal `PySTAC` JSON Items. These can be dragged and dropped into QGIS or fed into cloud STAC APIs for immediate geographic indexing.
+By simply appending the `--stac` flag to your `standardize` command, the engine parses the normalized COPC files and generates formal `PySTAC` JSON Items. These can be dragged and dropped into QGIS or fed into cloud STAC APIs for immediate geographic indexing.
 
 ```bash
-als-finder normalize --workspace ./tiny_subset/ --stac
+als-finder standardize --workspace ./tiny_subset/ --stac
 ```
 
 This populates a new directory natively in your catalog: `tiny_subset/catalog/stac/`.
@@ -647,7 +647,7 @@ for item in catalog.get_all_items():
 Appending the `--quicklook` flag generates a preview image of the point cloud. It uses `readers.copc` to stream only the lowest-resolution spatial tiers, generating previews in seconds without downloading the full dataset.
 
 ```bash
-als-finder normalize --workspace ./tiny_subset/ --quicklook
+als-finder standardize --workspace ./tiny_subset/ --quicklook
 ```
 
 **What it generates:**
@@ -665,11 +665,11 @@ If you have already defined your `--roi` and are ready to execute the entire lif
 # 1. Generate the Fetch List
 als-finder download --roi "-120.505, 39.015, -120.495, 39.016" --name "CA_SierraNevada_4_2022" --workspace ./my_lidar_project/
 
-# 2. Execute the Download, Harmonize, STAC index, and Preview
-als-finder normalize --workspace ./my_lidar_project/ --execute --stac --quicklook
+# 2. Execute the Download, Harmonize, STAC index, and Standardize
+als-finder standardize --workspace ./my_lidar_project/ --execute --stac --quicklook
 ```
 
-*Note: The `--execute` flag can be passed directly to `normalize`. This tells the engine to first fulfill the pending `fetch_array.csv` downloads, and immediately transition into harmonization, STAC formatting, and QA/QC image generation natively.*
+*Note: The `--execute` flag can be passed directly to `standardize`. This tells the engine to first fulfill the pending `fetch_array.csv` downloads, and immediately transition into harmonization, STAC formatting, and QA/QC image generation natively.*
 
 ---
 
