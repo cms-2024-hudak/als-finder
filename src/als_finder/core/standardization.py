@@ -9,32 +9,31 @@ from shapely.geometry import Polygon, box
 
 logger = logging.getLogger(__name__)
 
-def generate_512m_grid(gdf: gpd.GeoDataFrame) -> List[Tuple[Polygon, Polygon]]:
+def generate_grid(gdf: gpd.GeoDataFrame, tile_size: int = 512, buffer_size: int = 50) -> List[Tuple[Polygon, Polygon]]:
     """
-    Generates a 512m x 512m vector grid over the total bounds of the provided GeoDataFrame.
+    Generates a uniform vector grid over the total bounds of the provided GeoDataFrame.
     Assumes the GeoDataFrame is already in a metric CRS (e.g., EPSG:3857).
-    Returns a list of tuples: (core_polygon, buffered_polygon)
-    where core_polygon is 512x512m and buffered_polygon is 612x612m.
+    Returns a list of tuples: (core_polygon, buffered_polygon).
     """
     minx, miny, maxx, maxy = gdf.total_bounds
     
-    # Snap to nearest 512m to create a uniform grid
+    # Snap to nearest tile_size to create a uniform grid
     import math
-    minx = math.floor(minx / 512) * 512
-    miny = math.floor(miny / 512) * 512
-    maxx = math.ceil(maxx / 512) * 512
-    maxy = math.ceil(maxy / 512) * 512
+    minx = math.floor(minx / tile_size) * tile_size
+    miny = math.floor(miny / tile_size) * tile_size
+    maxx = math.ceil(maxx / tile_size) * tile_size
+    maxy = math.ceil(maxy / tile_size) * tile_size
     
     grid = []
     x = minx
     while x < maxx:
         y = miny
         while y < maxy:
-            core_poly = box(x, y, x + 512, y + 512)
-            buffered_poly = box(x - 50, y - 50, x + 512 + 50, y + 512 + 50)
+            core_poly = box(x, y, x + tile_size, y + tile_size)
+            buffered_poly = box(x - buffer_size, y - buffer_size, x + tile_size + buffer_size, y + tile_size + buffer_size)
             grid.append((core_poly, buffered_poly))
-            y += 512
-        x += 512
+            y += tile_size
+        x += tile_size
         
     return grid
 
@@ -44,7 +43,8 @@ def run_pdal_standardization(
     crs: str, 
     core_poly: Polygon,
     buffered_poly: Polygon,
-    provider: str = 'UNKNOWN'
+    provider: str = 'UNKNOWN',
+    grid_crs: str = 'EPSG:3857'
 ) -> bool:
     """
     Constructs and executes a PDAL pipeline to standardize a single tile from the tindex.
@@ -52,23 +52,58 @@ def run_pdal_standardization(
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     
-    # Bounding boxes for readers.tindex and filters.crop
+    # Bounding boxes for readers and crops
     b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
     c_minx, c_miny, c_maxx, c_maxy = core_poly.bounds
     
     buffered_bounds_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
     core_bounds_str = f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
     
-    pipeline = []
+    # 1. Read the GeoPackage index to get remote URLs dynamically
+    try:
+        gdf = gpd.read_file(raw_index_path)
+        # Intersect with buffered poly to find relevant files
+        intersecting = gdf[gdf.intersects(buffered_poly)]
+        if intersecting.empty:
+            return True # Nothing to process for this tile
+        urls = intersecting['location'].tolist()
+    except Exception as e:
+        logger.error(f"Failed to read index {raw_index_path}: {e}")
+        return False
+
+    process_pipeline = []
     
-    # 1. Reader from the tindex using the buffered bounds
-    pipeline.append({
-        "type": "readers.tindex",
-        "filename": str(raw_index_path.absolute()),
-        "bounds": buffered_bounds_str
-    })
+    # 2. Provider-specific Native Readers (or Local File Fallback)
+    from als_finder.providers import get_provider
+    try:
+        # If the URL is a remote HTTP endpoint, delegate to the provider plugin
+        if str(urls[0]).startswith("http"):
+            provider_instance = get_provider(provider)
+            reader_stages = provider_instance.get_pdal_reader(urls, buffered_poly)
+            process_pipeline.extend(reader_stages)
+        else:
+            # It's a local downloaded file! Bypass the plugin and read natively.
+            inputs = []
+            for i, url in enumerate(urls):
+                tag = f"reader_{i}"
+                reader_type = "readers.copc" if str(url).lower().endswith(".copc.laz") else "readers.las"
+                process_pipeline.append({
+                    "type": reader_type,
+                    "filename": url,
+                    "tag": tag
+                })
+                inputs.append(tag)
+                
+            if len(urls) > 1:
+                process_pipeline.append({
+                    "type": "filters.merge",
+                    "inputs": inputs
+                })
+    except Exception as e:
+        logger.error(f"Failed to instantiate provider or build reader: {e}")
+        return False
     
-    # 2. Reprojection filter
+    # 3. Reprojection filter (from native CRS)
     if crs:
         target_crs = crs
         if crs.lower() == 'auto-utm':
@@ -82,7 +117,7 @@ def run_pdal_standardization(
             epsg = 32600 + zone if lat >= 0 else 32700 + zone
             target_crs = f"EPSG:{epsg}"
             
-        pipeline.append({
+        process_pipeline.append({
             "type": "filters.reprojection",
             "out_srs": target_crs
         })
@@ -97,72 +132,67 @@ def run_pdal_standardization(
         c_miny, c_maxy = min(c_miny, c_maxy), max(c_miny, c_maxy)
         core_bounds_str = f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
         
-    # 3. Density-Agnostic Noise Filtering
-    pipeline.append({
+    # 4. Density-Agnostic Noise Filtering
+    process_pipeline.append({
         "type": "filters.expression",
-        "expression": "Classification != 7 && Classification != 18"
+        "expression": "Classification != 7 && Classification != 18 && ReturnNumber > 0 && NumberOfReturns > 0"
     })
     
-    # 4. Statistical outlier filter
-    pipeline.append({
+    # 5. Statistical outlier filter
+    process_pipeline.append({
         "type": "filters.outlier",
         "method": "statistical",
         "mean_k": 12,
         "multiplier": 3.0
     })
     
-    # 5. Scientific Taxonomy Overwrite
-    pipeline.append({
+    # 6. Scientific Taxonomy Overwrite
+    process_pipeline.append({
         "type": "filters.assign",
         "assignment": "Classification[:]=1"
     })
     
-    pipeline.append({
-        "type": "filters.expression",
-        "expression": "ReturnNumber > 0 && NumberOfReturns > 0"
-    })
-    
-    # 6. Morphological Surface Generation
-    pipeline.append({
+    # 7. Morphological Surface Generation
+    process_pipeline.append({
         "type": "filters.smrf"
     })
     
-    # 7. Compute Height Above Ground (HAG)
-    pipeline.append({
+    # 8. Compute Height Above Ground (HAG)
+    process_pipeline.append({
         "type": "filters.hag_nn"
     })
     
-    # 8. Precision crop down to the core bounds (stripping the 50m buffer)
-    pipeline.append({
+    # 9. Precision crop down to the core bounds (stripping the 50m buffer)
+    process_pipeline.append({
         "type": "filters.crop",
         "bounds": core_bounds_str
     })
         
-    # 9. Target Writer (Standard .laz for intermediate to save I/O overhead)
-    pipeline.append({
+    # 10. Target Writer
+    process_pipeline.append({
         "type": "writers.las",
         "filename": str(out_path.absolute()),
         "compression": "laszip"
     })
     
-    pdal_json = json.dumps(pipeline)
+    process_json = json.dumps(process_pipeline)
     
     try:
-        import pdal
-        p = pdal.Pipeline(pdal_json)
-        p.execute()
-        # If output file wasn't created (e.g. no points in this tile), return True to not fail the pipeline
-        if not out_path.exists():
-            return True
-        return True
-    except ImportError:
         try:
-            subprocess.run(['pdal', 'pipeline', '-s'], input=pdal_json.encode('utf-8'), capture_output=True, check=True)
-            return True
-        except subprocess.CalledProcessError as e:
-            # It's possible the tile had 0 points, PDAL fails gracefully, we can just skip it
-            return True
+            import pdal
+            p = pdal.Pipeline(process_json)
+            p.execute()
+        except ImportError:
+            subprocess.run(['pdal', 'pipeline', '-s'], input=process_json.encode('utf-8'), capture_output=True, check=True)
+            
+        return True
+    except subprocess.CalledProcessError as e:
+        err_msg = e.stderr.decode('utf-8')
+        if "0 points" not in err_msg.lower() and "empty" not in err_msg.lower():
+            logger.error(f"PDAL core pipeline failed: {err_msg}")
+        return True
     except Exception as e:
+        logger.error(f"Unexpected error in pipeline: {e}")
         return False
 
 def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path) -> bool:

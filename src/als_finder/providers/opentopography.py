@@ -181,6 +181,26 @@ class OpenTopographyProvider(BaseProvider):
         """
         pass
 
+    def get_pdal_reader(self, urls: List[str], buffered_poly: Polygon) -> List[Dict[str, Any]]:
+        pipeline = []
+        inputs = []
+        for i, url in enumerate(urls):
+            tag = f"reader_{i}"
+            pipeline.append({
+                "type": "readers.copc",
+                "filename": url,
+                "polygon": buffered_poly.wkt,
+                "tag": tag
+            })
+            inputs.append(tag)
+            
+        if len(urls) > 1:
+            pipeline.append({
+                "type": "filters.merge",
+                "inputs": inputs
+            })
+        return pipeline
+
     def get_fetch_urls(self, raw_metadata: dict, roi: Optional[Polygon], hive_dir: Path) -> list:
         """
         Dynamically extracts formal native SDSC S3 payload endpoints for an OpenTopography dataset.

@@ -44,3 +44,18 @@ class BaseProvider(ABC):
             bool: True if accessible, False otherwise.
         """
         pass
+
+    @abstractmethod
+    def get_pdal_reader(self, urls: List[str], buffered_poly: Polygon) -> List[Dict[str, Any]]:
+        """
+        Constructs the provider-specific PDAL reader pipeline stages.
+        This allows each provider to handle its own spatial subsetting logic natively.
+        
+        Args:
+            urls (List[str]): List of remote URLs intersecting the processing tile.
+            buffered_poly (Polygon): The spatial processing bounds.
+            
+        Returns:
+            List[Dict]: A list of PDAL stage dictionaries (readers + potential merges).
+        """
+        pass

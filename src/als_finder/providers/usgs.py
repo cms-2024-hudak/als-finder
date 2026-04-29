@@ -98,3 +98,12 @@ class USGSProvider(BaseProvider):
         logger.warning(f"Extracted USGS datasets are Entwine Point Tile (EPT) URLs ({tile_url}).")
         logger.warning("To extract natively, use PDAL targeting the ept.json payload directly rather than standard wget endpoints.")
         return output_dir
+
+    def get_pdal_reader(self, urls: List[str], buffered_poly: Polygon) -> List[Dict[str, Any]]:
+        b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
+        bounds_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
+        return [{
+            "type": "readers.ept",
+            "filename": urls[0],
+            "bounds": bounds_str
+        }]

@@ -596,7 +596,10 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
 @click.option('--preserve-raw', is_flag=True, help='Preserve the raw .laz binaries after successful standardization. By default, raw files are purged to save space.')
 @click.option('--workers', type=int, help='Override the number of concurrent thread workers. Defaults to dynamic scaling based on os.cpu_count()')
-def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers):
+@click.option('--tile-size', type=int, default=512, help='Core tile size in meters for spatial orchestration. Defaults to 512.')
+@click.option('--buffer-size', type=int, default=50, help='Overlap buffer size in meters to prevent edge artifacts. Defaults to 50.')
+@click.option('--grid-crs', default='EPSG:3857', help='CRS for the orchestration grid. Defaults to EPSG:3857.')
+def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers, tile_size, buffer_size, grid_crs):
     """Execute PDAL Standardization matrices on locally downloaded LiDAR binaries."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -618,7 +621,7 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers)
     else:
         logger.info(f"Target CRS strictly enforced: {crs}")
         
-    from als_finder.core.standardization import generate_512m_grid, run_pdal_standardization, run_final_copc_merge
+    from als_finder.core.standardization import generate_grid, run_pdal_standardization, run_final_copc_merge
     import csv
     import subprocess
     import geopandas as gpd
@@ -626,7 +629,7 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers)
     from concurrent.futures import ThreadPoolExecutor
     from tqdm import tqdm
     import shutil
-    from als_finder.core.spatial_search import load_roi
+    from als_finder.core.input_manager import load_roi
     
     # Phase 1: Universal Hive Ingestion
     datasets = set()
@@ -655,25 +658,44 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers)
         catalog_dir.mkdir(parents=True, exist_ok=True)
         raw_index_path = catalog_dir / "raw_index.gpkg"
         
-        if raw_index_path.exists():
-            raw_index_path.unlink()
-        subprocess.run(['pdal', 'tindex', 'create', str(raw_index_path), '-f', 'GPKG', '--t_srs', 'EPSG:3857', '--filespec', f"{raw_dir}/*.laz"], check=True)
-        # Some might be copc.laz
-        subprocess.run(['pdal', 'tindex', 'create', str(raw_index_path), '-f', 'GPKG', '--t_srs', 'EPSG:3857', '--filespec', f"{raw_dir}/*.copc.laz"], stderr=subprocess.DEVNULL)
+        import glob
+        laz_files = glob.glob(f"{raw_dir}/*.laz") + glob.glob(f"{raw_dir}/*.las") + glob.glob(f"{raw_dir}/*.copc.laz")
         
-        # Phase 2: Python Orchestration (The 512m Grid)
+        if laz_files:
+            # We have local files, rebuild index for local processing
+            if raw_index_path.exists():
+                raw_index_path.unlink()
+            file_list = "\n".join(laz_files)
+            try:
+                subprocess.run(
+                    ['pdal', 'tindex', 'create', str(raw_index_path), '-f', 'GPKG', '--t_srs', grid_crs, '--lyr_name', 'pdal', '--fast_boundary', '-s'], 
+                    input=file_list.encode('utf-8'), 
+                    check=True,
+                    stderr=subprocess.PIPE
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to create raw index for {dataset}: {e.stderr.decode('utf-8')}")
+                continue
+        elif raw_index_path.exists():
+            # We have a remote index, use it directly!
+            logger.info(f"No local files found in {raw_dir}, but remote index exists. Streaming from remote source.")
+        else:
+            logger.warning(f"No LiDAR files found in {raw_dir} and no remote index. Skipping dataset.")
+            continue
+        
+        # Phase 2: Python Orchestration (The dynamic Grid)
         if roi:
             try:
                 roi_poly = load_roi(roi)
                 gdf = gpd.GeoDataFrame(index=[0], crs='EPSG:4326', geometry=[roi_poly])
-                gdf = gdf.to_crs('EPSG:3857')
+                gdf = gdf.to_crs(grid_crs)
             except Exception as e:
                 logger.warning(f"ROI parsing failed: {e}. Falling back to dataset bounds.")
                 gdf = gpd.read_file(raw_index_path)
         else:
             gdf = gpd.read_file(raw_index_path)
             
-        grid = generate_512m_grid(gdf)
+        grid = generate_grid(gdf, tile_size=tile_size, buffer_size=buffer_size)
         
         # Phase 3: RAM-Aware Distributed Processing
         available_ram_gb = psutil.virtual_memory().available / (1024**3)
@@ -695,7 +717,7 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers)
         def worker_fn(item):
             idx, (core_poly, buffered_poly) = item
             out_path = interim_dir / f"tile_{idx}.laz"
-            return run_pdal_standardization(raw_index_path, out_path, crs, core_poly, buffered_poly, provider)
+            return run_pdal_standardization(raw_index_path, out_path, crs, core_poly, buffered_poly, provider, grid_crs)
             
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             list(tqdm(executor.map(worker_fn, enumerate(grid)), total=len(grid), desc=f"Standardizing {dataset}", disable=disable_tqdm))
@@ -712,7 +734,7 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers)
             continue
             
         logger.info(f"Merging {len(interim_files)} tiles into monolithic COPC...")
-        subprocess.run(['pdal', 'tindex', 'create', str(interim_index_path), '-f', 'GPKG', '--filespec', f"{interim_dir}/*.laz"], check=True)
+        subprocess.run(['pdal', 'tindex', 'create', str(interim_index_path), '-f', 'GPKG', '--fast_boundary', '--filespec', f"{interim_dir}/*.laz"], check=True)
         
         final_copc_path = workspace_path / "data" / "standardized" / f"provider={provider}" / f"dataset={dataset}.copc.laz"
         run_final_copc_merge(interim_index_path, final_copc_path)

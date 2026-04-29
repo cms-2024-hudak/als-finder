@@ -112,7 +112,10 @@ def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquis
                 minx, miny, maxx, maxy = roi_native.bounds
                 bounds_str = f"([{minx:.4f}, {maxx:.4f}], [{miny:.4f}, {maxy:.4f}])"
                 
-                est_sz = int(item.get('size', 0))
+                # For EPT Subsets, the physical download size is unknown until the stream finishes.
+                # Do NOT use the massive STAC size attribute, otherwise the progress bar will expect terabytes.
+                est_sz = 0
+                
                 # Encode bounds safely into target_path placeholder natively
                 f.write(f"{p_name},{d_name},{url},\"{hive_target.absolute()}|{bounds_str}\",{est_sz}\n")
                 
