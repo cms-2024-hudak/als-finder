@@ -699,13 +699,15 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         
         # Phase 3: RAM-Aware Distributed Processing
         available_ram_gb = psutil.virtual_memory().available / (1024**3)
-        max_ram_workers = int((available_ram_gb - 4.0) / 1.5)
+        # PDAL filters.smrf can consume 4GB-6GB per thread on dense LiDAR tiles
+        max_ram_workers = int((available_ram_gb - 4.0) / 5.0)
         if max_ram_workers < 1:
             max_ram_workers = 1
             
         cpu_cores = os.cpu_count() or 4
         if workers is None:
-            n_workers = min(cpu_cores, max_ram_workers, 16)
+            # Hard cap at 4 to prevent total system swap thrashing
+            n_workers = min(cpu_cores, max_ram_workers, 4)
         else:
             n_workers = workers
             
