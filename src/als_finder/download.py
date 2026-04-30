@@ -170,7 +170,7 @@ def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquis
     
     return fetch_csv_path
 
-def execute_fetch_array(workspace_path: Path, workers: int = None):
+def execute_fetch_array(workspace_path: Path, workers: int = None, overwrite: bool = False):
     """
     Physically execute the fetch array natively, pulling LiDAR binaries directly to local disk.
     """
@@ -232,7 +232,7 @@ def execute_fetch_array(workspace_path: Path, workers: int = None):
         else:
             target = Path(target_raw)
             
-        if target.exists():
+        if target.exists() and not overwrite:
             if est_size > 0:
                 with lock:
                     pbar.update(est_size)

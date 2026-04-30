@@ -558,7 +558,8 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
 @click.option('--preserve-raw', is_flag=True, help='Preserve the raw .laz binaries after successful standardization. By default, raw files are purged to save space.')
 @click.option('--workers', type=int, help='Override the number of concurrent thread workers. Defaults to dynamic scaling based on os.cpu_count()')
-def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, standardize, crs, stac, quicklook, preserve_raw, workers):
+@click.option('--overwrite', is_flag=True, help='Force overwrite of existing files instead of skipping them.')
+def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, standardize, crs, stac, quicklook, preserve_raw, workers, overwrite):
     """Generate target fetch arrays or physically download filtered binary segments directly to the Hive local cache."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -581,10 +582,10 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
         
     if execute:
         logger.info("Executing Mode A/B: Physical Core Download Protocol")
-        execute_fetch_array(workspace_path=workspace_path, workers=workers)
+        execute_fetch_array(workspace_path=workspace_path, workers=workers, overwrite=overwrite)
         if standardize:
             logger.info("Executing Mode D: PDAL Standardization")
-            ctx.invoke(standardize_cmd, workspace=workspace, crs=crs, roi=roi, stac=stac, quicklook=quicklook, preserve_raw=preserve_raw, workers=workers)
+            ctx.invoke(standardize_cmd, workspace=workspace, crs=crs, roi=roi, stac=stac, quicklook=quicklook, preserve_raw=preserve_raw, workers=workers, overwrite=overwrite)
         elif stac or quicklook:
             logger.warning("STAC Generation and Quicklooks explicitly require standardized .copc.laz entities. Ignoring flags without --standardize.")
 
@@ -599,7 +600,8 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
 @click.option('--tile-size', type=int, default=512, help='Core tile size in meters for spatial orchestration. Defaults to 512.')
 @click.option('--buffer-size', type=int, default=50, help='Overlap buffer size in meters to prevent edge artifacts. Defaults to 50.')
 @click.option('--grid-crs', default='EPSG:3857', help='CRS for the orchestration grid. Defaults to EPSG:3857.')
-def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers, tile_size, buffer_size, grid_crs):
+@click.option('--overwrite', is_flag=True, help='Force overwrite of existing standardized files instead of skipping them.')
+def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers, tile_size, buffer_size, grid_crs, overwrite):
     """Execute PDAL Standardization matrices on locally downloaded LiDAR binaries."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -653,6 +655,12 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
     
     for provider, dataset in datasets:
         logger.info(f"Standardizing dataset: {dataset} from {provider}")
+        final_copc_path = workspace_path / "data" / "standardized" / f"provider={provider}" / f"dataset={dataset}" / f"{dataset}.copc.laz"
+        
+        if final_copc_path.exists() and not overwrite:
+            logger.info(f"Standardized COPC already exists for {dataset}. Skipping. Use --overwrite to force rebuild.")
+            continue
+
         raw_dir = workspace_path / "data" / "raw" / f"provider={provider}" / f"dataset={dataset}"
         catalog_dir = workspace_path / "catalog" / "indices" / f"provider={provider}" / f"dataset={dataset}"
         catalog_dir.mkdir(parents=True, exist_ok=True)
@@ -740,7 +748,6 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
             interim_index_path.unlink()
         subprocess.run(['pdal', 'tindex', 'create', str(interim_index_path), '-f', 'GPKG', '--t_srs', crs, '--lyr_name', 'pdal', '--fast_boundary', '--filespec', f"{interim_dir}/*.laz"], check=True)
         
-        final_copc_path = workspace_path / "data" / "standardized" / f"provider={provider}" / f"dataset={dataset}" / f"{dataset}.copc.laz"
         run_final_copc_merge(interim_index_path, final_copc_path, workers=workers)
         
         # Cleanup
