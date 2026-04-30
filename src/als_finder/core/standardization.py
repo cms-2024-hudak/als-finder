@@ -152,9 +152,9 @@ def run_pdal_standardization(
         "assignment": "Classification[:]=1"
     })
     
-    # 7. Morphological Surface Generation
+    # 7. Cloth Simulation Surface Generation (CSF)
     process_pipeline.append({
-        "type": "filters.smrf"
+        "type": "filters.csf"
     })
     
     # 8. Compute Height Above Ground (HAG)
@@ -178,13 +178,7 @@ def run_pdal_standardization(
     process_json = json.dumps(process_pipeline)
     
     try:
-        try:
-            import pdal
-            p = pdal.Pipeline(process_json)
-            p.execute()
-        except ImportError:
-            subprocess.run(['pdal', 'pipeline', '-s'], input=process_json.encode('utf-8'), capture_output=True, check=True)
-            
+        subprocess.run(['pdal', 'pipeline', '-s'], input=process_json.encode('utf-8'), capture_output=True, check=True)
         return True
     except subprocess.CalledProcessError as e:
         err_msg = e.stderr.decode('utf-8')
@@ -195,7 +189,7 @@ def run_pdal_standardization(
         logger.error(f"Unexpected error in pipeline: {e}")
         return False
 
-def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path) -> bool:
+def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path, workers: int = 1) -> bool:
     """
     Executes a single pipeline reading from the interim tindex and writing directly to COPC.
     """
@@ -204,29 +198,25 @@ def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path) -> boo
     pipeline = [
         {
             "type": "readers.tindex",
-            "filename": str(interim_index_path.absolute())
+            "filename": str(interim_index_path.absolute()),
+            "threads": workers
         },
         {
             "type": "writers.copc",
             "filename": str(final_copc_path.absolute()),
-            "forward": "all"
+            "forward": "all",
+            "threads": workers
         }
     ]
     
     pdal_json = json.dumps(pipeline)
     
     try:
-        import pdal
-        p = pdal.Pipeline(pdal_json)
-        p.execute()
+        subprocess.run(['pdal', 'pipeline', '-s'], input=pdal_json.encode('utf-8'), capture_output=True, check=True)
         return True
-    except ImportError:
-        try:
-            subprocess.run(['pdal', 'pipeline', '-s'], input=pdal_json.encode('utf-8'), capture_output=True, check=True)
-            return True
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Final COPC merge failed: {e.stderr.decode('utf-8')}")
-            return False
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Final COPC merge failed: {e.stderr.decode('utf-8')}")
+        return False
     except Exception as e:
         logger.error(f"Final COPC merge failed: {e}")
         return False

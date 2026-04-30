@@ -736,10 +736,12 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
             continue
             
         logger.info(f"Merging {len(interim_files)} tiles into monolithic COPC...")
-        subprocess.run(['pdal', 'tindex', 'create', str(interim_index_path), '-f', 'GPKG', '--fast_boundary', '--filespec', f"{interim_dir}/*.laz"], check=True)
+        if interim_index_path.exists():
+            interim_index_path.unlink()
+        subprocess.run(['pdal', 'tindex', 'create', str(interim_index_path), '-f', 'GPKG', '--t_srs', crs, '--lyr_name', 'pdal', '--fast_boundary', '--filespec', f"{interim_dir}/*.laz"], check=True)
         
-        final_copc_path = workspace_path / "data" / "standardized" / f"provider={provider}" / f"dataset={dataset}.copc.laz"
-        run_final_copc_merge(interim_index_path, final_copc_path)
+        final_copc_path = workspace_path / "data" / "standardized" / f"provider={provider}" / f"dataset={dataset}" / f"{dataset}.copc.laz"
+        run_final_copc_merge(interim_index_path, final_copc_path, workers=workers)
         
         # Cleanup
         shutil.rmtree(interim_dir)

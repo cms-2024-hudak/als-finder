@@ -229,12 +229,8 @@ def execute_fetch_array(workspace_path: Path, workers: int = None):
         if '|' in target_raw:
             target_str, bounds_str = target_raw.split('|')
             target = Path(target_str)
-            if target.suffix == '.laz':
-                target = target.with_suffix('.copc.laz')
         else:
             target = Path(target_raw)
-            if "ept.json" in source and target.suffix == '.laz':
-                target = target.with_suffix('.copc.laz')
             
         if target.exists():
             if est_size > 0:
@@ -250,33 +246,50 @@ def execute_fetch_array(workspace_path: Path, workers: int = None):
                 pdal_cmd = [
                     'pdal', 'translate',
                     source,
-                    str(target)
+                    str(target),
+                    '--stream'
                 ]
                 if bounds_str:
                     pdal_cmd.extend(['--readers.ept.bounds=' + bounds_str])
                 pdal_cmd.extend(['--readers.ept.resolution=0'])
-                # Enforce COPC writer to enable rapid phase 3 spatial indexing
-                pdal_cmd.extend(['--writers.copc.forward=all'])
+                pdal_cmd.extend(['--readers.ept.threads=2'])
+                # We do NOT use COPC writers during download to save massive memory overhead.
+                # COPC formatting will be handled entirely during the Standardization phase.
                 
                 logger.info(f"Dynamically streaming EPT natively: {' '.join(pdal_cmd)}")
-                proc = subprocess.Popen(pdal_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
                 
-                # File polling thread for pdal translate to dynamically update byte-progress
-                last_size = 0
-                while proc.poll() is None:
-                    time.sleep(1)
-                    if target.exists():
-                        cur_size = os.path.getsize(target)
-                        diff = cur_size - last_size
-                        if diff > 0:
-                            with lock:
-                                pbar.update(diff)
-                        last_size = cur_size
+                # Option B: Write stderr to a temporary log file to prevent pipe deadlocks
+                log_file_path = target.with_suffix('.log')
+                with open(log_file_path, 'w') as log_file:
+                    proc = subprocess.Popen(pdal_cmd, stdout=subprocess.DEVNULL, stderr=log_file)
+                    
+                    # File polling thread for pdal translate to dynamically update byte-progress
+                    last_size = 0
+                    while proc.poll() is None:
+                        time.sleep(1)
+                        if target.exists():
+                            cur_size = os.path.getsize(target)
+                            diff = cur_size - last_size
+                            if diff > 0:
+                                with lock:
+                                    pbar.update(diff)
+                            last_size = cur_size
+                            
+                # Wait cleanly to reap the process
+                proc.wait()
                 
                 if proc.returncode != 0:
-                    err = proc.stderr.read().decode('utf-8')
+                    err = ""
+                    if log_file_path.exists():
+                        with open(log_file_path, 'r') as log_file:
+                            err = log_file.read()
                     logger.error(f"PDAL extraction failed natively for {source}: {err}")
+                    if log_file_path.exists():
+                        log_file_path.unlink()
                     return "FAILED"
+                    
+                if log_file_path.exists():
+                    log_file_path.unlink()
                     
                 # Flush remaining bytes
                 if target.exists():
@@ -303,11 +316,10 @@ def execute_fetch_array(workspace_path: Path, workers: int = None):
             
     # Dynamically calculate Safe Network Workers
     if workers is None:
-        try:
-            cpu_cores = os.cpu_count() or 4
-            workers = min(cpu_cores, 8) # Safely cap at 8 to prevent S3 HTTP Throttling and TCP exhaustion
-        except:
-            workers = 4
+        # For maximum safety and performance, we default to 1 python worker globally.
+        # This serializes the python loops but allows highly-parallel tools like PDAL
+        # to freely use all 16+ native CPU cores internally without risking OOM crashes.
+        workers = 1
             
     logger.info(f"Physically orchestrating multi-threaded download sequence for {len(rows)} nodes using {workers} concurrent workers...")
     
