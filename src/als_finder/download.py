@@ -101,10 +101,23 @@ def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquis
             # EPT Subsetting dynamically integrates with PDAL readers.ept natively
             elif "ept.json" in url and roi_poly is not None:
                 import pyproj
+                import requests
                 from shapely.ops import transform
                 
-                # Transform to EPSG:3857 because USGS EPT native SRS is usually Web Mercator
-                project = pyproj.Transformer.from_crs(pyproj.CRS('EPSG:4326'), pyproj.CRS('EPSG:3857'), always_xy=True).transform
+                # Dynamically determine the native CRS of the EPT dataset to prevent 0-point downloads
+                native_crs = "EPSG:3857" # Default fallback (Common for USGS)
+                try:
+                    ept_resp = requests.get(url, timeout=5)
+                    if ept_resp.status_code == 200:
+                        srs_info = ept_resp.json().get('srs', {})
+                        if 'authority' in srs_info and 'horizontal' in srs_info:
+                            native_crs = f"{srs_info['authority']}:{srs_info['horizontal']}"
+                        elif 'wkt' in srs_info:
+                            native_crs = srs_info['wkt']
+                except Exception as e:
+                    logger.warning(f"Failed to fetch native EPT CRS for {d_name}. Falling back to EPSG:3857: {e}")
+                
+                project = pyproj.Transformer.from_crs(pyproj.CRS('EPSG:4326'), pyproj.CRS(native_crs), always_xy=True).transform
                 roi_native = transform(project, roi_poly)
                 
                 # Target the total comprehensive node root mathematically via native pipeline extraction
