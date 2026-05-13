@@ -810,6 +810,10 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         interim_files = list(interim_dir.glob("*.laz"))
         if not interim_files:
             logger.warning(f"No standardized tiles generated for {dataset}. Skipping merge.")
+            try:
+                shutil.rmtree(interim_dir)
+            except Exception as e:
+                logger.debug(f"Failed to remove empty interim directory: {e}")
             continue
             
         logger.info(f"Merging {len(interim_files)} tiles into monolithic COPC...")
