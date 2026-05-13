@@ -345,7 +345,7 @@ def run_pdal_standardization(
         logger.error(f"Unexpected error in pipeline: {e}")
         return False
 
-def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path, workers: int = 1) -> bool:
+def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path, crs: str, workers: int = 1) -> bool:
     """
     Executes a single pipeline reading from the interim tindex and writing directly to COPC.
     """
@@ -354,13 +354,15 @@ def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path, worker
     pipeline = [
         {
             "type": "readers.tindex",
-            "filename": str(interim_index_path.absolute())
+            "filename": str(interim_index_path.absolute()),
+            "t_srs": crs
         },
         {
             "type": "writers.copc",
             "filename": str(final_copc_path.absolute()),
             "forward": "all",
-            "threads": workers
+            "threads": workers,
+            "a_srs": crs
         }
     ]
     

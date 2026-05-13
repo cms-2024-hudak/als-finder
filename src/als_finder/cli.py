@@ -820,7 +820,7 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         if interim_index_path.exists():
             interim_index_path.unlink()
         subprocess.run(['pdal', 'tindex', 'create', str(interim_index_path), '-f', 'GPKG', '--t_srs', crs, '--lyr_name', 'pdal', '--fast_boundary', '--filespec', f"{interim_dir}/*.laz"], check=True)
-        success = run_final_copc_merge(interim_index_path, final_copc_path, workers=n_workers)
+        success = run_final_copc_merge(interim_index_path, final_copc_path, crs=crs, workers=n_workers)
         
         # Cleanup ONLY if successful to prevent silent data loss
         if success:
