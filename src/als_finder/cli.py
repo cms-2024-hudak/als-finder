@@ -597,11 +597,13 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
 @click.option('--preserve-raw', is_flag=True, help='Preserve the raw .laz binaries after successful standardization. By default, raw files are purged to save space.')
 @click.option('--workers', type=int, help='Override the number of concurrent thread workers. Defaults to dynamic scaling based on os.cpu_count()')
-@click.option('--tile-size', type=int, default=512, help='Core tile size in meters for spatial orchestration. Defaults to 512.')
+@click.option('--tile-size', type=int, default=0, help='Core tile size in meters for spatial orchestration. Defaults to 0 (dynamic based on density).')
 @click.option('--buffer-size', type=int, default=50, help='Overlap buffer size in meters to prevent edge artifacts. Defaults to 50.')
 @click.option('--grid-crs', default='EPSG:3857', help='CRS for the orchestration grid. Defaults to EPSG:3857.')
 @click.option('--overwrite', is_flag=True, help='Force overwrite of existing standardized files instead of skipping them.')
-def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers, tile_size, buffer_size, grid_crs, overwrite):
+@click.option('--classifier', type=click.Choice(['smrf', 'none']), default='smrf', help='Ground classification algorithm to use. (CSF temporarily disabled for WSL2 stability).')
+@click.option('--tile-index', type=int, default=None, help='Execute a single specific tile index (for HPC Job Arrays).')
+def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers, tile_size, buffer_size, grid_crs, overwrite, classifier, tile_index):
     """Execute PDAL Standardization matrices on locally downloaded LiDAR binaries."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -635,9 +637,11 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
     
     # Phase 1: Universal Hive Ingestion
     datasets = set()
+    all_fetch_rows = []
     with open(fetch_array_path, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
+            all_fetch_rows.append(row)
             target_raw = row['target_path']
             if '|' in target_raw:
                 target_str, _ = target_raw.split('|')
@@ -652,6 +656,18 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
                 
     ctx = click.get_current_context(silent=True)
     disable_tqdm = ctx.params.get('quiet', False) if ctx and hasattr(ctx, 'params') else False
+    
+    import json
+    manifest_path = workspace_path / 'catalog' / 'manifest.json'
+    dataset_densities = {}
+    if manifest_path.exists():
+        with open(manifest_path, 'r') as f:
+            try:
+                manifest_data = json.load(f)
+                for ds in manifest_data.get('datasets', []):
+                    dataset_densities[ds.get('dataset_id')] = ds.get('point_density')
+            except Exception as e:
+                logger.warning(f"Failed to parse manifest for density scaling: {e}")
     
     for provider, dataset in datasets:
         logger.info(f"Standardizing dataset: {dataset} from {provider}")
@@ -688,8 +704,28 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
             # We have a remote index, use it directly!
             logger.info(f"No local files found in {raw_dir}, but remote index exists. Streaming from remote source.")
         else:
-            logger.warning(f"No LiDAR files found in {raw_dir} and no remote index. Skipping dataset.")
-            continue
+            # We don't have local files or an index, so we generate a virtual index for on-demand streaming!
+            features = []
+            for row in all_fetch_rows:
+                ds_id = row.get('dataset_id') or row.get('name')
+                p_name = row.get('provider')
+                if ds_id == dataset and p_name == provider:
+                    url_str = row['source_url']
+                    if roi:
+                        b_poly = load_roi(roi)
+                    else:
+                        from shapely.geometry import box
+                        b_poly = box(-180, -90, 180, 90)
+                    features.append({"location": url_str, "geometry": b_poly})
+            
+            if features:
+                gdf_virtual = gpd.GeoDataFrame(features, crs="EPSG:4326")
+                gdf_virtual = gdf_virtual.to_crs(grid_crs)
+                gdf_virtual.to_file(raw_index_path, driver="GPKG")
+                logger.info(f"Generated virtual remote index for on-demand streaming of {dataset}.")
+            else:
+                logger.warning(f"No LiDAR files found in {raw_dir} and no remote index. Skipping dataset.")
+                continue
         
         # Phase 2: Python Orchestration (The dynamic Grid)
         if roi:
@@ -703,32 +739,65 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         else:
             gdf = gpd.read_file(raw_index_path)
             
-        grid = generate_grid(gdf, tile_size=tile_size, buffer_size=buffer_size)
+        actual_tile_size = tile_size
+        if tile_size == 0:
+            density = dataset_densities.get(dataset)
+            if density is None:
+                actual_tile_size = 512
+            else:
+                try:
+                    d_val = float(density)
+                    if d_val > 20.0:
+                        actual_tile_size = 128
+                    elif d_val > 5.0:
+                        actual_tile_size = 256
+                    else:
+                        actual_tile_size = 512
+                except (ValueError, TypeError):
+                    actual_tile_size = 512
+            logger.info(f"Dynamic spatial scaling enabled: [{dataset}] density {density} pts/m2 -> using {actual_tile_size}m tiles.")
+            
+        grid = generate_grid(gdf, tile_size=actual_tile_size, buffer_size=buffer_size)
         
         # Phase 3: RAM-Aware Distributed Processing
         available_ram_gb = psutil.virtual_memory().available / (1024**3)
-        # PDAL filters.smrf can consume 4GB-6GB per thread on dense LiDAR tiles
-        max_ram_workers = int((available_ram_gb - 4.0) / 5.0)
+        if classifier == 'smrf':
+            # Dynamic gridding mathematically caps RAM
+            ram_per_worker = 1.5
+        else:
+            # PDAL filters.csf memory usage scales heavily with tile area.
+            ram_per_worker = 1.5 if actual_tile_size <= 256 else 3.0
+        max_ram_workers = int((available_ram_gb - 3.0) / ram_per_worker)
         if max_ram_workers < 1:
             max_ram_workers = 1
             
         cpu_cores = os.cpu_count() or 4
         if workers is None:
-            # Hard cap at 4 to prevent total system swap thrashing
-            n_workers = min(cpu_cores, max_ram_workers, 4)
+            # Scale directly based on CPU and RAM limits
+            n_workers = min(cpu_cores, max_ram_workers)
         else:
             n_workers = workers
-            
-        logger.info(f"Processing {len(grid)} tiles using {n_workers} concurrent workers (RAM bounds: {max_ram_workers})...")
             
         interim_dir = workspace_path / "data" / "interim" / f"provider={provider}" / f"dataset={dataset}"
         interim_dir.mkdir(parents=True, exist_ok=True)
         
+        current_density = dataset_densities.get(dataset)
         def worker_fn(item):
             idx, (core_poly, buffered_poly) = item
             out_path = interim_dir / f"tile_{idx}.laz"
-            return run_pdal_standardization(raw_index_path, out_path, crs, core_poly, buffered_poly, provider, grid_crs)
+            return run_pdal_standardization(raw_index_path, out_path, crs, core_poly, buffered_poly, provider, grid_crs, classifier, current_density)
             
+        if tile_index is not None:
+            if tile_index < 0 or tile_index >= len(grid):
+                logger.error(f"Tile index {tile_index} is out of bounds for grid of size {len(grid)}.")
+                continue
+            logger.info(f"[HPC BATCH MODE] Executing strictly on tile index {tile_index} of {len(grid)-1}")
+            item = (tile_index, grid[tile_index])
+            worker_fn(item)
+            logger.info(f"[HPC BATCH MODE] Tile {tile_index} complete. Exiting DAG node.")
+            continue
+            
+        logger.info(f"Processing {len(grid)} tiles using {n_workers} concurrent workers (RAM bounds: {max_ram_workers})...")
         with ThreadPoolExecutor(max_workers=n_workers) as executor:
             list(tqdm(executor.map(worker_fn, enumerate(grid)), total=len(grid), desc=f"Standardizing {dataset}", disable=disable_tqdm))
             
@@ -747,8 +816,7 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         if interim_index_path.exists():
             interim_index_path.unlink()
         subprocess.run(['pdal', 'tindex', 'create', str(interim_index_path), '-f', 'GPKG', '--t_srs', crs, '--lyr_name', 'pdal', '--fast_boundary', '--filespec', f"{interim_dir}/*.laz"], check=True)
-        
-        run_final_copc_merge(interim_index_path, final_copc_path, workers=workers)
+        run_final_copc_merge(interim_index_path, final_copc_path, workers=n_workers)
         
         # Cleanup
         shutil.rmtree(interim_dir)
@@ -773,6 +841,23 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         logger.info("Executing Mode F: Quicklook QA/QC Generation natively...")
         from als_finder.core.quicklooks import generate_quicklooks
         generate_quicklooks(workspace_path)
+
+@cli.command('clean')
+@click.option('--workspace', required=True, type=click.Path(exists=True), help='Path to target workspace directory to clean.')
+def clean_cmd(workspace):
+    """Clean the specified workspace by removing scratch and interim data."""
+    workspace_path = Path(workspace)
+    if not workspace_path.exists():
+        logger.warning(f"Workspace {workspace} does not exist.")
+        return
+
+    logger.info(f"Automatically cleaning up workspace: {workspace_path}")
+    try:
+        shutil.rmtree(workspace_path)
+        logger.info(f"Successfully cleaned workspace: {workspace_path}")
+    except Exception as e:
+        logger.error(f"Failed to clean workspace: {e}")
+        raise click.ClickException(str(e))
 
 if __name__ == '__main__':
     cli()
