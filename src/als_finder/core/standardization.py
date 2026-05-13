@@ -264,7 +264,8 @@ def run_pdal_standardization(
     process_pipeline.append({
         "type": "writers.las",
         "filename": str(out_path.absolute()),
-        "compression": "laszip"
+        "compression": "laszip",
+        "a_srs": crs
     })
     
     process_json = json.dumps(process_pipeline)
@@ -319,10 +320,21 @@ def run_pdal_standardization(
             return True # All were empty organically
             
         logger.info(f"Merging {len(sub_files)} sub-quadrants back into {out_path.name}")
-        merge_pipeline = [
-            {"type": "filters.merge", "inputs": [str(f.absolute()) for f in sub_files]},
-            {"type": "writers.las", "filename": str(out_path.absolute()), "compression": "laszip"}
-        ]
+        merge_pipeline = []
+        inputs = []
+        for i, f in enumerate(sub_files):
+            tag = f"sub_{i}"
+            merge_pipeline.append({"type": "readers.las", "filename": str(f.absolute()), "tag": tag})
+            inputs.append(tag)
+        
+        merge_pipeline.append({"type": "filters.merge", "inputs": inputs})
+        merge_pipeline.append({
+            "type": "writers.las", 
+            "filename": str(out_path.absolute()), 
+            "compression": "laszip",
+            "a_srs": crs
+        })
+        
         subprocess.run(['pdal', 'pipeline', '-s'], input=json.dumps(merge_pipeline).encode('utf-8'), check=True)
         
         for f in sub_files:
