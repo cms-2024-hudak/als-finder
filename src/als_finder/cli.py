@@ -591,19 +591,21 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
 
 @cli.command('standardize')
 @click.option('--workspace', required=True, type=click.Path(exists=True), help='Path to your local project workspace.')
-@click.option('--crs', default=None, help='Target Coordinate Reference System (e.g. EPSG:5070). Defaults to EPSG:3857.')
+@click.option('--crs', default='native', help='Target Coordinate Reference System. Defaults to "native" (trusts provider), falling back to dynamic UTM based on acquisition centroid.')
 @click.option('--roi', default=None, help='Optional path to ROI geometry to geometrically slice the point cloud footprint natively.')
 @click.option('--stac/--no-stac', default=True, help='Generate STAC compliant metadata schemas for the final standardized matrix.')
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
 @click.option('--preserve-raw', is_flag=True, help='Preserve the raw .laz binaries after successful standardization. By default, raw files are purged to save space.')
 @click.option('--workers', type=int, help='Override the number of concurrent thread workers. Defaults to dynamic scaling based on os.cpu_count()')
 @click.option('--tile-size', type=int, default=0, help='Core tile size in meters for spatial orchestration. Defaults to 0 (dynamic based on density).')
-@click.option('--buffer-size', type=int, default=50, help='Overlap buffer size in meters to prevent edge artifacts. Defaults to 50.')
+@click.option('--buffer-size', type=int, default=30, help='Overlap buffer size in meters to prevent edge artifacts. Defaults to 30m to preserve memory constraints.')
 @click.option('--grid-crs', default='EPSG:3857', help='CRS for the orchestration grid. Defaults to EPSG:3857.')
 @click.option('--overwrite', is_flag=True, help='Force overwrite of existing standardized files instead of skipping them.')
-@click.option('--classifier', type=click.Choice(['smrf', 'none']), default='smrf', help='Ground classification algorithm to use. (CSF temporarily disabled for WSL2 stability).')
+@click.option('--classifier', type=click.Choice(['smrf', 'csf', 'hybrid-dual', 'none']), default='hybrid-dual', help='Ground classification algorithm to use. Defaults to hybrid-dual.')
 @click.option('--tile-index', type=int, default=None, help='Execute a single specific tile index (for HPC Job Arrays).')
-def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers, tile_size, buffer_size, grid_crs, overwrite, classifier, tile_index):
+@click.option('--csf-resolution', type=float, default=1.0, help='CSF grid resolution.')
+@click.option('--csf-step', type=float, default=0.5, help='CSF step size.')
+def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers, tile_size, buffer_size, grid_crs, overwrite, classifier, tile_index, csf_resolution, csf_step):
     """Execute PDAL Standardization matrices on locally downloaded LiDAR binaries."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -618,10 +620,21 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         raise click.ClickException("pdal library missing. You must install 'pdal' and 'python-pdal' via Conda to standardize.")
         
     logger.info("Initializing PDAL Pipeline Standardization")
-    if not crs:
-        # Default global recommendation dynamically applied
-        crs = "EPSG:3857"
-        logger.info(f"No explicit CRS selected. Defaulting safely to Global Web Mercator natively: {crs}")
+    if crs == 'native':
+        logger.info("Target CRS is native (trusts provider). Pipeline will run in native coordinates and reproject to EPSG:3857 at the end.")
+    elif crs == 'auto-utm-centroid':
+        if not roi:
+            raise click.ClickException("Cannot compute 'auto-utm-centroid' without providing an --roi geometry.")
+        from als_finder.core.input_manager import load_roi
+        import math
+        roi_gdf = load_roi(roi)
+        # load_roi returns a Shapely Polygon in EPSG:4326
+        centroid = roi_gdf.centroid
+        lon, lat = centroid.x, centroid.y
+        zone = math.floor((lon + 180) / 6.0) + 1
+        epsg = 32600 + zone if lat >= 0 else 32700 + zone
+        crs = f"EPSG:{epsg}"
+        logger.info(f"Target CRS dynamically calculated from overall ROI centroid: {crs}")
     else:
         logger.info(f"Target CRS strictly enforced: {crs}")
         
@@ -785,7 +798,8 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         def worker_fn(item):
             idx, (core_poly, buffered_poly) = item
             out_path = interim_dir / f"tile_{idx}.laz"
-            return run_pdal_standardization(raw_index_path, out_path, crs, core_poly, buffered_poly, provider, grid_crs, classifier, current_density)
+            success = run_pdal_standardization(raw_index_path, out_path, crs, core_poly, buffered_poly, provider, grid_crs, classifier, current_density, csf_resolution, csf_step)
+            return success
             
         if tile_index is not None:
             if tile_index < 0 or tile_index >= len(grid):

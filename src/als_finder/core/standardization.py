@@ -110,7 +110,9 @@ def run_pdal_standardization(
     provider: str = 'UNKNOWN',
     grid_crs: str = 'EPSG:3857',
     classifier: str = 'smrf',
-    point_density: float = None
+    point_density: float = None,
+    csf_resolution: float = 1.0,
+    csf_step: float = 0.5
 ) -> bool:
     """
     Constructs and executes a PDAL pipeline to standardize a single tile from the tindex.
@@ -174,87 +176,117 @@ def run_pdal_standardization(
         return False
     
     # 3. Reprojection filter (from native CRS)
-    if crs:
-        target_crs = crs
-        if crs.lower() == 'auto-utm':
-            import math
-            # Since core_poly is in EPSG:3857, we must reproject its centroid to 4326 to find UTM zone
-            from pyproj import Transformer
-            transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
-            centroid = core_poly.centroid
-            lon, lat = transformer.transform(centroid.x, centroid.y)
-            zone = math.floor((lon + 180) / 6.0) + 1
-            epsg = 32600 + zone if lat >= 0 else 32700 + zone
-            target_crs = f"EPSG:{epsg}"
-            
+    # If the user specified a specific CRS (like a Centroid UTM), project to it before math.
+    # If 'native', we skip this and process in the provider's native projection.
+    if crs and crs != 'native':
         process_pipeline.append({
             "type": "filters.reprojection",
-            "out_srs": target_crs
+            "out_srs": crs
         })
         
-        # We also need to reproject our 3857 core bounds into the target CRS for the final crop!
-        from pyproj import Transformer
-        transformer = Transformer.from_crs("EPSG:3857", target_crs, always_xy=True)
-        c_minx, c_miny = transformer.transform(c_minx, c_miny)
-        c_maxx, c_maxy = transformer.transform(c_maxx, c_maxy)
-        # Ensure min/max are correct after projection
-        c_minx, c_maxx = min(c_minx, c_maxx), max(c_minx, c_maxx)
-        c_miny, c_maxy = min(c_miny, c_maxy), max(c_miny, c_maxy)
-        core_bounds_str = f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
+    core_bounds_str = f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
         
-    # 4. Density-Agnostic Noise Filtering
-    process_pipeline.append({
-        "type": "filters.expression",
-        "expression": "Classification != 7 && Classification != 18 && ReturnNumber > 0 && NumberOfReturns > 0"
-    })
-    
-    # 5. Statistical outlier filter
-    process_pipeline.append({
-        "type": "filters.outlier",
-        "method": "statistical",
-        "mean_k": 12,
-        "multiplier": 3.0
-    })
-    
-    # 6. Scientific Taxonomy Overwrite
+    # 4. Scientific Taxonomy Overwrite
     process_pipeline.append({
         "type": "filters.assign",
         "assignment": "Classification[:]=1"
     })
+    
+    # 5. Drop Invalid Returns
+    process_pipeline.append({
+        "type": "filters.expression",
+        "expression": "ReturnNumber > 0 && NumberOfReturns > 0"
+    })
+    
+    # 6. Extended Local Minimum (ELM) Filter for low noise
+    process_pipeline.append({
+        "type": "filters.elm",
+        "cell": 20.0,
+        "threshold": 1.5,
+        "class": 7
+    })
+    
+    # 7. Statistical outlier filter for high noise
+    process_pipeline.append({
+        "type": "filters.outlier",
+        "method": "statistical",
+        "mean_k": 12,
+        "multiplier": 2.2,
+        "class": 7
+    })
     # 7. Dynamic Ground Classification
     if classifier != 'none':
-        # Dynamic density scaling
+        # Dynamic density scaling (only for cell size now)
         if point_density is None or point_density >= 5.0:
             cell_size = 1.0
-            threshold = 0.2
         elif point_density >= 1.0:
             cell_size = 2.0
-            threshold = 0.4
         else:
             cell_size = 3.0
-            threshold = 0.5
             
         if classifier == 'smrf':
             process_pipeline.append({
                 "type": "filters.smrf",
+                "ignore": "Classification[7:7]",
                 "cell": cell_size,
-                "window": 18.0,
-                "slope": 0.15,
-                "threshold": threshold
+                "window": 65.0,
+                "slope": 0.2,
+                "threshold": 0.5,
+                "scalar": 1.25
             })
         elif classifier == 'csf':
             process_pipeline.append({
                 "type": "filters.csf",
-                "resolution": cell_size,
-                "step": 0.5
+                "resolution": csf_resolution,
+                "step": csf_step
+            })
+        elif classifier == 'hybrid-dual':
+            # Pass 1: Macro CSF (Structure Removal)
+            process_pipeline.append({
+                "type": "filters.csf",
+                "resolution": 1.0,
+                "step": 0.5,
+                "rigidness": 3,
+                "ignore": "Classification[7:7]"
+            })
+            # State Saving: Macro HAG Calculation
+            process_pipeline.append({
+                "type": "filters.hag_delaunay"
+            })
+            # Pass 2: Micro SMRF (Terrain Detail)
+            process_pipeline.append({
+                "type": "filters.smrf",
+                "ignore": "Classification[7:7]",
+                "cell": cell_size,
+                "window": 18.0,
+                "slope": 0.20,
+                "threshold": 0.5,
+                "scalar": 1.25
+            })
+            # The Recombination Logic
+            process_pipeline.append({
+                "type": "filters.expression",
+                "expression": "Classification = 1 WHERE HeightAboveGround > 4.0 && Classification == 2"
             })
     
-    # 8. Compute Height Above Ground (HAG)
+    # 8. Clean up noise points (Drop)
+    process_pipeline.append({
+        "type": "filters.expression",
+        "expression": "Classification != 7 && Classification != 18"
+    })
+    
+    # 9. Compute standard HAG for the final user export
     process_pipeline.append({
         "type": "filters.hag_nn"
     })
     
-    # 9. Precision crop down to the core bounds (stripping the 50m buffer)
+    # 10. Global Fusion: Reproject back to EPSG:3857 (Web Mercator) for COPC
+    process_pipeline.append({
+        "type": "filters.reprojection",
+        "out_srs": "EPSG:3857"
+    })
+    
+    # 11. Precision crop down to the core bounds (stripping the buffer in 3857 space)
     process_pipeline.append({
         "type": "filters.crop",
         "bounds": core_bounds_str
@@ -270,11 +302,23 @@ def run_pdal_standardization(
     
     process_json = json.dumps(process_pipeline)
     
+    import time
+    start_t = time.time()
     try:
         success, err_msg = execute_with_memory_limit(['pdal', 'pipeline', '-s'], process_json.encode('utf-8'), memory_limit_mb=1536)
+        end_t = time.time()
+        
         if not success:
             if "0 points" not in err_msg.lower() and "empty" not in err_msg.lower():
                 logger.error(f"PDAL core pipeline failed: {err_msg}")
+        else:
+            c_width = c_maxx - c_minx
+            c_height = c_maxy - c_miny
+            exec_time = end_t - start_t
+            area = c_width * c_height
+            time_per_m2 = exec_time / area if area > 0 else 0.0
+            logger.info(f"Tile Execution Success ({c_width:.0f}x{c_height:.0f}m) in {exec_time:.2f}s ({time_per_m2:.6f} s/m²)")
+            
         return True
     except MemoryError as e:
         logger.warning(f"OOM triggered for {out_path.name}: {e}. Initiating recursive dynamic sub-tiling.")
@@ -309,7 +353,7 @@ def run_pdal_standardization(
             q_out = out_path.with_name(f"{out_path.stem}_sub{i}.laz")
             
             # Recursive Call!
-            success = run_pdal_standardization(raw_index_path, q_out, crs, q_core, q_buf, provider, grid_crs, classifier, point_density)
+            success = run_pdal_standardization(raw_index_path, q_out, crs, q_core, q_buf, provider, grid_crs, classifier, point_density, csf_resolution, csf_step)
             if success and q_out.exists():
                 sub_files.append(q_out)
             elif not success:
