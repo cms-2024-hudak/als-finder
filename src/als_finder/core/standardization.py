@@ -171,6 +171,15 @@ def run_pdal_standardization(
                     "type": "filters.merge",
                     "inputs": inputs
                 })
+                
+            # CRITICAL FIX: The downloaded file is the entire subset. 
+            # We must crop it down to the buffered_poly immediately before heavy math.
+            b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
+            process_pipeline.append({
+                "type": "filters.crop",
+                "bounds": f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])",
+                "a_srs": "EPSG:3857"
+            })
     except Exception as e:
         logger.error(f"Failed to instantiate provider or build reader: {e}")
         return False
@@ -251,7 +260,7 @@ def run_pdal_standardization(
             })
             # State Saving: Macro HAG Calculation
             process_pipeline.append({
-                "type": "filters.hag_delaunay"
+                "type": "filters.hag_nn"
             })
             # Pass 2: Micro SMRF (Terrain Detail)
             process_pipeline.append({
@@ -265,8 +274,8 @@ def run_pdal_standardization(
             })
             # The Recombination Logic
             process_pipeline.append({
-                "type": "filters.expression",
-                "expression": "Classification = 1 WHERE HeightAboveGround > 4.0 && Classification == 2"
+                "type": "filters.assign",
+                "value": "Classification = 1 WHERE HeightAboveGround > 4.0 && Classification == 2"
             })
     
     # 8. Clean up noise points (Drop)
@@ -300,7 +309,14 @@ def run_pdal_standardization(
         "a_srs": crs
     })
     
-    process_json = json.dumps(process_pipeline)
+    process_json = json.dumps(process_pipeline, indent=4)
+    
+    # DEBUG: Dump the pipeline to a file
+    try:
+        with open("scratch/debug_pipeline.json", "w") as f:
+            f.write(process_json)
+    except Exception:
+        pass
     
     import time
     start_t = time.time()
@@ -410,10 +426,19 @@ def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path, crs: s
         }
     ]
     
-    pdal_json = json.dumps(pipeline)
+    json_str = json.dumps(pipeline, indent=4)
     
+    # DEBUG: Dump the pipeline to a file
     try:
-        subprocess.run(['pdal', 'pipeline', '-s'], input=pdal_json.encode('utf-8'), capture_output=True, check=True)
+        with open("scratch/debug_pipeline.json", "w") as f:
+            f.write(json_str)
+    except Exception:
+        pass
+        
+    try:
+        process = subprocess.run(
+            ['pdal', 'pipeline', '-s'],
+            input=json_str.encode('utf-8'), capture_output=True, check=True)
         return True
     except subprocess.CalledProcessError as e:
         logger.error(f"Final COPC merge failed: {e.stderr.decode('utf-8')}")
