@@ -250,10 +250,10 @@ def run_pdal_standardization(
                 "step": csf_step
             })
         elif classifier == 'hybrid-dual':
-            # Pass 1: Macro CSF (Structure Removal)
+            # Pass 1: Macro CSF (Structure Removal - "Iron Board")
             process_pipeline.append({
                 "type": "filters.csf",
-                "resolution": 1.0,
+                "resolution": 10.0,
                 "step": 0.5,
                 "rigidness": 3,
                 "ignore": "Classification[7:7]"
@@ -262,15 +262,15 @@ def run_pdal_standardization(
             process_pipeline.append({
                 "type": "filters.hag_nn"
             })
-            # Pass 2: Micro SMRF (Terrain Detail)
+            # Pass 2: Micro SMRF (Terrain Detail - "Dune Protector")
             process_pipeline.append({
                 "type": "filters.smrf",
                 "ignore": "Classification[7:7]",
                 "cell": cell_size,
                 "window": 18.0,
-                "slope": 0.20,
-                "threshold": 0.5,
-                "scalar": 1.25
+                "slope": 0.80,
+                "threshold": 0.6,
+                "scalar": 1.50
             })
             # The Recombination Logic
             process_pipeline.append({
