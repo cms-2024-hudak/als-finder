@@ -112,11 +112,29 @@ def run_pdal_standardization(
     classifier: str = 'smrf',
     point_density: float = None,
     csf_resolution: float = 1.0,
-    csf_step: float = 0.5
+    csf_step: float = 0.5,
+    normal_threshold_z: float = 0.85
 ) -> bool:
     """
     Constructs and executes a PDAL pipeline to standardize a single tile from the tindex.
     Applies reprojection, ASPRS classification standardization, SMRF, HAG_NN, and crops to the core.
+
+    Args:
+        raw_index_path: Path to the raw GeoPackage index.
+        out_path: Path to write the standardized output tile.
+        crs: Target CRS for the output data.
+        core_poly: Geometry of the core tile bounds.
+        buffered_poly: Geometry of the buffered tile bounds.
+        provider: Provider name.
+        grid_crs: CRS for the orchestration grid.
+        classifier: Ground classification algorithm to use.
+        point_density: Estimated point density.
+        csf_resolution: Resolution parameter for CSF cloth.
+        csf_step: Step size parameter for CSF cloth.
+        normal_threshold_z: NormalZ threshold to filter sloped natural terrain.
+
+    Returns:
+        bool: True if successful, False otherwise.
     """
     if out_path.exists():
         logger.info(f"Skipping {out_path.name} - already exists (Idempotency)")
@@ -251,9 +269,12 @@ def run_pdal_standardization(
             })
         elif classifier == 'hybrid-dual':
             # Pass 1: Macro CSF (Structure Removal - "Iron Board")
+            # If csf_resolution is 1.0 (default CLI value), we default macro_resolution to 3.0 for hybrid-dual.
+            # Otherwise, we respect the custom csf_resolution specified by the user.
+            macro_resolution = csf_resolution if csf_resolution != 1.0 else 3.0
             process_pipeline.append({
                 "type": "filters.csf",
-                "resolution": 10.0,
+                "resolution": macro_resolution,
                 "step": 0.5,
                 "rigidness": 3,
                 "ignore": "Classification[7:7]"
@@ -273,10 +294,20 @@ def run_pdal_standardization(
                 "scalar": 1.50
             })
             # The Recombination Logic
-            process_pipeline.append({
-                "type": "filters.assign",
-                "value": "Classification = 1 WHERE HeightAboveGround > 4.0 && Classification == 2"
-            })
+            if normal_threshold_z > 0.0:
+                process_pipeline.append({
+                    "type": "filters.normal",
+                    "knn": 8
+                })
+                process_pipeline.append({
+                    "type": "filters.assign",
+                    "value": f"Classification = 1 WHERE HeightAboveGround > 4.0 && NormalZ > {normal_threshold_z} && Classification == 2"
+                })
+            else:
+                process_pipeline.append({
+                    "type": "filters.assign",
+                    "value": "Classification = 1 WHERE HeightAboveGround > 4.0 && Classification == 2"
+                })
     
     # 8. Clean up noise points (Drop)
     process_pipeline.append({
@@ -369,7 +400,20 @@ def run_pdal_standardization(
             q_out = out_path.with_name(f"{out_path.stem}_sub{i}.laz")
             
             # Recursive Call!
-            success = run_pdal_standardization(raw_index_path, q_out, crs, q_core, q_buf, provider, grid_crs, classifier, point_density, csf_resolution, csf_step)
+            success = run_pdal_standardization(
+                raw_index_path, 
+                q_out, 
+                crs, 
+                q_core, 
+                q_buf, 
+                provider, 
+                grid_crs, 
+                classifier, 
+                point_density, 
+                csf_resolution, 
+                csf_step,
+                normal_threshold_z
+            )
             if success and q_out.exists():
                 sub_files.append(q_out)
             elif not success:

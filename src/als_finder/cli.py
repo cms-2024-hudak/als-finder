@@ -605,7 +605,8 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
 @click.option('--tile-index', type=int, default=None, help='Execute a single specific tile index (for HPC Job Arrays).')
 @click.option('--csf-resolution', type=float, default=1.0, help='CSF grid resolution.')
 @click.option('--csf-step', type=float, default=0.5, help='CSF step size.')
-def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers, tile_size, buffer_size, grid_crs, overwrite, classifier, tile_index, csf_resolution, csf_step):
+@click.option('--normal-threshold-z', type=float, default=0.85, help='NormalZ threshold to distinguish steep natural terrain from horizontal artificial structures in hybrid-dual.')
+def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers, tile_size, buffer_size, grid_crs, overwrite, classifier, tile_index, csf_resolution, csf_step, normal_threshold_z):
     """Execute PDAL Standardization matrices on locally downloaded LiDAR binaries."""
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
@@ -798,7 +799,7 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         def worker_fn(item):
             idx, (core_poly, buffered_poly) = item
             out_path = interim_dir / f"tile_{idx}.laz"
-            success = run_pdal_standardization(raw_index_path, out_path, crs, core_poly, buffered_poly, provider, grid_crs, classifier, current_density, csf_resolution, csf_step)
+            success = run_pdal_standardization(raw_index_path, out_path, crs, core_poly, buffered_poly, provider, grid_crs, classifier, current_density, csf_resolution, csf_step, normal_threshold_z)
             return success
             
         if tile_index is not None:
