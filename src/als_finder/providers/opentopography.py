@@ -126,6 +126,17 @@ class OpenTopographyProvider(BaseProvider):
                 geom = meta.get('spatialCoverage', {}).get('geo', {}).get('geojson', {})
                 if geom and geom.get('type') == 'FeatureCollection' and geom.get('features'):
                     geom = geom['features'][0].get('geometry')
+                    
+                # Precision filter: ensure the exact flight polygon intersects the ROI
+                if geom and roi:
+                    from shapely.geometry import shape
+                    try:
+                        ot_poly = shape(geom)
+                        if not ot_poly.intersects(roi):
+                            logger.debug(f"OpenTopography dataset {dataset_id} intersects API bbox but precise geometry avoids ROI. Dropping.")
+                            continue
+                    except Exception as e:
+                        logger.warning(f"Failed to parse OT precise geometry for {dataset_id}: {e}")
 
                 point_count = meta.get('ptCount') or meta.get('pointCount')
                 point_density = meta.get('pointDensity')

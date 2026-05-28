@@ -99,10 +99,15 @@ class NOAAProvider(BaseProvider):
                 if not item:
                     continue
                 
-                # Extract bbox or geometry
-                bbox = item.get("bbox")
-                if not bbox or len(bbox) != 4:
-                    continue
+                # Extract precise geometry, fallback to bbox rectangle
+                stac_geom = item.get("geometry")
+                if stac_geom:
+                    geom = shape(stac_geom)
+                else:
+                    bbox = item.get("bbox")
+                    if not bbox or len(bbox) != 4:
+                        continue
+                    geom = box(*bbox)
                     
                 # Extract data URL
                 assets = item.get("assets", {})
@@ -117,8 +122,6 @@ class NOAAProvider(BaseProvider):
                          data_url = list(assets.values())[0].get("href")
                      else:
                          continue
-
-                geom = box(*bbox)
                 
                 # Interpret OGC STAC native temporal attributes (some projects lack 'datetime' but carry 'start_datetime')
                 props = item.get("properties", {})

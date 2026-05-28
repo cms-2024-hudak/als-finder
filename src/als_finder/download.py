@@ -304,6 +304,12 @@ def execute_fetch_array(workspace_path: Path, workers: int = None, overwrite: bo
                 if log_file_path.exists():
                     log_file_path.unlink()
                     
+                # Post-download safeguard: automatically purge 0-point ghost extractions
+                if target.exists() and os.path.getsize(target) < 2048:
+                    logger.warning(f"0 points found in geometric subset for {source}. Purging 1kb ghost artifact.")
+                    target.unlink()
+                    return "EMPTY"
+                    
                 # Flush remaining bytes
                 if target.exists():
                     cur_size = os.path.getsize(target)
