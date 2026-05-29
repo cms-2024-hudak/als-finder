@@ -619,14 +619,13 @@ If you download 5,000 LiDAR tiles across 10 years and 8 different providers, man
 You can use the **QGIS STAC API Browser Plugin** and point it to the `catalog/stac/catalog.json` file. QGIS will instantly draw colored boxes over a basemap showing the exact footprint of every single LiDAR tile you downloaded, allowing you to visually browse your local database instantly.
 
 **2. The Zero-Setup Web STAC Browser Demo:**
-To test browsing and visualizing a STAC catalog on the web without installing any GIS software or running local servers, you can use our pre-loaded `demo/` dataset served natively via GitHub Pages:
-1. Enable **GitHub Pages** on your repository fork (go to **Settings > Pages**, select **Deploy from a branch**, choose your branch, select `/root` folder, and click Save).
-2. Open the public **[Radiant Earth STAC Browser](https://radiantearth.github.io/stac-browser/)** in your browser.
-3. Paste your live GitHub Pages STAC URL into the search bar:
+To browse and visualize a STAC catalog on the web without installing any GIS software or running local servers, you can test our pre-loaded, live demo dataset:
+1. Open the public **[Radiant Earth STAC Browser](https://radiantearth.github.io/stac-browser/)** in your web browser.
+2. Copy and paste the following pre-hosted catalog URL into the search bar:
    ```text
-   https://<your-github-username>.github.io/als-finder/demo/catalog/stac/catalog.json
+   https://cms-2024-hudak.github.io/als-finder/demo/catalog/stac/catalog.json
    ```
-4. **Explore in 3D:** The STAC Browser will render a stunning interactive web portal. Zoom in on the map to see the conformed Sierra Nevada dataset footprint, click through to the collection, and click **Open in copc.io** to stream, rotate, and interact with the conformed point cloud natively in 3D!
+3. **Explore in 3D:** Click **Browse** to open the catalog. You can zoom in on the Leaflet map to inspect the conformed Sierra Nevada dataset footprint, drill down into the collection item, and click **Open in copc.io** to stream, rotate, and interact with the point cloud natively in full 3D!
 
 **3. The Python Data Science Query:**
 You can programmatically query your new local database without needing a SQL server using `pystac`:
