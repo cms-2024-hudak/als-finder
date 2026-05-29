@@ -231,7 +231,13 @@ def run_pdal_standardization(
     core_bounds_str = f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
         
     # 4. Scientific Taxonomy Overwrite
-    if classifier != 'vendor':
+    if classifier == 'vendor':
+        # Reset all non-ground (Class 2) and non-noise (Class 7/18) classifications to Class 1 (Unclassified)
+        process_pipeline.append({
+            "type": "filters.assign",
+            "assignment": "Classification[Classification != 2 && Classification != 7 && Classification != 18]=1"
+        })
+    else:
         process_pipeline.append({
             "type": "filters.assign",
             "assignment": "Classification[:]=1"
