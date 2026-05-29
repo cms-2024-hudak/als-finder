@@ -94,7 +94,7 @@ docker run --env-file .env -v $(pwd):/app/data als-finder:latest search --roi "-
 ### 3. Pip (Advanced / System-Level)
 > [!WARNING]
 > **Important Note for Pip Users**
-> There are no pre-compiled wheels for the PDAL C++ library on PyPI. If you wish to use pure `pip` to install the complete package (including the Stage 3 Normalization engine), you **MUST** pre-install the C++ PDAL binaries on your host operating system before running `pip install`. If you do not have these OS-level packages, the Python compilation step will fail.
+> While PyPI hosts the `pdal` Python package (which provides the Python bindings), its wheels **do not bundle the core PDAL C++ library**. If you wish to use pure `pip` to install the complete package (including the Stage 3 Normalization engine), you **MUST** pre-install the C++ PDAL binaries on your host operating system. Otherwise, compiling or running the Python `pdal` bindings will fail.
 
 **A. Install System Binaries First**
 
