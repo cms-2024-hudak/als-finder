@@ -8,9 +8,15 @@ from pathlib import Path
 from datetime import datetime
 import time
 import importlib.resources as pkg_resources
+import importlib.metadata
 from dotenv import load_dotenv
 from als_finder.core.input_manager import load_roi, ROIError
 from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvider
+
+try:
+    __version__ = importlib.metadata.version("als-finder")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "1.1.0-dev"
 
 from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvider
 from als_finder.download import generate_fetch_array, execute_fetch_array
@@ -44,6 +50,7 @@ def prune_empty_dirs(path: Path, limit_path: Path):
         logger.debug(f"Failed to prune directory {path}: {e}")
 
 @click.group()
+@click.version_option(version=__version__, message="%(prog)s version %(version)s")
 @click.option('-v', '--verbose', is_flag=True, help='Enable verbose execution logging')
 @click.option('-q', '--quiet', is_flag=True, help='Suppress standard logging to print exact payloads only.')
 def cli(verbose, quiet):
