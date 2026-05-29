@@ -582,19 +582,6 @@ The `als-finder standardize` command standardizes your raw downloads into a stri
 als-finder standardize --workspace ./tiny_subset/
 ```
 
-### Ground Classification Options (`--classifier`)
-
-> [!NOTE]
-> The `--classifier` option is hidden from standard CLI `--help` outputs to keep the interface simple and approachable for everyday scientific workflows, but remains fully functional for advanced overrides.
-
-You can customize the ground classification behavior to match your specific geographic terrain and forest structure constraints using the `--classifier` option:
-
-*   **`vendor` (Default):** Trusts and preserves agency bare-earth (Class 2) and isolated noise (Class 7/18) labels while conjoining and resetting all other secondary classifications (canopy vegetation, structures, water, etc.) to Class 1 (Unclassified). This guarantees absolute taxonomic uniformity across diverse datasets. **Smart Auto-Detection Fallback:** If vendor point clouds are completely unclassified (lacking Class 2 Ground labels), `als-finder` automatically falls back to SMRF ground classification and noise filtering to ensure valid bare-earth/canopy separations.
-*   **`hybrid-dual`:** A robust dual-pass classifier combining SMRF and CSF. It dynamically tunes parameters (e.g., SMRF 18m window and 0.8 slope; CSF 10m resolution) and incorporates a slope-aware normal filter to protect steep sand dunes and cliffs from artificial structure removal.
-*   **`smrf`:** Simple Morphological Filter. High-performance morphological filtering best suited for flat to moderately sloped terrain.
-*   **`csf`:** Cloth Simulation Filter. High-fidelity filtering designed for steep mountainous terrain and dense forest canopies.
-*   **`none`:** Drops noise and invalid points, but skips ground classification completely.
-
 ### Spatial Scaling & Resource Safety
 
 To prevent Out-Of-Memory (OOM) crashes in massive datasets, `als-finder` includes:
