@@ -107,6 +107,7 @@ def generate_catalog(workspace: Path) -> bool:
     # 4. Link Normalization (This fixes QGIS)
     logger.info("Normalizing STAC HREFs automatically locking standard structures natively...")
     catalog.normalize_hrefs(str(stac_dir.absolute()))
+    catalog.make_all_asset_hrefs_relative()
     
     # Save the catalog
     catalog.save(catalog_type=pystac.CatalogType.SELF_CONTAINED)
