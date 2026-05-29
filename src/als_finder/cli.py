@@ -797,11 +797,48 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         interim_dir = workspace_path / "data" / "interim" / f"provider={provider}" / f"dataset={dataset}"
         interim_dir.mkdir(parents=True, exist_ok=True)
         
+        # Probe the classification status for the entire acquisition (not dynamically per tile)
+        import glob
+        laz_files = glob.glob(f"{raw_dir}/*.laz") + glob.glob(f"{raw_dir}/*.las")
+        
+        has_ground = False
+        effective_classifier = classifier
+        force_noise_filter = False
+        
+        if laz_files:
+            from als_finder.core.standardization import detect_classification_presence
+            probe_file = Path(laz_files[0])
+            has_ground = detect_classification_presence(probe_file)
+            logger.info(f"Acquisition probe for dataset '{dataset}': ground_labels_detected={has_ground}")
+            
+            if classifier == 'vendor':
+                if not has_ground:
+                    logger.warning(
+                        f"[NOTICE] No ground classifications detected in vendor files for '{dataset}'. "
+                        f"Automatically falling back to fast SMRF ground classification and noise filters."
+                    )
+                    effective_classifier = 'smrf'
+                    force_noise_filter = True
+                    
         current_density = dataset_densities.get(dataset)
         def worker_fn(item):
             idx, (core_poly, buffered_poly) = item
             out_path = interim_dir / f"tile_{idx}.laz"
-            success = run_pdal_standardization(raw_index_path, out_path, crs, core_poly, buffered_poly, provider, grid_crs, classifier, current_density, csf_resolution, csf_step, normal_threshold_z)
+            success = run_pdal_standardization(
+                raw_index_path, 
+                out_path, 
+                crs, 
+                core_poly, 
+                buffered_poly, 
+                provider, 
+                grid_crs, 
+                effective_classifier, 
+                current_density, 
+                csf_resolution, 
+                csf_step, 
+                normal_threshold_z,
+                force_noise_filter=force_noise_filter
+            )
             return success
             
         if tile_index is not None:

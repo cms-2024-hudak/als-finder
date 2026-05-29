@@ -101,6 +101,22 @@ def generate_grid(gdf: gpd.GeoDataFrame, tile_size: int = 512, buffer_size: int 
         
     return grid
 
+def detect_classification_presence(file_path: Path) -> bool:
+    """
+    Memory-safe probe to detect if Class 2 (Ground) points exist in a LAS/LAZ file.
+    Returns True if ground classifications exist, False otherwise.
+    """
+    import laspy
+    try:
+        with laspy.open(str(file_path)) as fh:
+            for points in fh.chunk_iterator(100000):
+                classes = points.classification
+                if 2 in classes:
+                    return True
+    except Exception as e:
+        logger.warning(f"Classification probe failed for {file_path.name}: {e}")
+    return False
+
 def run_pdal_standardization(
     raw_index_path: Path, 
     out_path: Path,
@@ -113,7 +129,8 @@ def run_pdal_standardization(
     point_density: float = None,
     csf_resolution: float = 1.0,
     csf_step: float = 0.5,
-    normal_threshold_z: float = 0.85
+    normal_threshold_z: float = 0.85,
+    force_noise_filter: bool = False
 ) -> bool:
     """
     Constructs and executes a PDAL pipeline to standardize a single tile from the tindex.
@@ -226,7 +243,7 @@ def run_pdal_standardization(
         "expression": "ReturnNumber > 0 && NumberOfReturns > 0"
     })
     
-    if classifier != 'vendor':
+    if classifier != 'vendor' or force_noise_filter:
         # 6. Extended Local Minimum (ELM) Filter for low noise
         process_pipeline.append({
             "type": "filters.elm",
@@ -245,21 +262,24 @@ def run_pdal_standardization(
         })
     # 7. Dynamic Ground Classification
     if classifier not in ['none', 'vendor']:
-        # Dynamic density scaling (only for cell size now)
+        # Dynamic density scaling for SMRF parameters
         if point_density is None or point_density >= 5.0:
             cell_size = 1.0
+            window_size = 18.0  # Fast, detailed for high-density
         elif point_density >= 1.0:
             cell_size = 2.0
+            window_size = 33.0  # Balanced search range
         else:
             cell_size = 3.0
+            window_size = 65.0  # Wide search for sparse points
             
         if classifier == 'smrf':
             process_pipeline.append({
                 "type": "filters.smrf",
                 "ignore": "Classification[7:7]",
                 "cell": cell_size,
-                "window": 65.0,
-                "slope": 0.2,
+                "window": window_size,
+                "slope": 0.5,
                 "threshold": 0.5,
                 "scalar": 1.25
             })
@@ -414,7 +434,8 @@ def run_pdal_standardization(
                 point_density, 
                 csf_resolution, 
                 csf_step,
-                normal_threshold_z
+                normal_threshold_z,
+                force_noise_filter
             )
             if success and q_out.exists():
                 sub_files.append(q_out)
