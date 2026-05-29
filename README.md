@@ -536,8 +536,10 @@ als-finder download --roi "-119.9915, 38.9285, -119.9885, 38.9315" --name "CA_Si
 Executing Mode A/B: Physical Core Download Protocol
 Targeting fetch array: tiny_subset/catalog/fetch_array.csv
 Verified local workspace capacity: 29.71 GB available.
-Physically orchestrating multi-threaded download sequence for 107 nodes...
-[SUCCESS] Total Data Block Acquisition completed: 107/107 matrices mapped.
+Physically orchestrating multi-threaded download sequence for 1 nodes using 1 concurrent workers...
+Dynamically streaming EPT natively: pdal translate ...
+Downloading payloads: 17.7MiB [00:09, 1.91MiB/s]
+[SUCCESS] Total Data Block Acquisition completed: 1/1 matrices mapped.
 ```
 
 **Resulting Hive Workspace Structure:**
