@@ -23,10 +23,24 @@ def generate_catalog(workspace: Path) -> bool:
     stac_dir = workspace / "catalog" / "stac"
     stac_dir.mkdir(parents=True, exist_ok=True)
     
-    # 1. Root Genesis
+    # Load manifest for rich metadata integration (datetime, source provider descriptions)
+    manifest_path = workspace / "catalog" / "manifest.json"
+    dataset_metadata = {}
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, 'r') as mf:
+                manifest_data = json.load(mf)
+                for ds in manifest_data.get('datasets', []):
+                    ds_id = ds.get('dataset_id') or ds.get('name')
+                    if ds_id:
+                        dataset_metadata[ds_id] = ds
+        except Exception as e:
+            logger.warning(f"Could not load manifest.json in STAC generator: {e}")
+    
+    # 1. Root Genesis (Uses generic description suitable for all providers including OpenTopography)
     catalog = pystac.Catalog(
         id="als-finder-catalog",
-        description="Root STAC Catalog representing processed USGS/NOAA LiDAR point clouds.",
+        description="Root STAC Catalog representing standardized LiDAR point clouds.",
         title="ALS-Finder Standardized Point Cloud Catalog"
     )
     
@@ -43,6 +57,9 @@ def generate_catalog(workspace: Path) -> bool:
         for dataset_dir in provider_dir.glob("dataset=*"):
             dataset_val = dataset_dir.name.split("=")[1]
             
+            ds_meta = dataset_metadata.get(dataset_val, {})
+            ds_desc = ds_meta.get('description') or f"Standardized {dataset_val} point cloud conformed from {provider_val}."
+            
             # 2. Collection Partitioning
             # For each dataset, generate a dynamic STAC collection.
             # We initialize a generic spatial extent (will dynamically expand as items are added)
@@ -52,7 +69,7 @@ def generate_catalog(workspace: Path) -> bool:
             
             collection = pystac.Collection(
                 id=dataset_val,
-                description=f"Standardized COPC array generated natively from {provider_val}.",
+                description=ds_desc,
                 extent=extent
             )
             
@@ -72,7 +89,26 @@ def generate_catalog(workspace: Path) -> bool:
                 # Fix known PDAL missing constraints structurally mapping dynamically
                 if 'properties' not in pdal_stac:
                     pdal_stac['properties'] = {}
-                if 'datetime' not in pdal_stac['properties']:
+                
+                # Resolve precise acquisition date/time dynamically from search registry manifest
+                ds_date_str = ds_meta.get('date')
+                item_datetime = None
+                if ds_date_str:
+                    try:
+                        # Handle simple year date formats (e.g. '2022') or standard ISO date strings
+                        if len(ds_date_str) == 4 and ds_date_str.isdigit():
+                            item_datetime = datetime(int(ds_date_str), 1, 1, tzinfo=timezone.utc)
+                        else:
+                            # Clean up dates containing spaces or T dividers
+                            clean_date = ds_date_str.split(' ')[0].split('T')[0]
+                            parsed = datetime.strptime(clean_date, "%Y-%m-%d")
+                            item_datetime = parsed.replace(tzinfo=timezone.utc)
+                    except Exception as date_e:
+                        logger.debug(f"Failed parsing acquisition date '{ds_date_str}': {date_e}")
+                
+                if item_datetime:
+                    pdal_stac['properties']['datetime'] = item_datetime.isoformat()
+                elif 'datetime' not in pdal_stac['properties']:
                     pdal_stac['properties']['datetime'] = datetime.now(timezone.utc).isoformat()
                     
                 # Assign static ID inherently tied to the file natively
