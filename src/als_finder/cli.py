@@ -568,7 +568,7 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats to the local drive natively.')
 @click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull the entirely comprehensive upstream dataset payload natively.')
 @click.option('--standardize', is_flag=True, help='Execute PDAL standardization concurrently after extracting binaries.')
-@click.option('--crs', default='auto-utm-centroid', help='Specify target output projection for normalization (e.g. EPSG:3857, EPSG:5070, or auto-utm-centroid). Defaults to auto-utm-centroid.')
+@click.option('--crs', default='EPSG:3857', help='Specify target output projection for normalization (e.g. EPSG:3857, EPSG:5070, or auto-utm-centroid). Defaults to EPSG:3857.')
 @click.option('--stac', is_flag=True, help='Dynamically generate PySTAC schema hierarchies out of the standardized payloads natively.')
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
 @click.option('--preserve-raw', is_flag=True, help='Preserve the raw .laz binaries after successful standardization. By default, raw files are purged to save space.')
@@ -606,7 +606,7 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
 
 @cli.command('standardize')
 @click.option('--workspace', required=True, type=click.Path(exists=True), help='Path to your local project workspace.')
-@click.option('--crs', default='auto-utm-centroid', help='Target Coordinate Reference System. Defaults to "auto-utm-centroid" (dynamic UTM based on acquisition centroid).')
+@click.option('--crs', default='EPSG:3857', help='Target Coordinate Reference System. Defaults to "EPSG:3857" (Web Mercator).')
 @click.option('--roi', default=None, help='Optional path to ROI geometry to geometrically slice the point cloud footprint natively.')
 @click.option('--stac/--no-stac', default=True, help='Generate STAC compliant metadata schemas for the final standardized matrix.')
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
