@@ -601,7 +601,7 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
 @click.option('--buffer-size', type=int, default=30, help='Overlap buffer size in meters to prevent edge artifacts. Defaults to 30m to preserve memory constraints.')
 @click.option('--grid-crs', default='EPSG:3857', help='CRS for the orchestration grid. Defaults to EPSG:3857.')
 @click.option('--overwrite', is_flag=True, help='Force overwrite of existing standardized files instead of skipping them.')
-@click.option('--classifier', type=click.Choice(['smrf', 'csf', 'hybrid-dual', 'none']), default='hybrid-dual', help='Ground classification algorithm to use. Defaults to hybrid-dual.')
+@click.option('--classifier', type=click.Choice(['smrf', 'csf', 'hybrid-dual', 'vendor', 'none']), default='hybrid-dual', help='Ground classification algorithm to use. Defaults to hybrid-dual.')
 @click.option('--tile-index', type=int, default=None, help='Execute a single specific tile index (for HPC Job Arrays).')
 @click.option('--csf-resolution', type=float, default=1.0, help='CSF grid resolution.')
 @click.option('--csf-step', type=float, default=0.5, help='CSF step size.')
@@ -775,7 +775,9 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         
         # Phase 3: RAM-Aware Distributed Processing
         available_ram_gb = psutil.virtual_memory().available / (1024**3)
-        if classifier == 'smrf':
+        if classifier in ['vendor', 'none']:
+            ram_per_worker = 1.0
+        elif classifier == 'smrf':
             # Dynamic gridding mathematically caps RAM
             ram_per_worker = 1.5
         else:

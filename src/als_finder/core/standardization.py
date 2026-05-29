@@ -214,10 +214,11 @@ def run_pdal_standardization(
     core_bounds_str = f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
         
     # 4. Scientific Taxonomy Overwrite
-    process_pipeline.append({
-        "type": "filters.assign",
-        "assignment": "Classification[:]=1"
-    })
+    if classifier != 'vendor':
+        process_pipeline.append({
+            "type": "filters.assign",
+            "assignment": "Classification[:]=1"
+        })
     
     # 5. Drop Invalid Returns
     process_pipeline.append({
@@ -225,24 +226,25 @@ def run_pdal_standardization(
         "expression": "ReturnNumber > 0 && NumberOfReturns > 0"
     })
     
-    # 6. Extended Local Minimum (ELM) Filter for low noise
-    process_pipeline.append({
-        "type": "filters.elm",
-        "cell": 20.0,
-        "threshold": 1.5,
-        "class": 7
-    })
-    
-    # 7. Statistical outlier filter for high noise
-    process_pipeline.append({
-        "type": "filters.outlier",
-        "method": "statistical",
-        "mean_k": 12,
-        "multiplier": 2.2,
-        "class": 7
-    })
+    if classifier != 'vendor':
+        # 6. Extended Local Minimum (ELM) Filter for low noise
+        process_pipeline.append({
+            "type": "filters.elm",
+            "cell": 20.0,
+            "threshold": 1.5,
+            "class": 7
+        })
+        
+        # 7. Statistical outlier filter for high noise
+        process_pipeline.append({
+            "type": "filters.outlier",
+            "method": "statistical",
+            "mean_k": 12,
+            "multiplier": 2.2,
+            "class": 7
+        })
     # 7. Dynamic Ground Classification
-    if classifier != 'none':
+    if classifier not in ['none', 'vendor']:
         # Dynamic density scaling (only for cell size now)
         if point_density is None or point_density >= 5.0:
             cell_size = 1.0
