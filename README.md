@@ -533,13 +533,13 @@ als-finder download --roi "-119.9915, 38.9285, -119.9885, 38.9315" --name "CA_Si
 
 **Console Output:**
 ```text
-Executing Mode A/B: Physical Core Download Protocol
-Targeting fetch array: tiny_subset/catalog/fetch_array.csv
-Verified local workspace capacity: 29.71 GB available.
-Physically orchestrating multi-threaded download sequence for 1 nodes using 1 concurrent workers...
-Dynamically streaming EPT natively: pdal translate ...
-Downloading payloads: 17.7MiB [00:09, 1.91MiB/s]
-[SUCCESS] Total Data Block Acquisition completed: 1/1 matrices mapped.
+2026-05-29 11:26:35,770 [INFO] Executing Mode A/B: Physical Core Download Protocol
+2026-05-29 11:26:35,771 [INFO] Targeting fetch array: tiny_subset/catalog/fetch_array.csv
+2026-05-29 11:26:35,772 [INFO] Verified local workspace capacity: 29.70 GB available.
+2026-05-29 11:26:35,773 [INFO] Physically orchestrating multi-threaded download sequence for 1 nodes using 1 concurrent workers...
+2026-05-29 11:26:35,773 [INFO] Dynamically streaming EPT natively: pdal translate https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SierraNevada_5_2022/ept.json /mnt/c/Users/gears/git/als-finder/scratch/tiny_subset/data/raw/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/CA_SierraNevada_5_2022_subset.laz --stream --readers.ept.bounds=([-13357442.6795, -13357008.7210], [4711384.9798, 4711914.2796]) --readers.ept.resolution=0 --readers.ept.threads=2
+Downloading payloads: 17.7MiB [00:09, 1.96MiB/s]
+2026-05-29 11:26:45,066 [INFO] [SUCCESS] Total Data Block Acquisition completed: 1/1 matrices mapped.
 ```
 
 **Resulting Hive Workspace Structure:**
