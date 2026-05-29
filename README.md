@@ -41,45 +41,10 @@ Because `als-finder` relies on advanced spatial libraries (`geopandas`, `shapely
 > **Windows Native (CMD/PowerShell) Users:**
 > Do **NOT** attempt to use `pip install als-finder[all]` on native Windows. The C++ dependencies for PDAL and GDAL cannot be easily compiled via Pip on Windows. If you are not using WSL2, you **must** use the **Conda** installation method below, which handles the Windows C++ binaries for you perfectly.
 
-If you attempt a raw `pip install` on Mac or Linux without these underlying C++ compilers pre-installed, Python will throw compiler errors due to missing C++ dependencies. For this reason, we highly recommend **Docker** or **Conda** for all platforms.
+If you attempt a raw `pip install` on Mac or Linux without these underlying C++ compilers pre-installed, Python will throw compiler errors due to missing C++ dependencies. For this reason, we highly recommend **Conda** (for desktop environments) or **Docker/Singularity** (for server and HPC execution).
 
-### 1. Docker (Recommended for HPC / Singularity)
-The absolute safest way to execute spatial code without triggering dependency conflicts on your local machine is through Docker.
-
-**Option A: Pull Pre-Built Image (Recommended)**
-```bash
-docker pull ghcr.io/cms-2024-hudak/als-finder:latest
-
-# Basic Run (Bypasses OpenTopography)
-docker run -v $(pwd):/app/data ghcr.io/cms-2024-hudak/als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
-
-# Run with OpenTopography API Key enabled
-docker run -e OPENTOPOGRAPHY_API_KEY="your_api_key_here" -v $(pwd):/app/data ghcr.io/cms-2024-hudak/als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
-```
-
-**Option B: Build from Source**
-If your enterprise firewall blocks GHCR or you are modifying the source code:
-```bash
-git clone https://github.com/cms-2024-hudak/als-finder.git
-cd als-finder
-docker build -t als-finder:latest .
-
-# Run with environment variables from a .env file
-docker run --env-file .env -v $(pwd):/app/data als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
-```
-
-**Option C: Singularity / Apptainer Build (For Supercomputers & HPC like Expanse)**
-If you are deploying `als-finder` on an HPC cluster where root privileges are not available to run Docker, you can compile a standard **Singularity Image File (.sif)** directly from our public GitHub Container Registry (GHCR):
-```bash
-# Pull and build the Singularity image natively
-singularity build als-finder.sif docker://ghcr.io/cms-2024-hudak/als-finder:latest
-
-# Execute the container natively on the HPC cluster
-singularity run als-finder.sif search --roi "-124,42,-123,43" --workspace ./my_lidar_project
-```
-
-### 2. Conda (Recommended & Official)
-Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. You can install the package directly over the network from the **Conda-Forge** channel with a single command:
+### 1. Conda (Recommended & Official)
+Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. This is our general recommendation for most scientific desktop users, and it installs the package directly over the network from the **Conda-Forge** channel in a single command:
 
 ```bash
 # Create a fresh environment and install als-finder from conda-forge
@@ -90,6 +55,41 @@ conda activate als-finder
 ```
 
 *(Alternatively, if you are building from source, you can clone the repository and run `conda env create -f environment.yml` inside the cloned directory).*
+
+### 2. Docker / Singularity (Recommended for Server & HPC Environments)
+The absolute safest way to execute spatial code without triggering dependency conflicts on local servers, cloud instances, or high-performance supercomputers is through containers.
+
+**Option A: Pull Pre-Built Image**
+```bash
+docker pull ghcr.io/cms-2024-hudak/als-finder:latest
+
+# Basic Run (Bypasses OpenTopography)
+docker run -v $(pwd):/app/data ghcr.io/cms-2024-hudak/als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
+
+# Run with OpenTopography API Key enabled
+docker run -e OPENTOPOGRAPHY_API_KEY="your_api_key_here" -v $(pwd):/app/data ghcr.io/cms-2024-hudak/als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
+```
+
+**Option B: Singularity / Apptainer Build (For Supercomputers & HPC like Expanse)**
+If you are deploying `als-finder` on an HPC cluster where root privileges are not available to run Docker, you can compile a standard **Singularity Image File (.sif)** directly from our public GitHub Container Registry (GHCR):
+```bash
+# Pull and build the Singularity image natively
+singularity build als-finder.sif docker://ghcr.io/cms-2024-hudak/als-finder:latest
+
+# Execute the container natively on the HPC cluster
+singularity run als-finder.sif search --roi "-124,42,-123,43" --workspace ./my_lidar_project
+```
+
+**Option C: Build Docker from Source**
+If your enterprise firewall blocks GHCR or you are modifying the source code:
+```bash
+git clone https://github.com/cms-2024-hudak/als-finder.git
+cd als-finder
+docker build -t als-finder:latest .
+
+# Run with environment variables from a .env file
+docker run --env-file .env -v $(pwd):/app/data als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
+```
 
 ### 3. Pip (Advanced / System-Level)
 > [!WARNING]
