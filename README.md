@@ -69,17 +69,18 @@ docker run --env-file .env -v $(pwd):/app/data als-finder:latest search --roi "-
 ```
 
 ### 2. Conda (Recommended)
-Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. We highly recommend installing `als-finder` into an isolated Conda environment to prevent dependency conflicts with your system Python packages.
+Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. We highly recommend installing `als-finder` into an isolated Conda environment using our pre-configured `environment.yml` definition.
 
 ```bash
-# 1. Create a clean Conda environment (Python 3.10+ recommended)
-conda create -n als-finder-env python=3.10 -y
+# 1. Clone the repository and navigate into it
+git clone https://github.com/cms-2024-hudak/als-finder.git
+cd als-finder
 
-# 2. Activate the environment
-conda activate als-finder-env
+# 2. Create the Conda environment from the bundled environment.yml
+conda env create -f environment.yml
 
-# 3. Install the package from conda-forge
-conda install -c conda-forge als-finder
+# 3. Activate the newly created environment
+conda activate als-finder
 ```
 
 ### 3. Pip (Advanced / System-Level)
@@ -583,15 +584,32 @@ To solve this completely, `als-finder` includes an automated harmonization engin
 
 ## 🛠️ Stage 3: Normalization & Standardization
 
-The `als-finder standardize` command standardizes your raw downloads into a strictly uniform format. It executes the following pipeline on every single file in the `data/raw/` directory:
+The `als-finder standardize` command standardizes your raw downloads into a strictly uniform, analysis-ready format. It executes the following pipeline on every single file in the `data/raw/` directory:
 
-1. **Format Upgrade:** Converts everything to Cloud Optimized Point Cloud (`.copc.laz`) for blazing-fast spatial indexing.
-2. **CRS Reprojection:** Reprojects everything to Web Mercator (`EPSG:3857`) by default, or dynamically calculates a local UTM zone using the `--crs auto-utm` flag.
-3. **Taxonomic Standardization:** Wipes legacy vendor classifications, drops invalid points, and executes the SMRF (Simple Morphological Filter) algorithm to strictly classify the bare earth (Class 2) and vegetation (Class 1).
+1. **Format Upgrade:** Converts everything to Cloud Optimized Point Cloud (`.copc.laz`) for blazing-fast spatial indexing and tiered resolution rendering.
+2. **CRS Reprojection:** Runs in the `native` coordinate reference system by default (reprojecting intermediate products back to native, and storing native CRS in the final merged outputs). Alternatively, you can enforce a specific target projection (e.g. `--crs EPSG:3857` or `--crs EPSG:5070`), or dynamically calculate a local UTM zone from your Area of Interest centroid via `--crs auto-utm-centroid` (requires `--roi`).
+3. **Taxonomic Standardization:** Wipes legacy vendor classifications, drops invalid points/noise, and applies a customizable ground classification algorithm. By default, it uses a state-of-the-art `hybrid-dual` classifier to strictly classify bare earth (Class 2) and vegetation (Class 1).
 
 ```bash
+# Standardize using default hybrid-dual classification and native coordinate systems
 als-finder standardize --workspace ./tiny_subset/
 ```
+
+### Ground Classification Options (`--classifier`)
+
+You can customize the ground classification behavior to match your specific geographic terrain and forest structure constraints using the `--classifier` option:
+
+*   **`hybrid-dual` (Default):** A robust dual-pass classifier combining SMRF and CSF. It dynamically tunes parameters (e.g., SMRF 18m window and 0.8 slope; CSF 10m resolution) and incorporates a slope-aware normal filter to protect steep sand dunes and cliffs from artificial structure removal.
+*   **`smrf`:** Simple Morphological Filter. High-performance morphological filtering best suited for flat to moderately sloped terrain.
+*   **`csf`:** Cloth Simulation Filter. High-fidelity filtering designed for steep mountainous terrain and dense forest canopies.
+*   **`vendor`:** Trusts and preserves vendor-supplied ground labels. **Smart Auto-Detection Fallback:** If vendor point clouds are missing ground classifications, `als-finder` automatically detects this and falls back to SMRF classification with noise filtering to ensure you always get valid ground/canopy separations.
+*   **`none`:** Drops noise and invalid points, but skips ground classification completely.
+
+### Spatial Scaling & Resource Safety
+
+To prevent Out-Of-Memory (OOM) crashes in massive datasets, `als-finder` includes:
+*   **Dynamic Spatial Sub-Tiling:** If a tile raises a `MemoryError`, the engine dynamically splits the tile into quadrants and processes them recursively.
+*   **RAM-Aware Worker Capping:** Automatically scales the number of parallel thread workers using the system's available RAM and the chosen classifier's memory profile.
 
 **Resulting Hive Workspace Structure:**
 ```text
@@ -659,17 +677,14 @@ als-finder standardize --workspace ./tiny_subset/ --quicklook
 
 ## ⚡ The Mega Command (End-to-End Execution)
 
-If you have already defined your `--roi` and are ready to execute the entire lifecycle from public registry discovery to standard COPC, STAC indexing, and Quicklook generation without stopping at the safety barrier, you can chain the pipeline together:
+If you have already defined your `--roi` and are ready to execute the entire lifecycle from public registry discovery to standard COPC, STAC indexing, and Quicklook generation in a single, uninterrupted end-to-end command, you can chain the pipeline together:
 
 ```bash
-# 1. Generate the Fetch List
-als-finder download --roi "-120.505, 39.015, -120.495, 39.016" --name "CA_SierraNevada_4_2022" --workspace ./my_lidar_project/
-
-# 2. Execute the Download, Harmonize, STAC index, and Standardize
-als-finder standardize --workspace ./my_lidar_project/ --execute --stac --quicklook
+# Discover, download, standardize, generate STAC metadata, and render quicklook previews in one step
+als-finder download --roi "-120.505, 39.015, -120.495, 39.016" --name "CA_SierraNevada_4_2022" --workspace ./my_lidar_project/ --execute --standardize --stac --quicklook
 ```
 
-*Note: The `--execute` flag can be passed directly to `standardize`. This tells the engine to first fulfill the pending `fetch_array.csv` downloads, and immediately transition into harmonization, STAC formatting, and QA/QC image generation natively.*
+*Note: Passing `--execute` and `--standardize` together to the `download` command tells the engine to first discover datasets, construct the spatial `fetch_array.csv`, download the raw binary files, and then immediately transition into format standardization, STAC schema generation, and QA/QC Quicklook image generation natively.*
 
 ---
 
