@@ -86,7 +86,7 @@ def generate_catalog(workspace: Path) -> bool:
                         key="data",
                         asset=pystac.Asset(
                             href=str(laz_file.absolute()),  # Will be mapped relatively dynamically via normalize_hrefs
-                            media_type="application/vnd.las",
+                            media_type="application/vnd.laszip+copc",
                             roles=["data"]
                         )
                     )
