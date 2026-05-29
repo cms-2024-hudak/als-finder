@@ -1,0 +1,46 @@
+{
+  "type": "Collection",
+  "id": "CA_SierraNevada_5_2022",
+  "stac_version": "1.0.0",
+  "description": "Standardized COPC array generated natively from USGS_EPT.",
+  "links": [
+    {
+      "rel": "root",
+      "href": "../catalog.json",
+      "type": "application/json",
+      "title": "ALS-Finder Standardized Point Cloud Catalog"
+    },
+    {
+      "rel": "item",
+      "href": "./CA_SierraNevada_5_2022.copc/CA_SierraNevada_5_2022.copc.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "parent",
+      "href": "../catalog.json",
+      "type": "application/json",
+      "title": "ALS-Finder Standardized Point Cloud Catalog"
+    }
+  ],
+  "extent": {
+    "spatial": {
+      "bbox": [
+        [
+          -119.9919251,
+          38.92842327,
+          1766.38,
+          -119.9884756
+        ]
+      ]
+    },
+    "temporal": {
+      "interval": [
+        [
+          "2025-12-31T00:00:00Z",
+          "2025-12-31T00:00:00Z"
+        ]
+      ]
+    }
+  },
+  "license": "proprietary"
+}

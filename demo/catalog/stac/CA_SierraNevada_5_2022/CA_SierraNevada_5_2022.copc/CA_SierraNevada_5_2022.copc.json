@@ -1,0 +1,553 @@
+{
+  "type": "Feature",
+  "stac_version": "1.0.0",
+  "id": "CA_SierraNevada_5_2022.copc",
+  "properties": {
+    "datetime": "2025-12-31T00:00:00Z",
+    "pc:count": 2462015,
+    "pc:encoding": ".laz",
+    "pc:schemas": [
+      {
+        "name": "X",
+        "size": 8,
+        "type": "floating"
+      },
+      {
+        "name": "Y",
+        "size": 8,
+        "type": "floating"
+      },
+      {
+        "name": "Z",
+        "size": 8,
+        "type": "floating"
+      },
+      {
+        "name": "Intensity",
+        "size": 2,
+        "type": "unsigned"
+      },
+      {
+        "name": "ReturnNumber",
+        "size": 1,
+        "type": "unsigned"
+      },
+      {
+        "name": "NumberOfReturns",
+        "size": 1,
+        "type": "unsigned"
+      },
+      {
+        "name": "ScanDirectionFlag",
+        "size": 1,
+        "type": "unsigned"
+      },
+      {
+        "name": "EdgeOfFlightLine",
+        "size": 1,
+        "type": "unsigned"
+      },
+      {
+        "name": "Classification",
+        "size": 1,
+        "type": "unsigned"
+      },
+      {
+        "name": "Synthetic",
+        "size": 1,
+        "type": "unsigned"
+      },
+      {
+        "name": "KeyPoint",
+        "size": 1,
+        "type": "unsigned"
+      },
+      {
+        "name": "Withheld",
+        "size": 1,
+        "type": "unsigned"
+      },
+      {
+        "name": "Overlap",
+        "size": 1,
+        "type": "unsigned"
+      },
+      {
+        "name": "ScanAngleRank",
+        "size": 4,
+        "type": "floating"
+      },
+      {
+        "name": "UserData",
+        "size": 1,
+        "type": "unsigned"
+      },
+      {
+        "name": "PointSourceId",
+        "size": 2,
+        "type": "unsigned"
+      },
+      {
+        "name": "GpsTime",
+        "size": 8,
+        "type": "floating"
+      },
+      {
+        "name": "ScanChannel",
+        "size": 1,
+        "type": "unsigned"
+      },
+      {
+        "name": "Red",
+        "size": 2,
+        "type": "unsigned"
+      },
+      {
+        "name": "Green",
+        "size": 2,
+        "type": "unsigned"
+      },
+      {
+        "name": "Blue",
+        "size": 2,
+        "type": "unsigned"
+      }
+    ],
+    "pc:statistics": [
+      {
+        "average": -13357235.61,
+        "count": 2462015,
+        "maximum": -13357056,
+        "minimum": -13357440,
+        "name": "X",
+        "position": 0,
+        "stddev": 108.6582847,
+        "variance": 11806.62283
+      },
+      {
+        "average": 4711678.249,
+        "count": 2462015,
+        "maximum": 4711936,
+        "minimum": 4711424,
+        "name": "Y",
+        "position": 1,
+        "stddev": 147.715927,
+        "variance": 21819.99508
+      },
+      {
+        "average": 1914.165881,
+        "count": 2462015,
+        "maximum": 2110.91,
+        "minimum": 1766.38,
+        "name": "Z",
+        "position": 2,
+        "stddev": 11.75200764,
+        "variance": 138.1096836
+      },
+      {
+        "average": 41026.90929,
+        "count": 2462015,
+        "maximum": 65535,
+        "minimum": 14715,
+        "name": "Intensity",
+        "position": 3,
+        "stddev": 10293.90927,
+        "variance": 105964568.1
+      },
+      {
+        "average": 1.461238051,
+        "count": 2462015,
+        "maximum": 7,
+        "minimum": 1,
+        "name": "ReturnNumber",
+        "position": 4,
+        "stddev": 0.7371303045,
+        "variance": 0.5433610858
+      },
+      {
+        "average": 1.921589836,
+        "count": 2462015,
+        "maximum": 7,
+        "minimum": 1,
+        "name": "NumberOfReturns",
+        "position": 5,
+        "stddev": 0.9781551374,
+        "variance": 0.9567874728
+      },
+      {
+        "average": 0.4638326736,
+        "count": 2462015,
+        "maximum": 1,
+        "minimum": 0,
+        "name": "ScanDirectionFlag",
+        "position": 6,
+        "stddev": 0.4986903102,
+        "variance": 0.2486920255
+      },
+      {
+        "average": 0.0003594616605,
+        "count": 2462015,
+        "maximum": 1,
+        "minimum": 0,
+        "name": "EdgeOfFlightLine",
+        "position": 7,
+        "stddev": 0.0189560701,
+        "variance": 0.0003593325937
+      },
+      {
+        "average": 1.215118104,
+        "count": 2462015,
+        "maximum": 2,
+        "minimum": 1,
+        "name": "Classification",
+        "position": 8,
+        "stddev": 0.410904337,
+        "variance": 0.1688423742
+      },
+      {
+        "average": -6.282136523,
+        "count": 2462015,
+        "maximum": 31.00200081,
+        "minimum": -22.99799919,
+        "name": "ScanAngleRank",
+        "position": 9,
+        "stddev": 16.14019629,
+        "variance": 260.5059364
+      },
+      {
+        "average": 0.4638326736,
+        "count": 2462015,
+        "maximum": 1,
+        "minimum": 0,
+        "name": "UserData",
+        "position": 10,
+        "stddev": 0.4986903102,
+        "variance": 0.2486920255
+      },
+      {
+        "average": 3900.089348,
+        "count": 2462015,
+        "maximum": 5020,
+        "minimum": 3804,
+        "name": "PointSourceId",
+        "position": 11,
+        "stddev": 325.79364,
+        "variance": 106141.4959
+      },
+      {
+        "average": 0,
+        "count": 2462015,
+        "maximum": 0,
+        "minimum": 0,
+        "name": "Red",
+        "position": 12,
+        "stddev": 0,
+        "variance": 0
+      },
+      {
+        "average": 0,
+        "count": 2462015,
+        "maximum": 0,
+        "minimum": 0,
+        "name": "Green",
+        "position": 13,
+        "stddev": 0,
+        "variance": 0
+      },
+      {
+        "average": 0,
+        "count": 2462015,
+        "maximum": 0,
+        "minimum": 0,
+        "name": "Blue",
+        "position": 14,
+        "stddev": 0,
+        "variance": 0
+      },
+      {
+        "average": 338426888,
+        "count": 2462015,
+        "maximum": 340739586.8,
+        "minimum": 338230213.5,
+        "name": "GpsTime",
+        "position": 15,
+        "stddev": 673325.0793,
+        "variance": 453366662500.0
+      },
+      {
+        "average": 0,
+        "count": 2462015,
+        "maximum": 0,
+        "minimum": 0,
+        "name": "ScanChannel",
+        "position": 16,
+        "stddev": 0,
+        "variance": 0
+      },
+      {
+        "average": 0,
+        "count": 2462015,
+        "maximum": 0,
+        "minimum": 0,
+        "name": "Synthetic",
+        "position": 17,
+        "stddev": 0,
+        "variance": 0
+      },
+      {
+        "average": 0,
+        "count": 2462015,
+        "maximum": 0,
+        "minimum": 0,
+        "name": "KeyPoint",
+        "position": 18,
+        "stddev": 0,
+        "variance": 0
+      },
+      {
+        "average": 0.07275057219,
+        "count": 2462015,
+        "maximum": 1,
+        "minimum": 0,
+        "name": "Withheld",
+        "position": 19,
+        "stddev": 0.2597266907,
+        "variance": 0.06745795384
+      },
+      {
+        "average": 0,
+        "count": 2462015,
+        "maximum": 0,
+        "minimum": 0,
+        "name": "Overlap",
+        "position": 20,
+        "stddev": 0,
+        "variance": 0
+      }
+    ],
+    "pc:type": "lidar",
+    "proj:bbox": [
+      -13357440,
+      4711424,
+      1766.38,
+      -13357056,
+      4711936,
+      2110.91
+    ],
+    "proj:geometry": {
+      "type": "Polygon",
+      "coordinates": [
+        [
+          [
+            -13357440.0,
+            4711424.0,
+            1766.38
+          ],
+          [
+            -13357440.0,
+            4711936.0,
+            1766.38
+          ],
+          [
+            -13357056.0,
+            4711936.0,
+            2110.91
+          ],
+          [
+            -13357056.0,
+            4711424.0,
+            2110.91
+          ],
+          [
+            -13357440.0,
+            4711424.0,
+            1766.38
+          ]
+        ]
+      ]
+    },
+    "proj:projjson": {
+      "type": "ProjectedCRS",
+      "name": "WGS 84 / Pseudo-Mercator",
+      "base_crs": {
+        "name": "WGS 84",
+        "datum": {
+          "type": "GeodeticReferenceFrame",
+          "name": "World Geodetic System 1984",
+          "ellipsoid": {
+            "name": "WGS 84",
+            "semi_major_axis": 6378137,
+            "inverse_flattening": 298.257223563
+          }
+        },
+        "coordinate_system": {
+          "subtype": "ellipsoidal",
+          "axis": [
+            {
+              "name": "Latitude",
+              "abbreviation": "lat",
+              "direction": "north",
+              "unit": "degree"
+            },
+            {
+              "name": "Longitude",
+              "abbreviation": "lon",
+              "direction": "east",
+              "unit": "degree"
+            }
+          ]
+        },
+        "id": {
+          "authority": "EPSG",
+          "code": 4326
+        }
+      },
+      "conversion": {
+        "name": "unnamed",
+        "method": {
+          "name": "Popular Visualisation Pseudo Mercator",
+          "id": {
+            "authority": "EPSG",
+            "code": 1024
+          }
+        },
+        "parameters": [
+          {
+            "name": "Latitude of natural origin",
+            "value": 0,
+            "unit": "degree",
+            "id": {
+              "authority": "EPSG",
+              "code": 8801
+            }
+          },
+          {
+            "name": "Longitude of natural origin",
+            "value": 0,
+            "unit": "degree",
+            "id": {
+              "authority": "EPSG",
+              "code": 8802
+            }
+          },
+          {
+            "name": "False easting",
+            "value": 0,
+            "unit": "metre",
+            "id": {
+              "authority": "EPSG",
+              "code": 8806
+            }
+          },
+          {
+            "name": "False northing",
+            "value": 0,
+            "unit": "metre",
+            "id": {
+              "authority": "EPSG",
+              "code": 8807
+            }
+          }
+        ]
+      },
+      "coordinate_system": {
+        "subtype": "Cartesian",
+        "axis": [
+          {
+            "name": "Easting",
+            "abbreviation": "",
+            "direction": "east",
+            "unit": "metre"
+          },
+          {
+            "name": "Northing",
+            "abbreviation": "",
+            "direction": "north",
+            "unit": "metre"
+          }
+        ]
+      },
+      "id": {
+        "authority": "EPSG",
+        "code": 3857
+      }
+    },
+    "proj:wkt2": "PROJCS[\"WGS 84 / Pseudo-Mercator\",GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563,AUTHORITY[\"EPSG\",\"7030\"]],AUTHORITY[\"EPSG\",\"6326\"]],PRIMEM[\"Greenwich\",0,AUTHORITY[\"EPSG\",\"8901\"]],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY[\"EPSG\",\"4326\"]],PROJECTION[\"Mercator_1SP\"],PARAMETER[\"central_meridian\",0],PARAMETER[\"scale_factor\",1],PARAMETER[\"false_easting\",0],PARAMETER[\"false_northing\",0],UNIT[\"metre\",1,AUTHORITY[\"EPSG\",\"9001\"]],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH],EXTENSION[\"PROJ4\",\"+proj=merc +a=6378137 +b=6378137 +lat_ts=0 +lon_0=0 +x_0=0 +y_0=0 +k=1 +units=m +nadgrids=@null +wktext +no_defs\"],AUTHORITY[\"EPSG\",\"3857\"]]"
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          -119.9919250870946,
+          38.92842327028107,
+          1766.38
+        ],
+        [
+          -119.9919250870946,
+          38.93200117830791,
+          1766.38
+        ],
+        [
+          -119.98847555640359,
+          38.93200117830791,
+          2110.91
+        ],
+        [
+          -119.98847555640359,
+          38.92842327028107,
+          2110.91
+        ],
+        [
+          -119.9919250870946,
+          38.92842327028107,
+          1766.38
+        ]
+      ]
+    ]
+  },
+  "links": [
+    {
+      "rel": "derived_from",
+      "href": "/mnt/c/Users/gears/git/als-finder/scratch/tiny_subset/data/standardized/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/CA_SierraNevada_5_2022.copc.laz"
+    },
+    {
+      "rel": "root",
+      "href": "../../catalog.json",
+      "type": "application/json",
+      "title": "ALS-Finder Standardized Point Cloud Catalog"
+    },
+    {
+      "rel": "collection",
+      "href": "../collection.json",
+      "type": "application/json"
+    },
+    {
+      "rel": "parent",
+      "href": "../collection.json",
+      "type": "application/json"
+    }
+  ],
+  "assets": {
+    "data": {
+      "href": "../../../../data/standardized/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/CA_SierraNevada_5_2022.copc.laz",
+      "type": "application/vnd.laszip+copc",
+      "roles": [
+        "data"
+      ]
+    }
+  },
+  "bbox": [
+    -119.9919251,
+    38.92842327,
+    1766.38,
+    -119.9884756,
+    38.93200118,
+    2110.91
+  ],
+  "stac_extensions": [
+    "https://stac-extensions.github.io/pointcloud/v1.0.0/schema.json",
+    "https://stac-extensions.github.io/projection/v1.1.0/schema.json"
+  ],
+  "collection": "CA_SierraNevada_5_2022"
+}
