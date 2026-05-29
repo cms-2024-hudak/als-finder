@@ -575,21 +575,24 @@ The `als-finder standardize` command standardizes your raw downloads into a stri
 
 1. **Format Upgrade:** Converts everything to Cloud Optimized Point Cloud (`.copc.laz`) for blazing-fast spatial indexing and tiered resolution rendering.
 2. **CRS Reprojection:** Runs in the `native` coordinate reference system by default (reprojecting intermediate products back to native, and storing native CRS in the final merged outputs). Alternatively, you can enforce a specific target projection (e.g. `--crs EPSG:3857` or `--crs EPSG:5070`), or dynamically calculate a local UTM zone from your Area of Interest centroid via `--crs auto-utm-centroid` (requires `--roi`).
-3. **Taxonomic Standardization:** Wipes legacy vendor classifications, drops invalid points/noise, and applies a customizable ground classification algorithm. By default, it uses a state-of-the-art `hybrid-dual` classifier to strictly classify bare earth (Class 2) and vegetation (Class 1).
+3. **Taxonomic Standardization:** Wipes inconsistent agency/vendor secondary classifications, drops invalid points/noise, and applies a taxonomic conforms filter. By default, it runs in a taxonomic-uniform `vendor` mode, which preserves reliable agency bare-earth (Class 2) and isolated noise (Class 7/18) classifications while mapping all other secondary classes (such as vegetation, buildings, and water) to Class 1 (Unclassified) to achieve absolute taxonomic uniformity across diverse datasets.
 
 ```bash
-# Standardize using default hybrid-dual classification and native coordinate systems
+# Standardize using default taxonomic-uniform vendor classification and native coordinate systems
 als-finder standardize --workspace ./tiny_subset/
 ```
 
 ### Ground Classification Options (`--classifier`)
 
+> [!NOTE]
+> The `--classifier` option is hidden from standard CLI `--help` outputs to keep the interface simple and approachable for everyday scientific workflows, but remains fully functional for advanced overrides.
+
 You can customize the ground classification behavior to match your specific geographic terrain and forest structure constraints using the `--classifier` option:
 
-*   **`hybrid-dual` (Default):** A robust dual-pass classifier combining SMRF and CSF. It dynamically tunes parameters (e.g., SMRF 18m window and 0.8 slope; CSF 10m resolution) and incorporates a slope-aware normal filter to protect steep sand dunes and cliffs from artificial structure removal.
+*   **`vendor` (Default):** Trusts and preserves agency bare-earth (Class 2) and isolated noise (Class 7/18) labels while conjoining and resetting all other secondary classifications (canopy vegetation, structures, water, etc.) to Class 1 (Unclassified). This guarantees absolute taxonomic uniformity across diverse datasets. **Smart Auto-Detection Fallback:** If vendor point clouds are completely unclassified (lacking Class 2 Ground labels), `als-finder` automatically falls back to SMRF ground classification and noise filtering to ensure valid bare-earth/canopy separations.
+*   **`hybrid-dual`:** A robust dual-pass classifier combining SMRF and CSF. It dynamically tunes parameters (e.g., SMRF 18m window and 0.8 slope; CSF 10m resolution) and incorporates a slope-aware normal filter to protect steep sand dunes and cliffs from artificial structure removal.
 *   **`smrf`:** Simple Morphological Filter. High-performance morphological filtering best suited for flat to moderately sloped terrain.
 *   **`csf`:** Cloth Simulation Filter. High-fidelity filtering designed for steep mountainous terrain and dense forest canopies.
-*   **`vendor`:** Trusts and preserves vendor-supplied ground labels. **Smart Auto-Detection Fallback:** If vendor point clouds are missing ground classifications, `als-finder` automatically detects this and falls back to SMRF classification with noise filtering to ensure you always get valid ground/canopy separations.
 *   **`none`:** Drops noise and invalid points, but skips ground classification completely.
 
 ### Spatial Scaling & Resource Safety
@@ -606,8 +609,8 @@ tiny_subset/
     └── standardized/
         └── provider=USGS_EPT/
             └── dataset=CA_SierraNevada_5_2022/
-                ├── CA_SierraNevada_5_2022_subset.copc.laz
-                └── ... (Uniformly classified COPCs)
+                ├── CA_SierraNevada_5_2022.copc.laz
+                └── ... (Uniformly conformed COPCs)
 ```
 
 ---
