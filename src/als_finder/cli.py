@@ -28,6 +28,21 @@ def parse_comma_separated(ctx, param, value):
         parsed.extend([x.strip() for x in item.split(',') if x.strip()])
     return tuple(parsed)
 
+def prune_empty_dirs(path: Path, limit_path: Path):
+    """Recursively remove empty parent directories up to a limit_path."""
+    try:
+        current = Path(path)
+        limit = Path(limit_path)
+        while current != limit and current.exists() and current.is_dir():
+            if not any(current.iterdir()):
+                logger.info(f"Removing empty parent directory: {current}")
+                current.rmdir()
+                current = current.parent
+            else:
+                break
+    except Exception as e:
+        logger.debug(f"Failed to prune directory {path}: {e}")
+
 @click.group()
 @click.option('-v', '--verbose', is_flag=True, help='Enable verbose execution logging')
 @click.option('-q', '--quiet', is_flag=True, help='Suppress standard logging to print exact payloads only.')
@@ -907,9 +922,12 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         # Cleanup ONLY if successful to prevent silent data loss
         if success:
             shutil.rmtree(interim_dir)
+            prune_empty_dirs(interim_dir.parent, workspace_path / "data")
             if not preserve_raw:
                 try:
-                    shutil.rmtree(raw_dir)
+                    if raw_dir.exists():
+                        shutil.rmtree(raw_dir)
+                    prune_empty_dirs(raw_dir.parent, workspace_path / "data")
                     if raw_index_path.exists():
                         raw_index_path.unlink()
                 except Exception as e:
