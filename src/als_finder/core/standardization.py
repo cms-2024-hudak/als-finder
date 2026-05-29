@@ -235,7 +235,9 @@ def run_pdal_standardization(
         # Reset all non-ground (Class 2) and non-noise (Class 7/18) classifications to Class 1 (Unclassified)
         process_pipeline.append({
             "type": "filters.assign",
-            "assignment": "Classification[Classification != 2 && Classification != 7 && Classification != 18]=1"
+            "value": [
+                "Classification = 1 WHERE (Classification != 2 && Classification != 7 && Classification != 18)"
+            ]
         })
     else:
         process_pipeline.append({
