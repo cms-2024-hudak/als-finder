@@ -555,14 +555,6 @@ tiny_subset/
 * **Dynamic EPT Spatial Subsetting (Default for EPT):** When downloading cloud-native datasets (like `USGS_EPT` or `NOAA_STAC` with EPT endpoints) and supplying a spatial `--roi` boundary, `als-finder` does not download thousands of massive, multi-gigabyte source tiles. Instead, it streams only the points intersecting your boundary directly from the cloud bucket, writing a single conformed spatial subset file (`[dataset_name]_subset.laz`) to save time and disk space.
 * **Traditional Tile Downloads (OpenTopography / Full Downloads):** If you target providers that distribute traditional static files (like `OpenTopography` ZIP catalogs) or use the `--full` flag to download the entire uncropped acquisition, the directory will instead contain the individual raw tile files downloaded in their original provider-supplied grid tiles (e.g., `tile_1.laz`, `tile_2.laz`, etc.).
 
-### 7.3 HPC Array Workflows (Expanse / Slurm)
-Because `als-finder` maps the source URLs to precise `data/...` output paths inside the CSV, you never use the `--execute` flag on an HPC Head Node. You can build your `fetch_array.csv` offline, and simply pass that list directly to `sbatch`:
-
-```bash
-# Example generic fetching parallelization loop on Expanse
-sbatch --array=1-1000 wget_fetcher.sh ./tiny_subset/catalog/fetch_array.csv
-```
-
 ---
 
 ## ⚠️ Data Processing: Caveats to Raw Downloads
