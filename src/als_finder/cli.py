@@ -626,6 +626,19 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
     import json
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
+    manifest_path = workspace_path / 'catalog' / 'manifest.json'
+    
+    # Auto-load spatial ROI mask from catalog manifest if not explicitly provided
+    if not roi and manifest_path.exists():
+        try:
+            with open(manifest_path, 'r') as mf:
+                m_data = json.load(mf)
+                search_roi = m_data.get("search_parameters", {}).get("roi")
+                if search_roi:
+                    roi = search_roi
+                    logger.info(f"Automatically loaded spatial ROI mask from catalog manifest: {roi}")
+        except Exception as e:
+            logger.warning(f"Could not load search parameters ROI from manifest: {e}")
     
     if not fetch_array_path.exists():
         raise click.ClickException(f"Missing fetch array in {workspace}. Execute a download structure first.")
@@ -637,77 +650,7 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         raise click.ClickException("pdal library missing. You must install 'pdal' and 'python-pdal' via Conda to standardize.")
         
     logger.info("Initializing PDAL Pipeline Standardization")
-    if crs == 'native':
-        logger.info("Target CRS is native (trusts provider). Querying raw file metadata to extract native projection dynamically...")
-        raw_dir = workspace_path / "data" / "raw"
-        raw_files = list(raw_dir.rglob("*.laz")) + list(raw_dir.rglob("*.las"))
-        if raw_files:
-            probe_file = raw_files[0]
-            try:
-                res = subprocess.run(['pdal', 'info', '--metadata', str(probe_file.absolute())], capture_output=True, text=True, check=True)
-                meta = json.loads(res.stdout)
-                srs_info = meta.get("srs", {})
-                if not srs_info and "metadata" in meta:
-                    srs_info = meta.get("metadata", {}).get("srs", {})
-                
-                epsg_code = srs_info.get("json", {}).get("id", {}).get("code")
-                authority = srs_info.get("json", {}).get("id", {}).get("authority", "EPSG")
-                if epsg_code:
-                    crs = f"{authority}:{epsg_code}"
-                else:
-                    wkt = srs_info.get("wkt")
-                    if wkt:
-                        crs = wkt
-                    else:
-                        crs = srs_info.get("horizontal") or "EPSG:3857"
-                logger.info(f"Target CRS 'native' successfully resolved to: {crs}")
-            except Exception as e:
-                logger.warning(f"Could not extract native CRS dynamically from {probe_file.name}: {e}. Defaulting to EPSG:3857.")
-                crs = "EPSG:3857"
-        else:
-            logger.warning("No raw files found in workspace to probe for 'native' CRS. Defaulting to EPSG:3857.")
-            crs = "EPSG:3857"
-    elif crs == 'auto-utm-centroid':
-        from als_finder.core.input_manager import load_roi
-        import math
-        
-        lon, lat = None, None
-        if roi:
-            try:
-                roi_gdf = load_roi(roi)
-                centroid = roi_gdf.centroid
-                lon, lat = centroid.x, centroid.y
-            except Exception as e:
-                logger.warning(f"Could not load ROI for UTM centroid: {e}")
-                
-        if lon is None or lat is None:
-            # Fall back to manifest dataset bounds
-            manifest_path = workspace_path / 'catalog' / 'manifest.json'
-            if manifest_path.exists():
-                try:
-                    with open(manifest_path, 'r') as mf:
-                        manifest_data = json.load(mf)
-                        datasets_list = manifest_data.get('datasets', [])
-                        if datasets_list:
-                            bounds = datasets_list[0].get('bounds')
-                            if bounds and len(bounds) == 4:
-                                lon = (bounds[0] + bounds[2]) / 2.0
-                                lat = (bounds[1] + bounds[3]) / 2.0
-                                logger.info(f"UTM centroid resolved from manifest dataset bounds: ({lon}, {lat})")
-                except Exception as e:
-                    logger.warning(f"Could not parse manifest for UTM centroid: {e}")
-                    
-        if lon is None or lat is None:
-            # Absolute fallback if everything fails
-            lon, lat = -120.0, 38.0  # default CONUS centroid
-            logger.warning(f"Could not resolve UTM centroid. Defaulting to CONUS central centroid: ({lon}, {lat})")
-            
-        zone = math.floor((lon + 180) / 6.0) + 1
-        epsg = 32600 + zone if lat >= 0 else 32700 + zone
-        crs = f"EPSG:{epsg}"
-        logger.info(f"Target CRS dynamically calculated from overall UTM zone centroid: {crs}")
-    else:
-        logger.info(f"Target CRS strictly enforced: {crs}")
+    requested_crs = crs
         
     from als_finder.core.standardization import generate_grid, run_pdal_standardization, run_final_copc_merge
     import csv
@@ -743,14 +686,16 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
     
     manifest_path = workspace_path / 'catalog' / 'manifest.json'
     dataset_densities = {}
+    dataset_bounds = {}
     if manifest_path.exists():
         with open(manifest_path, 'r') as f:
             try:
                 manifest_data = json.load(f)
                 for ds in manifest_data.get('datasets', []):
                     dataset_densities[ds.get('dataset_id')] = ds.get('point_density')
+                    dataset_bounds[ds.get('dataset_id')] = ds.get('bounds')
             except Exception as e:
-                logger.warning(f"Failed to parse manifest for density scaling: {e}")
+                logger.warning(f"Failed to parse manifest for density/bounds scaling: {e}")
     
     for provider, dataset in datasets:
         logger.info(f"Standardizing dataset: {dataset} from {provider}")
@@ -764,6 +709,87 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         catalog_dir = workspace_path / "catalog" / "indices" / f"provider={provider}" / f"dataset={dataset}"
         catalog_dir.mkdir(parents=True, exist_ok=True)
         raw_index_path = catalog_dir / "raw_index.gpkg"
+        
+        # Resolve target CRS for this specific dataset dynamically
+        crs = requested_crs
+        if requested_crs == 'native':
+            raw_files = list(raw_dir.rglob("*.laz")) + list(raw_dir.rglob("*.las"))
+            if raw_files:
+                probe_file = raw_files[0]
+                try:
+                    res = subprocess.run(['pdal', 'info', '--metadata', str(probe_file.absolute())], capture_output=True, text=True, check=True)
+                    meta = json.loads(res.stdout)
+                    srs_info = meta.get("srs", {})
+                    if not srs_info and "metadata" in meta:
+                        srs_info = meta.get("metadata", {}).get("srs", {})
+                    
+                    epsg_code = srs_info.get("json", {}).get("id", {}).get("code")
+                    authority = srs_info.get("json", {}).get("id", {}).get("authority", "EPSG")
+                    if epsg_code:
+                        crs = f"{authority}:{epsg_code}"
+                    else:
+                        wkt = srs_info.get("wkt")
+                        if wkt:
+                            crs = wkt
+                        else:
+                            crs = srs_info.get("horizontal") or "EPSG:3857"
+                    logger.info(f"Target CRS 'native' successfully resolved to: {crs}")
+                except Exception as e:
+                    logger.warning(f"Could not extract native CRS dynamically from {probe_file.name}: {e}. Defaulting to EPSG:3857.")
+                    crs = "EPSG:3857"
+            else:
+                logger.warning(f"No raw files found in {raw_dir} to probe for 'native' CRS. Defaulting to EPSG:3857.")
+                crs = "EPSG:3857"
+                
+        elif requested_crs == 'auto-utm-centroid':
+            bounds = dataset_bounds.get(dataset)
+            lon, lat = None, None
+            
+            from shapely.geometry import box
+            acq_poly = None
+            if bounds and len(bounds) == 4:
+                acq_poly = box(bounds[0], bounds[1], bounds[2], bounds[3])
+                
+            if acq_poly:
+                intersection_poly = None
+                if roi:
+                    try:
+                        roi_poly = load_roi(roi)
+                        if roi_poly.intersects(acq_poly):
+                            intersection_poly = roi_poly.intersection(acq_poly)
+                            logger.info(f"Using intersection of ROI and acquisition bounds for {dataset}")
+                    except Exception as e:
+                        logger.warning(f"Could not compute ROI and acquisition intersection: {e}")
+                
+                geom_to_centroid = intersection_poly if intersection_poly is not None else acq_poly
+                centroid = geom_to_centroid.centroid
+                lon, lat = centroid.x, centroid.y
+                logger.info(f"Resolved UTM centroid from dataset bounds/intersection for {dataset}: ({lon}, {lat})")
+            
+            if lon is None or lat is None:
+                # Fallback to loading from raw index if it exists
+                if raw_index_path.exists():
+                    try:
+                        import geopandas as gpd
+                        gdf_idx = gpd.read_file(raw_index_path)
+                        gdf_idx_4326 = gdf_idx.to_crs("EPSG:4326")
+                        centroid = gdf_idx_4326.union_all().centroid
+                        lon, lat = centroid.x, centroid.y
+                        logger.info(f"Resolved UTM centroid from raw index bounds for {dataset}: ({lon}, {lat})")
+                    except Exception as e:
+                        logger.warning(f"Could not load UTM centroid from raw index for {dataset}: {e}")
+                        
+            if lon is None or lat is None:
+                lon, lat = -120.0, 38.0
+                logger.warning(f"Could not resolve UTM centroid for {dataset}. Defaulting to central CONUS: ({lon}, {lat})")
+                
+            import math
+            zone = math.floor((lon + 180) / 6.0) + 1
+            epsg = 32600 + zone if lat >= 0 else 32700 + zone
+            crs = f"EPSG:{epsg}"
+            logger.info(f"Target CRS dynamically calculated from {dataset} acquisition bounds: {crs}")
+        else:
+            logger.info(f"Target CRS strictly enforced: {crs}")
         
         import glob
         laz_files = glob.glob(f"{raw_dir}/*.laz") + glob.glob(f"{raw_dir}/*.las") + glob.glob(f"{raw_dir}/*.copc.laz")
