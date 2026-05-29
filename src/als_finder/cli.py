@@ -568,7 +568,7 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats to the local drive natively.')
 @click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull the entirely comprehensive upstream dataset payload natively.')
 @click.option('--standardize', is_flag=True, help='Execute PDAL standardization concurrently after extracting binaries.')
-@click.option('--crs', help='Specify target output projection for normalization (e.g. EPSG:3857, EPSG:5070, or auto-utm-centroid)')
+@click.option('--crs', default='auto-utm-centroid', help='Specify target output projection for normalization (e.g. EPSG:3857, EPSG:5070, or auto-utm-centroid). Defaults to auto-utm-centroid.')
 @click.option('--stac', is_flag=True, help='Dynamically generate PySTAC schema hierarchies out of the standardized payloads natively.')
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
 @click.option('--preserve-raw', is_flag=True, help='Preserve the raw .laz binaries after successful standardization. By default, raw files are purged to save space.')
@@ -606,7 +606,7 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
 
 @cli.command('standardize')
 @click.option('--workspace', required=True, type=click.Path(exists=True), help='Path to your local project workspace.')
-@click.option('--crs', default='native', help='Target Coordinate Reference System. Defaults to "native" (trusts provider), falling back to dynamic UTM based on acquisition centroid.')
+@click.option('--crs', default='auto-utm-centroid', help='Target Coordinate Reference System. Defaults to "auto-utm-centroid" (dynamic UTM based on acquisition centroid).')
 @click.option('--roi', default=None, help='Optional path to ROI geometry to geometrically slice the point cloud footprint natively.')
 @click.option('--stac/--no-stac', default=True, help='Generate STAC compliant metadata schemas for the final standardized matrix.')
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews for QA/QC spot-checking.')
@@ -668,18 +668,44 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
             logger.warning("No raw files found in workspace to probe for 'native' CRS. Defaulting to EPSG:3857.")
             crs = "EPSG:3857"
     elif crs == 'auto-utm-centroid':
-        if not roi:
-            raise click.ClickException("Cannot compute 'auto-utm-centroid' without providing an --roi geometry.")
         from als_finder.core.input_manager import load_roi
         import math
-        roi_gdf = load_roi(roi)
-        # load_roi returns a Shapely Polygon in EPSG:4326
-        centroid = roi_gdf.centroid
-        lon, lat = centroid.x, centroid.y
+        
+        lon, lat = None, None
+        if roi:
+            try:
+                roi_gdf = load_roi(roi)
+                centroid = roi_gdf.centroid
+                lon, lat = centroid.x, centroid.y
+            except Exception as e:
+                logger.warning(f"Could not load ROI for UTM centroid: {e}")
+                
+        if lon is None or lat is None:
+            # Fall back to manifest dataset bounds
+            manifest_path = workspace_path / 'catalog' / 'manifest.json'
+            if manifest_path.exists():
+                try:
+                    with open(manifest_path, 'r') as mf:
+                        manifest_data = json.load(mf)
+                        datasets_list = manifest_data.get('datasets', [])
+                        if datasets_list:
+                            bounds = datasets_list[0].get('bounds')
+                            if bounds and len(bounds) == 4:
+                                lon = (bounds[0] + bounds[2]) / 2.0
+                                lat = (bounds[1] + bounds[3]) / 2.0
+                                logger.info(f"UTM centroid resolved from manifest dataset bounds: ({lon}, {lat})")
+                except Exception as e:
+                    logger.warning(f"Could not parse manifest for UTM centroid: {e}")
+                    
+        if lon is None or lat is None:
+            # Absolute fallback if everything fails
+            lon, lat = -120.0, 38.0  # default CONUS centroid
+            logger.warning(f"Could not resolve UTM centroid. Defaulting to CONUS central centroid: ({lon}, {lat})")
+            
         zone = math.floor((lon + 180) / 6.0) + 1
         epsg = 32600 + zone if lat >= 0 else 32700 + zone
         crs = f"EPSG:{epsg}"
-        logger.info(f"Target CRS dynamically calculated from overall ROI centroid: {crs}")
+        logger.info(f"Target CRS dynamically calculated from overall UTM zone centroid: {crs}")
     else:
         logger.info(f"Target CRS strictly enforced: {crs}")
         

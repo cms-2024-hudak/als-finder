@@ -574,11 +574,11 @@ To solve this completely, `als-finder` includes an automated harmonization engin
 The `als-finder standardize` command standardizes your raw downloads into a strictly uniform, analysis-ready format. It executes the following pipeline on every single file in the `data/raw/` directory:
 
 1. **Format Upgrade:** Converts everything to Cloud Optimized Point Cloud (`.copc.laz`) for blazing-fast spatial indexing and tiered resolution rendering.
-2. **CRS Reprojection:** Runs in the `native` coordinate reference system by default (reprojecting intermediate products back to native, and storing native CRS in the final merged outputs). Alternatively, you can enforce a specific target projection (e.g. `--crs EPSG:3857` or `--crs EPSG:5070`), or dynamically calculate a local UTM zone from your Area of Interest centroid via `--crs auto-utm-centroid` (requires `--roi`).
+2. **CRS Reprojection:** Runs in the `auto-utm-centroid` coordinate reference system by default, which dynamically calculates the local metric UTM zone matching your Area of Interest centroid (utilizing dataset fallback boundaries from the manifest catalog if no ROI is specified). This guarantees high-accuracy metric measurements with zero manual projection configuration. Alternatively, you can preserve the original projection by passing `--crs native`, or enforce a specific target projection (e.g. `--crs EPSG:3857` or `--crs EPSG:5070`).
 3. **Taxonomic Standardization:** Wipes inconsistent agency/vendor secondary classifications, drops invalid points/noise, and applies a taxonomic conforms filter. By default, it runs in a taxonomic-uniform `vendor` mode, which preserves reliable agency bare-earth (Class 2) and isolated noise (Class 7/18) classifications while mapping all other secondary classes (such as vegetation, buildings, and water) to Class 1 (Unclassified) to achieve absolute taxonomic uniformity across diverse datasets.
 
 ```bash
-# Standardize using default taxonomic-uniform vendor classification and native coordinate systems
+# Standardize using default taxonomic-uniform vendor classification and dynamic UTM coordinate systems
 als-finder standardize --workspace ./tiny_subset/
 ```
 
