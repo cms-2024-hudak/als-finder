@@ -882,6 +882,8 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
             if not preserve_raw:
                 try:
                     shutil.rmtree(raw_dir)
+                    if raw_index_path.exists():
+                        raw_index_path.unlink()
                 except Exception as e:
                     logger.warning(f"Failed to cleanly purge raw data: {e}")
         else:
