@@ -68,20 +68,28 @@ docker build -t als-finder:latest .
 docker run --env-file .env -v $(pwd):/app/data als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
 ```
 
-### 2. Conda (Recommended)
-Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. We highly recommend installing `als-finder` into an isolated Conda environment using our pre-configured `environment.yml` definition.
+**Option C: Singularity / Apptainer Build (For Supercomputers & HPC like Expanse)**
+If you are deploying `als-finder` on an HPC cluster where root privileges are not available to run Docker, you can compile a standard **Singularity Image File (.sif)** directly from our public GitHub Container Registry (GHCR):
+```bash
+# Pull and build the Singularity image natively
+singularity build als-finder.sif docker://ghcr.io/cms-2024-hudak/als-finder:latest
+
+# Execute the container natively on the HPC cluster
+singularity run als-finder.sif search --roi "-124,42,-123,43" --workspace ./my_lidar_project
+```
+
+### 2. Conda (Recommended & Official)
+Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. You can install the package directly over the network from the **Conda-Forge** channel with a single command:
 
 ```bash
-# 1. Clone the repository and navigate into it
-git clone https://github.com/cms-2024-hudak/als-finder.git
-cd als-finder
+# Create a fresh environment and install als-finder from conda-forge
+conda create -n als-finder -c conda-forge als-finder
 
-# 2. Create the Conda environment from the bundled environment.yml
-conda env create -f environment.yml
-
-# 3. Activate the newly created environment
+# Activate the newly created environment
 conda activate als-finder
 ```
+
+*(Alternatively, if you are building from source, you can clone the repository and run `conda env create -f environment.yml` inside the cloned directory).*
 
 ### 3. Pip (Advanced / System-Level)
 > [!WARNING]
