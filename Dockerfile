@@ -20,7 +20,6 @@ WORKDIR /app
 
 # Copy the application code
 COPY --chown=$MAMBA_USER:$MAMBA_USER src/ src/
-COPY --chown=$MAMBA_USER:$MAMBA_USER .agent/ .agent/
 COPY --chown=$MAMBA_USER:$MAMBA_USER docs/ docs/
 COPY --chown=$MAMBA_USER:$MAMBA_USER README.md .
 COPY --chown=$MAMBA_USER:$MAMBA_USER setup.py .
