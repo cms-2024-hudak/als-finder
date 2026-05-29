@@ -70,7 +70,7 @@ docker run -v $(pwd):/app/data ghcr.io/cms-2024-hudak/als-finder:latest search -
 docker run -e OPENTOPOGRAPHY_API_KEY="your_api_key_here" -v $(pwd):/app/data ghcr.io/cms-2024-hudak/als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
 ```
 
-**Option B: Singularity / Apptainer Build (For Supercomputers & HPC like Expanse)**
+**Option B: Singularity / Apptainer Build (For HPCs)**
 If you are deploying `als-finder` on an HPC cluster where root privileges are not available to run Docker, you can compile a standard **Singularity Image File (.sif)** directly from our public GitHub Container Registry (GHCR):
 ```bash
 # Pull and build the Singularity image natively
