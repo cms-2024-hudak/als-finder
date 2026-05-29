@@ -142,40 +142,32 @@ als-finder search --roi ./ltbmu_boundary.gpkg --workspace ./my_lidar_project/
 
 **Console Output:**
 ```text
-=======================================================================================================================================
+=================================================================================================================
  LiDAR Data Search Results 
-=======================================================================================================================================
+=================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
----------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
- | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.2100 |    5819.74 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
  | OpenTopography  | USFS Freds Fire Lidar, CA 2015         | 2022-06-07   |     150.04 |  31.3700 |     641.96 |
  | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
  | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
  | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
- | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  10.4100 |   26768.13 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  46.7700 |    5954.91 |
  | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
- | NOAA_STAC       | DigitalCoast_DAV:id_9067               | 2018-07-07   |     723.53 |   1.2600 |   77212.96 |
- | NOAA_STAC       | DigitalCoast_DAV:id_9269               | 2018-01-22   |      40.74 |   0.0300 |  182391.32 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9036               | 2018-07-07   |     253.48 |   0.7800 |   43731.68 |
  | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
  | OpenTopography  | Walker Fault System, Nevada, 2015      | 2017-07-28   |      35.77 |   7.2700 |     660.41 |
  | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
- | NOAA_STAC       | DigitalCoast_DAV:id_8979               | 2017-03-03   |       2.94 |   0.0033 |  120829.31 |
- | NOAA_STAC       | DigitalCoast_DAV:id_6259               | 2016-04-28   |     233.77 |   0.0300 | 1135103.73 |
- | NOAA_STAC       | DigitalCoast_DAV:id_5022               | 2015-06-19   |      63.84 |   0.0200 |  363554.90 |
- | NOAA_STAC       | DigitalCoast_DAV:id_2612               | 2013-10-30   |     151.38 |   0.0300 |  698668.47 |
  | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
  | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
- | NOAA_STAC       | DigitalCoast_DAV:id_1124               | 2009-09-01   |     141.08 |   0.0300 |  687536.10 |
- | NOAA_STAC       | DigitalCoast_DAV:id_4                  | 1998-04-08   |       2.31 |   0.0003 | 1038061.18 |
- | NOAA_STAC       | DigitalCoast_DAV:id_3                  | 1997-10-12   |       0.64 |   0.0001 | 1001673.78 |
-=======================================================================================================================================
- TOTAL DATASETS: 23 | ESTIMATED PAYLOAD: 11059.03 GB | QUERY TIME: 13.50s 
----------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
-=======================================================================================================================================
+=================================================================================================================
+ TOTAL DATASETS: 15 | ESTIMATED PAYLOAD: 9952.26 GB | QUERY TIME: 14.25s 
+-----------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+=================================================================================================================
 ```
 
 *Note on column values:*
@@ -194,18 +186,18 @@ als-finder search --roi ./ltbmu_boundary.gpkg --name "CA_SierraNevada_5_2022" --
 
 **Console Output:**
 ```text
-=======================================================================================================================================
+=================================================================================================================
  LiDAR Data Search Results 
-=======================================================================================================================================
+=================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
----------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
-=======================================================================================================================================
- TOTAL DATASETS: 1 | ESTIMATED PAYLOAD: 1380.20 GB | QUERY TIME: 3.14s
----------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
-=======================================================================================================================================
+=================================================================================================================
+ TOTAL DATASETS: 1 | ESTIMATED PAYLOAD: 1380.20 GB | QUERY TIME: 13.21s 
+-----------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+=================================================================================================================
 ```
 
 #### Finding Names via Wildcard Strings
@@ -215,19 +207,19 @@ als-finder search --roi ./ltbmu_boundary.gpkg --name "*Tahoe*" --workspace ./my_
 
 **Console Output:**
 ```text
-=======================================================================================================================================
+=================================================================================================================
  LiDAR Data Search Results 
-=======================================================================================================================================
+=================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
----------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------
  | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
  | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
-=======================================================================================================================================
- TOTAL DATASETS: 2 | ESTIMATED PAYLOAD: 403.57 GB | QUERY TIME: 4.12s 
----------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
-=======================================================================================================================================
+=================================================================================================================
+ TOTAL DATASETS: 2 | ESTIMATED PAYLOAD: 403.57 GB | QUERY TIME: 13.98s 
+-----------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+=================================================================================================================
 ```
 
 #### Finding Names via Explicit Regex
@@ -238,20 +230,20 @@ als-finder search --roi ./ltbmu_boundary.gpkg --name "~^CA_Sierra.*" --workspace
 
 **Console Output:**
 ```text
-=======================================================================================================================================
+=================================================================================================================
  LiDAR Data Search Results 
-=======================================================================================================================================
+=================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
----------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
- | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.2100 |    5819.74 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
-=======================================================================================================================================
- TOTAL DATASETS: 3 | ESTIMATED PAYLOAD: 3688.28 GB | QUERY TIME: 3.51s
----------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
-=======================================================================================================================================
+=================================================================================================================
+ TOTAL DATASETS: 3 | ESTIMATED PAYLOAD: 3688.28 GB | QUERY TIME: 13.32s 
+-----------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+=================================================================================================================
 ```
 
 ### 3. Filtering by Chronology
@@ -265,22 +257,22 @@ als-finder search --roi ./ltbmu_boundary.gpkg --date 2020-01-01/ --workspace ./m
 
 **Console Output:**
 ```text
-=======================================================================================================================================
+=================================================================================================================
  LiDAR Data Search Results 
-=======================================================================================================================================
+=================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
----------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
- | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.2100 |    5819.74 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
  | OpenTopography  | USFS Freds Fire Lidar, CA 2015         | 2022-06-07   |     150.04 |  31.3700 |     641.96 |
  | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
-=======================================================================================================================================
- TOTAL DATASETS: 5 | ESTIMATED PAYLOAD: 4271.48 GB | QUERY TIME: 4.89s
----------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
-=======================================================================================================================================
+=================================================================================================================
+ TOTAL DATASETS: 5 | ESTIMATED PAYLOAD: 4271.49 GB | QUERY TIME: 12.98s 
+-----------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+=================================================================================================================
 ```
 
 #### Defining a Hard End Date (`--date`)
@@ -299,27 +291,19 @@ als-finder search --roi ./ltbmu_boundary.gpkg --date /2020-01-01 --workspace ./m
 -----------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
  | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
- | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  10.4100 |   26768.13 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  46.7700 |    5954.91 |
  | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
- | NOAA_STAC       | DigitalCoast_DAV:id_9067               | 2018-07-07   |     723.53 |   1.2600 |   77212.96 |
- | NOAA_STAC       | DigitalCoast_DAV:id_9269               | 2018-01-22   |      40.74 |   0.0300 |  182391.32 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9036               | 2018-07-07   |     253.48 |   0.7800 |   43731.68 |
  | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
  | OpenTopography  | Walker Fault System, Nevada, 2015      | 2017-07-28   |      35.77 |   7.2700 |     660.41 |
  | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
- | NOAA_STAC       | DigitalCoast_DAV:id_8979               | 2017-03-03   |       2.94 |   0.0033 |  120829.31 |
- | NOAA_STAC       | DigitalCoast_DAV:id_6259               | 2016-04-28   |     233.77 |   0.0300 | 1135103.73 |
- | NOAA_STAC       | DigitalCoast_DAV:id_5022               | 2015-06-19   |      63.84 |   0.0200 |  363554.90 |
- | NOAA_STAC       | DigitalCoast_DAV:id_2612               | 2013-10-30   |     151.38 |   0.0300 |  698668.47 |
  | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
  | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
- | NOAA_STAC       | DigitalCoast_DAV:id_1124               | 2009-09-01   |     141.08 |   0.0300 |  687536.10 |
- | NOAA_STAC       | DigitalCoast_DAV:id_4                  | 1998-04-08   |       2.31 |   0.0003 | 1038061.18 |
- | NOAA_STAC       | DigitalCoast_DAV:id_3                  | 1997-10-12   |       0.64 |   0.0001 | 1001673.78 |
 =================================================================================================================
- TOTAL DATASETS: 18 | ESTIMATED PAYLOAD: 6787.54 GB | QUERY TIME: 13.05s 
+ TOTAL DATASETS: 10 | ESTIMATED PAYLOAD: 5680.78 GB | QUERY TIME: 12.94s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/historic_lidar/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/historic_lidar/catalog/manifest.json
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -332,29 +316,25 @@ als-finder search --roi ./ltbmu_boundary.gpkg --date 2015-01-01/2019-12-31 --wor
 
 **Console Output:**
 ```text
-=======================================================================================================================================
+=================================================================================================================
  LiDAR Data Search Results 
-=======================================================================================================================================
+=================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
----------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
  | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
- | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  10.4100 |   26768.13 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  46.7700 |    5954.91 |
  | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
- | NOAA_STAC       | DigitalCoast_DAV:id_9067               | 2018-07-07   |     723.53 |   1.2600 |   77212.96 |
- | NOAA_STAC       | DigitalCoast_DAV:id_9269               | 2018-01-22   |      40.74 |   0.0300 |  182391.32 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9036               | 2018-07-07   |     253.48 |   0.7800 |   43731.68 |
  | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
  | OpenTopography  | Walker Fault System, Nevada, 2015      | 2017-07-28   |      35.77 |   7.2700 |     660.41 |
  | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
- | NOAA_STAC       | DigitalCoast_DAV:id_8979               | 2017-03-03   |       2.94 |   0.0033 |  120829.31 |
- | NOAA_STAC       | DigitalCoast_DAV:id_6259               | 2016-04-28   |     233.77 |   0.0300 | 1135103.73 |
- | NOAA_STAC       | DigitalCoast_DAV:id_5022               | 2015-06-19   |      63.84 |   0.0200 |  363554.90 |
-=======================================================================================================================================
- TOTAL DATASETS: 12 | ESTIMATED PAYLOAD: 6270.20 GB | QUERY TIME: 4.41s
----------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
-=======================================================================================================================================
+=================================================================================================================
+ TOTAL DATASETS: 8 | ESTIMATED PAYLOAD: 5458.85 GB | QUERY TIME: 13.15s 
+-----------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+=================================================================================================================
 ```
 
 ### 4. Filtering by Point Density & Quality Level (`--density`)
@@ -369,28 +349,28 @@ als-finder search --roi ./ltbmu_boundary.gpkg --density QL1 --workspace ./my_lid
 
 **Console Output:**
 ```text
-=======================================================================================================================================
+=================================================================================================================
  LiDAR Data Search Results 
-=======================================================================================================================================
+=================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
----------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
- | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.2100 |    5819.74 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
  | OpenTopography  | USFS Freds Fire Lidar, CA 2015         | 2022-06-07   |     150.04 |  31.3700 |     641.96 |
  | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
  | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
- | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  10.4100 |   26768.13 |
+ | NOAA_STAC       | DigitalCoast_DAV:id_9452               | 2019-10-21   |    2075.29 |  46.7700 |    5954.91 |
  | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
  | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
  | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
  | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
-=======================================================================================================================================
- TOTAL DATASETS: 11 | ESTIMATED PAYLOAD: 9192.89 GB | QUERY TIME: 3.98s
----------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
-=======================================================================================================================================
+=================================================================================================================
+ TOTAL DATASETS: 11 | ESTIMATED PAYLOAD: 9192.89 GB | QUERY TIME: 12.69s 
+-----------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+=================================================================================================================
 ```
 
 #### Filtering via Exact Point Density Ranges (`--density`)
@@ -404,23 +384,23 @@ als-finder search --roi ./ltbmu_boundary.gpkg --density 2/10 --workspace ./my_li
 
 **Console Output:**
 ```text
-=======================================================================================================================================
+=================================================================================================================
  LiDAR Data Search Results 
-=======================================================================================================================================
+=================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
----------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
  | OpenTopography  | Paleo-Outburst Floods in the Truckee R | 2019-11-06   |       5.71 |   8.4000 |      91.21 |
  | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
  | OpenTopography  | Walker Fault System, Nevada, 2015      | 2017-07-28   |      35.77 |   7.2700 |     660.41 |
  | OpenTopography  | 2014 USFS Tahoe National Forest Lidar  | 2017-03-28   |     218.61 |   8.9300 |    3285.73 |
  | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
-=======================================================================================================================================
- TOTAL DATASETS: 6 | ESTIMATED PAYLOAD: 881.36 GB | QUERY TIME: 4.54s
----------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
-=======================================================================================================================================
+=================================================================================================================
+ TOTAL DATASETS: 6 | ESTIMATED PAYLOAD: 881.36 GB | QUERY TIME: 12.02s 
+-----------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+=================================================================================================================
 ```
 
 ### 5. Filtering by Registry (`--provider`)
@@ -433,25 +413,25 @@ als-finder search --roi ./ltbmu_boundary.gpkg --provider USGS_EPT --workspace ./
 
 **Console Output:**
 ```text
-=======================================================================================================================================
+=================================================================================================================
  LiDAR Data Search Results 
-=======================================================================================================================================
+=================================================================================================================
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
----------------------------------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
- | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.2100 |    5819.74 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
  | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
  | USGS_EPT        | CA_UpperSouthAmerican_Eldorado_2019    | 2019-??-??   |    2075.29 |  43.1600 |    6454.20 |
  | USGS_EPT        | USGS_LPC_CA_NoCAL_Wildfires_B1_2018    | 2018-??-??   |     643.56 |  10.8900 |    7928.51 |
  | USGS_EPT        | USGS_LPC_NV_Reno_Carson_QL1_2017_LAS_2 | 2017-??-??   |     151.15 |   9.5400 |    2126.64 |
  | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
-=======================================================================================================================================
- TOTAL DATASETS: 8 | ESTIMATED PAYLOAD: 7028.40 GB | QUERY TIME: 3.01s
----------------------------------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
-=======================================================================================================================================
+=================================================================================================================
+ TOTAL DATASETS: 8 | ESTIMATED PAYLOAD: 7028.40 GB | QUERY TIME: 3.06s 
+-----------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+=================================================================================================================
 ```
 
 #### Multiple Providers
@@ -469,7 +449,7 @@ als-finder search --roi ./ltbmu_boundary.gpkg --provider USGS_EPT,OpenTopography
  | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
 -----------------------------------------------------------------------------------------------------------------
  | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
- | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.0800 |    5849.29 |
+ | USGS_EPT        | CA_SierraNevada_6_2022                 | 2022-??-??   |    1136.46 |  26.2100 |    5819.74 |
  | USGS_EPT        | CA_SierraNevada_8_2022                 | 2022-??-??   |    1171.62 |  25.1400 |    6255.39 |
  | OpenTopography  | USFS Freds Fire Lidar, CA 2015         | 2022-06-07   |     150.04 |  31.3700 |     641.96 |
  | USGS_EPT        | NV_WestCentralEarthMRI_3_2020          | 2020-??-??   |     433.16 |   5.3400 |   10890.04 |
@@ -482,10 +462,10 @@ als-finder search --roi ./ltbmu_boundary.gpkg --provider USGS_EPT,OpenTopography
  | USGS_EPT        | CA_PlacerCo_2012                       | 2012-??-??   |      36.96 |   3.9500 |    1254.54 |
  | OpenTopography  | Lake Tahoe Basin Lidar                 | 2011-03-01   |     184.96 |  13.2000 |    1880.65 |
 =================================================================================================================
- TOTAL DATASETS: 13 | ESTIMATED PAYLOAD: 7623.49 GB | QUERY TIME: 12.63s 
+ TOTAL DATASETS: 13 | ESTIMATED PAYLOAD: 7623.49 GB | QUERY TIME: 8.13s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /home/user/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /home/user/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -516,17 +496,32 @@ als-finder download --roi "-119.9915, 38.9285, -119.9885, 38.9315" --name "CA_Si
 ```
 
 ```text
+=================================================================================================================
+ LiDAR Data Search Results 
+=================================================================================================================
+ | Provider        | Name                                   | Date         |   Est (GB) |   pts/m2 |   Area km2 |
+-----------------------------------------------------------------------------------------------------------------
+ | USGS_EPT        | CA_SierraNevada_5_2022                 | 2022-??-??   |    1380.20 |  29.1700 |    6349.79 |
+=================================================================================================================
+ TOTAL DATASETS: 1 | ESTIMATED PAYLOAD: 1380.20 GB | QUERY TIME: 8.51s 
+-----------------------------------------------------------------------------------------------------------------
+ CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/tiny_subset/catalog/catalog.gpkg
+ JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/tiny_subset/catalog/manifest.json
+=================================================================================================================
+
 ==================================================================================================
  LiDAR Fetch Array Matrix 
 ==================================================================================================
  | Provider        | Name                                   |    Tiles |    True Size |   Format |
 --------------------------------------------------------------------------------------------------
- | USGS_EPT        | CA_SierraNevada_5_2022                 |      107 |     27.14 MB |     .laz |
+ | USGS_EPT        | CA_SierraNevada_5_2022                 |        1 |      0.00 MB |     .laz |
 ==================================================================================================
- TOTAL ACQUISITIONS: 1 | PHYSICAL TILES: 107 | EXPECTED PAYLOAD: 27.14 MB
+ TOTAL ACQUISITIONS: 1 | PHYSICAL TILES: 1 | EXPECTED PAYLOAD: 0.00 MB
 --------------------------------------------------------------------------------------------------
- FETCH TARGET URI: ./tiny_subset/catalog/fetch_array.csv
-==================================================================================================
+ FETCH TARGET URI: tiny_subset/catalog/fetch_array.csv
+================================================================================
+
+[NOTICE] Dry-run only. Review the table above, refine your search if necessary, or run the exact same command with the --execute flag to begin physical download.
 ```
 
 ### 7.2 Executing a Local Download (`--execute`)
@@ -549,6 +544,7 @@ Physically orchestrating multi-threaded download sequence for 107 nodes...
 ```text
 tiny_subset/
 ├── catalog/
+│   ├── catalog.csv
 │   ├── catalog.gpkg
 │   ├── fetch_array.csv
 │   └── manifest.json
@@ -556,9 +552,12 @@ tiny_subset/
     └── raw/
         └── provider=USGS_EPT/
             └── dataset=CA_SierraNevada_5_2022/
-                ├── USGS_LPC_CA_SierraNevada_..._2022_LAS_2024.laz
-                └── ... (106 more files)
+                └── CA_SierraNevada_5_2022_subset.laz
 ```
+
+### 💡 Understanding the Download Structure
+* **Dynamic EPT Spatial Subsetting (Default for EPT):** When downloading cloud-native datasets (like `USGS_EPT` or `NOAA_STAC` with EPT endpoints) and supplying a spatial `--roi` boundary, `als-finder` does not download thousands of massive, multi-gigabyte source tiles. Instead, it streams only the points intersecting your boundary directly from the cloud bucket, writing a single conformed spatial subset file (`[dataset_name]_subset.laz`) to save time and disk space.
+* **Traditional Tile Downloads (OpenTopography / Full Downloads):** If you target providers that distribute traditional static files (like `OpenTopography` ZIP catalogs) or use the `--full` flag to download the entire uncropped acquisition, the directory will instead contain the individual raw tile files downloaded in their original provider-supplied grid tiles (e.g., `tile_1.laz`, `tile_2.laz`, etc.).
 
 ### 7.3 HPC Array Workflows (Expanse / Slurm)
 Because `als-finder` maps the source URLs to precise `data/...` output paths inside the CSV, you never use the `--execute` flag on an HPC Head Node. You can build your `fetch_array.csv` offline, and simply pass that list directly to `sbatch`:
