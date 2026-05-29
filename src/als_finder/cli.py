@@ -608,6 +608,7 @@ def download(ctx, workspace, roi, name, date, density, provider, cloud_native, o
 @click.option('--normal-threshold-z', type=float, default=0.85, help='NormalZ threshold to distinguish steep natural terrain from horizontal artificial structures in hybrid-dual.')
 def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers, tile_size, buffer_size, grid_crs, overwrite, classifier, tile_index, csf_resolution, csf_step, normal_threshold_z):
     """Execute PDAL Standardization matrices on locally downloaded LiDAR binaries."""
+    import json
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
     
@@ -622,7 +623,35 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
         
     logger.info("Initializing PDAL Pipeline Standardization")
     if crs == 'native':
-        logger.info("Target CRS is native (trusts provider). Pipeline will run in native coordinates and reproject to EPSG:3857 at the end.")
+        logger.info("Target CRS is native (trusts provider). Querying raw file metadata to extract native projection dynamically...")
+        raw_dir = workspace_path / "data" / "raw"
+        raw_files = list(raw_dir.rglob("*.laz")) + list(raw_dir.rglob("*.las"))
+        if raw_files:
+            probe_file = raw_files[0]
+            try:
+                res = subprocess.run(['pdal', 'info', '--metadata', str(probe_file.absolute())], capture_output=True, text=True, check=True)
+                meta = json.loads(res.stdout)
+                srs_info = meta.get("srs", {})
+                if not srs_info and "metadata" in meta:
+                    srs_info = meta.get("metadata", {}).get("srs", {})
+                
+                epsg_code = srs_info.get("json", {}).get("id", {}).get("code")
+                authority = srs_info.get("json", {}).get("id", {}).get("authority", "EPSG")
+                if epsg_code:
+                    crs = f"{authority}:{epsg_code}"
+                else:
+                    wkt = srs_info.get("wkt")
+                    if wkt:
+                        crs = wkt
+                    else:
+                        crs = srs_info.get("horizontal") or "EPSG:3857"
+                logger.info(f"Target CRS 'native' successfully resolved to: {crs}")
+            except Exception as e:
+                logger.warning(f"Could not extract native CRS dynamically from {probe_file.name}: {e}. Defaulting to EPSG:3857.")
+                crs = "EPSG:3857"
+        else:
+            logger.warning("No raw files found in workspace to probe for 'native' CRS. Defaulting to EPSG:3857.")
+            crs = "EPSG:3857"
     elif crs == 'auto-utm-centroid':
         if not roi:
             raise click.ClickException("Cannot compute 'auto-utm-centroid' without providing an --roi geometry.")
@@ -671,7 +700,6 @@ def standardize_cmd(workspace, crs, roi, stac, quicklook, preserve_raw, workers,
     ctx = click.get_current_context(silent=True)
     disable_tqdm = ctx.params.get('quiet', False) if ctx and hasattr(ctx, 'params') else False
     
-    import json
     manifest_path = workspace_path / 'catalog' / 'manifest.json'
     dataset_densities = {}
     if manifest_path.exists():
