@@ -44,17 +44,19 @@ Because `als-finder` relies on advanced spatial libraries (`geopandas`, `shapely
 If you attempt a raw `pip install` on Mac or Linux without these underlying C++ compilers pre-installed, Python will throw compiler errors due to missing C++ dependencies. For this reason, we highly recommend **Conda** (for desktop environments) or **Docker/Singularity** (for server and HPC execution).
 
 ### 1. Conda (Recommended & Official)
-Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. This is our general recommendation for most scientific desktop users, and it installs the package directly over the network from the **Conda-Forge** channel in a single command:
+Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. This is our general recommendation for most scientific desktop users. Since the package is currently run from source, you must clone the repository and use the provided `environment.yml` to create the environment:
 
 ```bash
-# Create a fresh environment and install als-finder from conda-forge
-conda create -n als-finder -c conda-forge als-finder
+# 1. Clone the repository and navigate into it
+git clone https://github.com/cms-2024-hudak/als-finder.git
+cd als-finder
 
-# Activate the newly created environment
+# 2. Create the environment from the environment.yml
+conda env create -f environment.yml
+
+# 3. Activate the newly created environment
 conda activate als-finder
 ```
-
-*(Alternatively, if you are building from source, you can clone the repository and run `conda env create -f environment.yml` inside the cloned directory).*
 
 ### 2. Docker / Singularity (Recommended for Server & HPC Environments)
 The absolute safest way to execute spatial code without triggering dependency conflicts on local servers, cloud instances, or high-performance supercomputers is through containers.
@@ -98,7 +100,7 @@ docker run --env-file .env -v $(pwd):/app/data als-finder:latest search --roi "-
 
 **A. Install System Binaries First**
 
-**Ubuntu/Debian:**
+**Ubuntu/Debian/WSL2:**
 ```bash
 sudo apt-get update
 sudo apt-get install -y libpdal-dev pdal
