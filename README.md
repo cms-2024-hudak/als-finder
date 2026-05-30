@@ -44,17 +44,28 @@ Because `als-finder` relies on advanced spatial libraries (`geopandas`, `shapely
 If you attempt a raw `pip install` on Mac or Linux without these underlying C++ compilers pre-installed, Python will throw compiler errors due to missing C++ dependencies. For this reason, we highly recommend **Conda** (for desktop environments) or **Docker/Singularity** (for server and HPC execution).
 
 ### 1. Conda (Recommended & Official)
-Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. This is our general recommendation for most scientific desktop users. Since the package is currently run from source, you must clone the repository and use the provided `environment.yml` to create the environment:
+Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. This is our general recommendation for most scientific desktop users, as it installs the official stable release directly over the network in a single command:
+
+```bash
+# Create a fresh environment and install the official stable release from conda-forge
+conda create -n als-finder -c conda-forge als-finder
+
+# Activate the newly created environment
+conda activate als-finder
+```
+
+#### Installing Bleeding-Edge / From Source (Development)
+If you want to run the absolute latest development version from GitHub or build the package from source:
 
 ```bash
 # 1. Clone the repository and navigate into it
 git clone https://github.com/cms-2024-hudak/als-finder.git
 cd als-finder
 
-# 2. Create the environment from the environment.yml
+# 2. Create the environment from the local environment.yml
 conda env create -f environment.yml
 
-# 3. Activate the newly created environment
+# 3. Activate the environment
 conda activate als-finder
 ```
 
