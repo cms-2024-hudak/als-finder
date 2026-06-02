@@ -55,8 +55,23 @@ conda activate als-finder
 ```
 
 #### Installing Bleeding-Edge / From Source (Development)
-If you want to run the absolute latest development version from GitHub or build the package from source:
+If you want to run the absolute latest development version from GitHub or build the package from source, you have two options:
 
+##### Option A: Direct Installation from GitHub (No Cloning Required)
+This is the fastest way to install the bleeding-edge version using Conda to manage and compile the C++ binaries (`pdal`, `geopandas`, etc.) automatically without having to clone the repository:
+
+```bash
+# 1. Create a fresh environment with all C++ and Python dependencies pre-installed from conda-forge
+conda create -n als-finder -c conda-forge python geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv -y
+
+# 2. Activate the environment
+conda activate als-finder
+
+# 3. Install als-finder directly from the GitHub main branch
+pip install git+https://github.com/cms-2024-hudak/als-finder.git
+```
+
+##### Option B: Build from a Local Clone (For Development / Modifying Source)
 ```bash
 # 1. Clone the repository and navigate into it
 git clone https://github.com/cms-2024-hudak/als-finder.git
