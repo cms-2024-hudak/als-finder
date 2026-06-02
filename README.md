@@ -44,7 +44,10 @@ Because `als-finder` relies on advanced spatial libraries (`geopandas`, `shapely
 If you attempt a raw `pip install` on Mac or Linux without these underlying C++ compilers pre-installed, Python will throw compiler errors due to missing C++ dependencies. For this reason, we highly recommend **Conda** (for desktop environments) or **Docker/Singularity** (for server and HPC execution).
 
 ### 1. Conda (Recommended & Official)
-Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. This is our general recommendation for most scientific desktop users, as it installs the official stable release directly over the network in a single command:
+Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. This is our general recommendation for most scientific desktop users.
+
+#### Option A: Install from conda-forge (Official Stable Release)
+Once the conda-forge package is fully active, this is the easiest single-command network installation:
 
 ```bash
 # Create a fresh environment and install the official stable release from conda-forge
@@ -54,11 +57,8 @@ conda create -n als-finder -c conda-forge als-finder
 conda activate als-finder
 ```
 
-#### Installing Bleeding-Edge / From Source (Development)
-If you want to run the absolute latest development version from GitHub or build the package from source, you have two options:
-
-##### Option A: Direct Installation from GitHub (No Cloning Required)
-This is the fastest way to install the bleeding-edge version using Conda to manage and compile the C++ binaries (`pdal`, `geopandas`, etc.) automatically without having to clone the repository:
+#### Option B: Direct Install from GitHub via Conda (Backup / Pending conda-forge Release)
+While we wait for the official conda-forge package to be merged and published, you can still use Conda to automatically manage and compile the C++ binaries (`pdal`, `geopandas`, etc.) in the background while pulling the latest package code directly from GitHub:
 
 ```bash
 # 1. Create a fresh environment with all C++ and Python dependencies pre-installed from conda-forge
@@ -71,7 +71,9 @@ conda activate als-finder
 pip install git+https://github.com/cms-2024-hudak/als-finder.git
 ```
 
-##### Option B: Build from a Local Clone (For Development / Modifying Source)
+#### Installing Bleeding-Edge / From Source (Development)
+If you want to build the package from source or contribute to development using a local clone:
+
 ```bash
 # 1. Clone the repository and navigate into it
 git clone https://github.com/cms-2024-hudak/als-finder.git
