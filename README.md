@@ -186,8 +186,8 @@ als-finder search --roi ./ltbmu_boundary.gpkg --workspace ./my_lidar_project/
 =================================================================================================================
  TOTAL DATASETS: 15 | ESTIMATED PAYLOAD: 9952.26 GB | QUERY TIME: 14.25s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: ./my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: ./my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -216,8 +216,8 @@ als-finder search --roi ./ltbmu_boundary.gpkg --name "CA_SierraNevada_5_2022" --
 =================================================================================================================
  TOTAL DATASETS: 1 | ESTIMATED PAYLOAD: 1380.20 GB | QUERY TIME: 13.21s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: ./my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: ./my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -238,8 +238,8 @@ als-finder search --roi ./ltbmu_boundary.gpkg --name "*Tahoe*" --workspace ./my_
 =================================================================================================================
  TOTAL DATASETS: 2 | ESTIMATED PAYLOAD: 403.57 GB | QUERY TIME: 13.98s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: ./my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: ./my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -262,8 +262,8 @@ als-finder search --roi ./ltbmu_boundary.gpkg --name "~^CA_Sierra.*" --workspace
 =================================================================================================================
  TOTAL DATASETS: 3 | ESTIMATED PAYLOAD: 3688.28 GB | QUERY TIME: 13.32s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: ./my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: ./my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -291,8 +291,8 @@ als-finder search --roi ./ltbmu_boundary.gpkg --date 2020-01-01/ --workspace ./m
 =================================================================================================================
  TOTAL DATASETS: 5 | ESTIMATED PAYLOAD: 4271.49 GB | QUERY TIME: 12.98s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: ./my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: ./my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -323,8 +323,8 @@ als-finder search --roi ./ltbmu_boundary.gpkg --date /2020-01-01 --workspace ./m
 =================================================================================================================
  TOTAL DATASETS: 10 | ESTIMATED PAYLOAD: 5680.78 GB | QUERY TIME: 12.94s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: ./my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: ./my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -353,8 +353,8 @@ als-finder search --roi ./ltbmu_boundary.gpkg --date 2015-01-01/2019-12-31 --wor
 =================================================================================================================
  TOTAL DATASETS: 8 | ESTIMATED PAYLOAD: 5458.85 GB | QUERY TIME: 13.15s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: ./my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: ./my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -389,8 +389,8 @@ als-finder search --roi ./ltbmu_boundary.gpkg --density QL1 --workspace ./my_lid
 =================================================================================================================
  TOTAL DATASETS: 11 | ESTIMATED PAYLOAD: 9192.89 GB | QUERY TIME: 12.69s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: ./my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: ./my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -419,8 +419,8 @@ als-finder search --roi ./ltbmu_boundary.gpkg --density 2/10 --workspace ./my_li
 =================================================================================================================
  TOTAL DATASETS: 6 | ESTIMATED PAYLOAD: 881.36 GB | QUERY TIME: 12.02s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: ./my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: ./my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -450,8 +450,8 @@ als-finder search --roi ./ltbmu_boundary.gpkg --provider USGS_EPT --workspace ./
 =================================================================================================================
  TOTAL DATASETS: 8 | ESTIMATED PAYLOAD: 7028.40 GB | QUERY TIME: 3.06s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: ./my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: ./my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -485,8 +485,8 @@ als-finder search --roi ./ltbmu_boundary.gpkg --provider USGS_EPT,OpenTopography
 =================================================================================================================
  TOTAL DATASETS: 13 | ESTIMATED PAYLOAD: 7623.49 GB | QUERY TIME: 8.13s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/my_lidar_project/catalog/manifest.json
+ CATALOG TBL: ./my_lidar_project/catalog/catalog.gpkg
+ JSON METADATA: ./my_lidar_project/catalog/manifest.json
 =================================================================================================================
 ```
 
@@ -526,8 +526,8 @@ als-finder download --roi "-119.9915, 38.9285, -119.9885, 38.9315" --name "CA_Si
 =================================================================================================================
  TOTAL DATASETS: 1 | ESTIMATED PAYLOAD: 1380.20 GB | QUERY TIME: 8.51s 
 -----------------------------------------------------------------------------------------------------------------
- CATALOG TBL: /mnt/c/Users/gears/git/als-finder/scratch/tiny_subset/catalog/catalog.gpkg
- JSON METADATA: /mnt/c/Users/gears/git/als-finder/scratch/tiny_subset/catalog/manifest.json
+ CATALOG TBL: ./tiny_subset/catalog/catalog.gpkg
+ JSON METADATA: ./tiny_subset/catalog/manifest.json
 =================================================================================================================
 
 ==================================================================================================
