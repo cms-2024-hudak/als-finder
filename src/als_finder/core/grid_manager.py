@@ -227,6 +227,49 @@ def export_grid_manifest(
     return gpkg_path, manifest_path
 
 
+def build_workspace_grid(
+    workspace_dir: Union[str, Path],
+    tile_size: int = 1200,
+    buffer_size: int = 30,
+    target_crs: Optional[str] = None
+) -> Tuple[gpd.GeoDataFrame, str]:
+    """
+    Automatically builds the spatial tile grid index for a workspace directory
+    using the search catalog coverage layer (catalog.gpkg).
+
+    Args:
+        workspace_dir (Union[str, Path]): Path to workspace root directory.
+        tile_size (int): Core metric tile size in meters (default: 1200m).
+        buffer_size (int): Overlap buffer in meters (default: 30m).
+        target_crs (Optional[str]): Explicit target metric CRS or None for auto-detection.
+
+    Returns:
+        Tuple[gpd.GeoDataFrame, str]: (grid_gdf, resolved_crs_string)
+    """
+    ws = Path(workspace_dir)
+    catalog_gpkg = ws / "catalog" / "catalog.gpkg"
+    manifest_path = ws / "catalog" / "manifest.json"
+
+    if not catalog_gpkg.exists():
+        raise GridError(f"Catalog GeoPackage not found at {catalog_gpkg}. Please run search first.")
+
+    search_gdf = gpd.read_file(catalog_gpkg)
+
+    manifest_data = {}
+    if manifest_path.exists():
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            manifest_data = json.load(f)
+
+    grid_gdf, crs_str = create_tile_grid_index(
+        search_gdf,
+        tile_size=tile_size,
+        buffer_size=buffer_size,
+        target_crs=target_crs
+    )
+    export_grid_manifest(grid_gdf, manifest_data, ws / "catalog")
+    return grid_gdf, crs_str
+
+
 def get_tile_spec(
     manifest_or_grid_path: Path,
     tile_id: int
