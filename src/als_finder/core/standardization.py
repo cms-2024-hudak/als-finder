@@ -521,3 +521,106 @@ def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path, crs: s
     except Exception as e:
         logger.error(f"Final COPC merge failed: {e}")
         return False
+
+def stream_single_tile(
+    manifest_or_grid_path: Union[str, Path],
+    tile_id: int,
+    out_path: Union[str, Path],
+    buffer_size: int = 30,
+    crs: str = "EPSG:3857",
+    overwrite: bool = False
+) -> Path:
+    """
+    Streams a single spatial core + buffered tile directly from remote provider endpoints on demand.
+
+    Args:
+        manifest_or_grid_path (Union[str, Path]): Path to catalog manifest.json or grid.gpkg.
+        tile_id (int): Target zero-based tile index.
+        out_path (Union[str, Path]): Destination path for the generated .laz tile.
+        buffer_size (int): Overlap buffer size in meters (default: 30m).
+        crs (str): Target coordinate reference system (default: EPSG:3857).
+        overwrite (bool): Force re-creation if output tile already exists.
+
+    Returns:
+        Path: Path to the generated .laz tile.
+    """
+    from als_finder.core.grid_manager import get_tile_spec
+    from als_finder.providers import get_provider
+
+    target_out = Path(out_path)
+    if target_out.exists() and not overwrite:
+        logger.info(f"Skipping tile_id {tile_id} - {target_out.name} already exists (Idempotency)")
+        return target_out
+
+    target_out.parent.mkdir(parents=True, exist_ok=True)
+
+    # 1. Retrieve tile spec via zero-copy SQL query
+    spec = get_tile_spec(manifest_or_grid_path, tile_id)
+    buffered_poly = spec["buffered_poly"]
+    urls = spec["urls"]
+
+    if not urls:
+        raise ValueError(f"No dataset URLs found in manifest/grid for tile_id {tile_id}")
+
+    pipeline = []
+
+    # 2. Build provider reader stages
+    if str(urls[0]).startswith("http"):
+        provider_name = spec.get("provider", "USGS_EPT")
+        provider_instance = get_provider(provider_name)
+        reader_stages = provider_instance.get_pdal_reader(urls, buffered_poly)
+        pipeline.extend(reader_stages)
+    else:
+        inputs = []
+        for i, url in enumerate(urls):
+            tag = f"reader_{i}"
+            reader_type = "readers.copc" if str(url).lower().endswith(".copc.laz") else "readers.las"
+            pipeline.append({"type": reader_type, "filename": str(url), "tag": tag})
+            inputs.append(tag)
+        if len(urls) > 1:
+            pipeline.append({"type": "filters.merge", "inputs": inputs})
+
+    # 3. Crop bounds immediately after ingestion
+    b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
+    pipeline.append({
+        "type": "filters.crop",
+        "bounds": f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])",
+    })
+
+    # 4. Reprojection
+    if crs and crs.lower() != "native":
+        pipeline.append({
+            "type": "filters.reprojection",
+            "out_srs": crs,
+        })
+
+    # 5. Taxonomy assignment & expression filter
+    pipeline.append({
+        "type": "filters.assign",
+        "value": ["Classification = 1 WHERE (Classification != 2 && Classification != 7 && Classification != 18)"],
+    })
+    pipeline.append({
+        "type": "filters.expression",
+        "expression": "ReturnNumber > 0 && NumberOfReturns > 0",
+    })
+
+    # 6. Writer stage
+    pipeline.append({
+        "type": "writers.las",
+        "filename": str(target_out.absolute()),
+        "compression": "laszip",
+        "a_srs": crs,
+    })
+
+    # 7. Memory-guarded PDAL execution
+    pdal_json = json.dumps(pipeline)
+    success, err_msg = execute_with_memory_limit(
+        ["pdal", "pipeline", "-s"],
+        pdal_json.encode("utf-8"),
+        memory_limit_mb=1536,
+    )
+
+    if not success or not target_out.exists():
+        raise RuntimeError(f"PDAL stream execution failed for tile_id {tile_id}: {err_msg}")
+
+    return target_out

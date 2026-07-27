@@ -1027,5 +1027,69 @@ def clean_cmd(workspace):
         logger.error(f"Failed to clean workspace: {e}")
         raise click.ClickException(str(e))
 
+@cli.command('fetch-tile')
+@click.option('--manifest', required=True, type=click.Path(exists=True), help='Path to catalog manifest.json or grid.gpkg')
+@click.option('--tile-id', required=True, type=int, help='Zero-based tile ID to stream')
+@click.option('--output', required=True, type=click.Path(), help='Target output .laz file path')
+@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('--crs', default='EPSG:3857', help='Target CRS (default EPSG:3857)')
+@click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
+@click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
+def fetch_tile_cmd(manifest, tile_id, output, buffer_size, crs, overwrite, json_output):
+    """Stream a single spatial core + buffered tile on demand."""
+    try:
+        from als_finder.core.standardization import stream_single_tile
+        res_path = stream_single_tile(
+            manifest_or_grid_path=manifest,
+            tile_id=tile_id,
+            out_path=output,
+            buffer_size=buffer_size,
+            crs=crs,
+            overwrite=overwrite,
+        )
+        payload = {
+            "status": "success",
+            "tile_id": tile_id,
+            "path": str(res_path.absolute()),
+            "crs": crs,
+        }
+        if json_output:
+            click.echo(json.dumps(payload, indent=2))
+        else:
+            click.echo(f"Successfully streamed tile {tile_id} to {res_path}", err=True)
+    except Exception as e:
+        if json_output:
+            click.echo(json.dumps({"status": "error", "error": str(e)}, indent=2))
+            sys.exit(1)
+        else:
+            click.echo(f"Error fetching tile: {e}", err=True)
+            sys.exit(1)
+
+@cli.command('grid-info')
+@click.option('--manifest', required=True, type=click.Path(exists=True), help='Path to catalog manifest.json or grid.gpkg')
+@click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
+def grid_info_cmd(manifest, json_output):
+    """Retrieve spatial grid metadata for R / sf ingestion."""
+    try:
+        from als_finder.core.grid_manager import get_tile_spec
+        spec = get_tile_spec(manifest, tile_id=0)
+        payload = {
+            "status": "success",
+            "grid_crs": spec["grid_crs"],
+            "sample_tile_bounds": spec["bbox_str"],
+        }
+        if json_output:
+            click.echo(json.dumps(payload, indent=2))
+        else:
+            click.echo(f"Grid CRS: {spec['grid_crs']}", err=True)
+            click.echo(f"Sample BBox: {spec['bbox_str']}", err=True)
+    except Exception as e:
+        if json_output:
+            click.echo(json.dumps({"status": "error", "error": str(e)}, indent=2))
+            sys.exit(1)
+        else:
+            click.echo(f"Error reading grid info: {e}", err=True)
+            sys.exit(1)
+
 if __name__ == '__main__':
     cli()
