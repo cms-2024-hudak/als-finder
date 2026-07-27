@@ -618,7 +618,7 @@ def stream_single_tile(
     success, err_msg = execute_with_memory_limit(
         ["pdal", "pipeline", "-s"],
         pdal_json.encode("utf-8"),
-        memory_limit_mb=1536,
+        memory_limit_mb=4096,
     )
 
     if not success or not target_out.exists():

@@ -284,27 +284,53 @@ def get_tile_spec(
         buffered_poly = core_poly
 
     b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
-    bbox_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
+    buffered_bounds_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
 
-    # Read urls from manifest if available
+    c_minx, c_miny, c_maxx, c_maxy = core_poly.bounds
+    core_bounds_str = f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
+
+    tile_basename = f"tile_{int(tile_id):04d}.laz"
+
+    # Read dataset metadata & urls from manifest if available
     urls: List[str] = []
+    provider = "USGS_EPT"
+    year = "2022"
+    state = "CA"
+    dataset_id = "unknown_dataset"
+
     if manifest_path.exists():
         try:
             with open(manifest_path, "r", encoding="utf-8") as mf:
                 m_data = json.load(mf)
                 datasets = m_data.get("datasets", m_data.get("features", []))
-                for ds in datasets:
-                    url = ds.get("url") or ds.get("assets", {}).get("data", {}).get("href")
-                    if url:
-                        urls.append(url)
+                if datasets:
+                    ds = datasets[0]
+                    provider = ds.get("provider", provider)
+                    dataset_id = ds.get("dataset_id", ds.get("name", dataset_id))
+                    raw_date = str(ds.get("date", "2022"))
+                    year = raw_date[:4] if len(raw_date) >= 4 else "2022"
+                    for d in datasets:
+                        url = d.get("url") or d.get("assets", {}).get("data", {}).get("href")
+                        if url:
+                            urls.append(url)
         except Exception as e:
-            logger.warning(f"Could not parse URLs from manifest {manifest_path}: {e}")
+            logger.warning(f"Could not parse metadata from manifest {manifest_path}: {e}")
+
+    hive_path = f"provider={provider}/year={year}/state={state}/dataset={dataset_id}/tiles/{tile_basename}"
 
     return {
         "tile_id": int(tile_id),
+        "basename": tile_basename,
+        "hive_path": hive_path,
+        "provider": provider,
+        "year": year,
+        "state": state,
+        "dataset_id": dataset_id,
         "core_poly": core_poly,
         "buffered_poly": buffered_poly,
         "grid_crs": grid_crs,
-        "bbox_str": bbox_str,
+        "core_bounds_str": core_bounds_str,
+        "buffered_bounds_str": buffered_bounds_str,
+        "bbox_str": buffered_bounds_str,
         "urls": urls,
     }
