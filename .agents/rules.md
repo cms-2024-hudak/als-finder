@@ -130,11 +130,13 @@ description: ALS-Finder AI Collaboration Guardrails
 
 ## 1. Architectural & CLI Rules
 - **No Logic in CLI:** `cli.py` is strictly an argument parser and command dispatcher. Do NOT write data processing, async streaming, or PDAL manipulation inside `cli.py`. Keep logic in `src/als_finder/core/`.
+- **Single Responsibility Principle (SRP):** Keep business/spatial logic in `src/als_finder/core/`, provider engines in `providers/`, and argument parsing in `cli.py`. Never mix I/O or printing with core computation.
 - **BaseProvider Contract:** Every new data source must inherit from `BaseProvider` in `providers/base.py` and implement standard signatures (`search`, `download`, `build_pdal_pipeline`).
 
 ## 2. Spatial & Processing Safety
-- **Strict CRS Handling:** Always explicitly verify Coordinate Reference Systems. Inputs for STAC/GeoJSON search must be `EPSG:4326`. Spatial grid slicing and buffering must operate in a projected metric CRS.
-- **Memory & Subprocess Safety:** ALL PDAL and external binary calls MUST be wrapped with `execute_with_memory_limit()` from `core/standardization.py`. Do not invoke bare `subprocess.run()` calls. Preserve thread limits (`OPENBLAS_NUM_THREADS=1`).
+- **Strict CRS & Type Contracts:** All new functions must include strict PEP 484 type hints. Validate spatial projections, file paths, and inputs immediately at function entry points. Inputs for STAC/GeoJSON search must be `EPSG:4326`. Spatial grid slicing and buffering must operate in an auto-detected or explicit projected metric CRS (e.g. local UTM).
+- **Memory & Subprocess Safety:** ALL PDAL and external binary calls MUST be wrapped with `execute_with_memory_limit()` from `core/standardization.py`. Do not invoke bare `subprocess.run()` calls. Preserve thread limits (`OPENBLAS_NUM_THREADS=1`). Pure calculation and grid generation functions must be side-effect free.
+- **Clean Stdout Contract:** In `cli.py`, direct all progress indicators, warnings, and logging strictly to `stderr`. Reserve `stdout` exclusively for clean JSON output payloads.
 
 ## 3. Workflow & Testing
 - **Inspect Before Editing:** For non-trivial changes, outline proposed modifications across `core/` and `providers/` before outputting code.
