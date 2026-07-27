@@ -121,3 +121,21 @@ description: Project Directory Structure and Organization
 ## Rules
 1.  **No Logic at Root**: Do not put python scripts at the top level. Use `src/` or `scripts/`.
 2.  **Clean Root**: Only standard config files (`.gitignore`, `README.md`, etc.) belong at the root.
+
+---
+description: ALS-Finder AI Collaboration Guardrails
+---
+
+# ALS-Finder - AI Collaboration Guardrails
+
+## 1. Architectural & CLI Rules
+- **No Logic in CLI:** `cli.py` is strictly an argument parser and command dispatcher. Do NOT write data processing, async streaming, or PDAL manipulation inside `cli.py`. Keep logic in `src/als_finder/core/`.
+- **BaseProvider Contract:** Every new data source must inherit from `BaseProvider` in `providers/base.py` and implement standard signatures (`search`, `download`, `build_pdal_pipeline`).
+
+## 2. Spatial & Processing Safety
+- **Strict CRS Handling:** Always explicitly verify Coordinate Reference Systems. Inputs for STAC/GeoJSON search must be `EPSG:4326`. Spatial grid slicing and buffering must operate in a projected metric CRS.
+- **Memory & Subprocess Safety:** ALL PDAL and external binary calls MUST be wrapped with `execute_with_memory_limit()` from `core/standardization.py`. Do not invoke bare `subprocess.run()` calls. Preserve thread limits (`OPENBLAS_NUM_THREADS=1`).
+
+## 3. Workflow & Testing
+- **Inspect Before Editing:** For non-trivial changes, outline proposed modifications across `core/` and `providers/` before outputting code.
+- **Micro-Tile Testing:** Always test spatial changes or PDAL pipelines using a small local bounding box (e.g., 50m x 50m) before executing full dataset runs.
