@@ -526,17 +526,21 @@ def stream_single_tile(
     manifest_or_grid_path: Union[str, Path],
     tile_id: int,
     out_path: Union[str, Path],
+    tile_size: int = 1200,
     buffer_size: int = 30,
     crs: str = "EPSG:3857",
     overwrite: bool = False
 ) -> Path:
     """
     Streams a single spatial core + buffered tile directly from remote provider endpoints on demand.
+    If the requested tile grid for (tile_size, buffer_size) has not been built yet, automatically
+    builds the workspace grid index first! (Single-command workflow).
 
     Args:
-        manifest_or_grid_path (Union[str, Path]): Path to catalog manifest.json or grid.gpkg.
+        manifest_or_grid_path (Union[str, Path]): Path to catalog manifest.json, workspace dir, or grid.gpkg.
         tile_id (int): Target zero-based tile index.
         out_path (Union[str, Path]): Destination path for the generated .laz tile.
+        tile_size (int): Core metric tile size in meters (default: 1200m).
         buffer_size (int): Overlap buffer size in meters (default: 30m).
         crs (str): Target coordinate reference system (default: EPSG:3857).
         overwrite (bool): Force re-creation if output tile already exists.
@@ -554,8 +558,8 @@ def stream_single_tile(
 
     target_out.parent.mkdir(parents=True, exist_ok=True)
 
-    # 1. Retrieve tile spec via zero-copy SQL query
-    spec = get_tile_spec(manifest_or_grid_path, tile_id)
+    # 1. Retrieve tile spec via zero-copy SQL query (lazy auto-builds grid if missing!)
+    spec = get_tile_spec(manifest_or_grid_path, tile_id, tile_size=tile_size, buffer_size=buffer_size)
     buffered_poly = spec["buffered_poly"]
     urls = spec["urls"]
 

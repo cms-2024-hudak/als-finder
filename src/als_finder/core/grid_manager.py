@@ -214,11 +214,20 @@ def export_grid_manifest(
 
     # Update manifest data
     updated_manifest = dict(manifest_data) if manifest_data else {}
-    updated_manifest["grid_info"] = {
+    if "grids" not in updated_manifest:
+        updated_manifest["grids"] = {}
+
+    rel_gpkg_str = str(gpkg_path.relative_to(output_dir)) if gpkg_path.is_relative_to(output_dir) else gpkg_path.name
+    grid_key = f"tilesize={tile_size}_buffer={buffer_size}" if tile_size is not None and buffer_size is not None else "primary"
+
+    updated_manifest["grids"][grid_key] = {
+        "tile_size": tile_size,
+        "buffer_size": buffer_size,
         "grid_crs": grid_gdf.crs.to_string(),
         "total_tiles": len(grid_gdf),
-        "gpkg_file": gpkg_path.name,
+        "gpkg_file": rel_gpkg_str,
     }
+    updated_manifest["grid_info"] = updated_manifest["grids"][grid_key]
 
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(updated_manifest, f, indent=2)
@@ -235,7 +244,8 @@ def build_workspace_grid(
 ) -> Tuple[gpd.GeoDataFrame, str]:
     """
     Automatically builds the spatial tile grid index for a workspace directory
-    using the search catalog coverage layer (catalog.gpkg).
+    using the search catalog coverage layer (catalog.gpkg). Saves grid to Hive partitioned
+    directory catalog/grids/tilesize={tile_size}/buffer={buffer_size}/grid.gpkg.
 
     Args:
         workspace_dir (Union[str, Path]): Path to workspace root directory.
@@ -266,44 +276,93 @@ def build_workspace_grid(
         buffer_size=buffer_size,
         target_crs=target_crs
     )
-    export_grid_manifest(grid_gdf, manifest_data, ws / "catalog")
+    
+    # Export to Hive partitioned path catalog/grids/tilesize={tile_size}/buffer={buffer_size}/grid.gpkg
+    hive_grid_dir = ws / "catalog" / "grids" / f"tilesize={tile_size}" / f"buffer={buffer_size}"
+    hive_grid_dir.mkdir(parents=True, exist_ok=True)
+    gpkg_path = hive_grid_dir / "grid.gpkg"
+    if gpkg_path.exists():
+        gpkg_path.unlink()
+
+    # Store buffered_geometry as WKT string
+    export_df = grid_gdf.copy()
+    export_df["buffered_wkt"] = export_df["buffered_geometry"].apply(lambda g: g.wkt)
+    export_df.drop(columns=["buffered_geometry"], inplace=True)
+    pyogrio.write_dataframe(export_df, gpkg_path, layer="grid", driver="GPKG")
+
+    # Maintain primary fallback catalog/grid.gpkg
+    primary_gpkg = ws / "catalog" / "grid.gpkg"
+    pyogrio.write_dataframe(export_df, primary_gpkg, layer="grid", driver="GPKG")
+
+    del export_df
+    gc.collect()
+
+    # Update manifest grids dictionary
+    if "grids" not in manifest_data:
+        manifest_data["grids"] = {}
+
+    grid_key = f"tilesize={tile_size}_buffer={buffer_size}"
+    manifest_data["grids"][grid_key] = {
+        "tile_size": tile_size,
+        "buffer_size": buffer_size,
+        "grid_crs": crs_str,
+        "total_tiles": len(grid_gdf),
+        "gpkg_file": f"grids/tilesize={tile_size}/buffer={buffer_size}/grid.gpkg"
+    }
+    manifest_data["grid_info"] = manifest_data["grids"][grid_key]
+
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=2)
+
+    logger.info(f"Built workspace grid ({len(grid_gdf)} tiles, size={tile_size}m, buf={buffer_size}m) at {gpkg_path}")
     return grid_gdf, crs_str
 
 
 def get_tile_spec(
-    manifest_or_grid_path: Path,
-    tile_id: int
+    manifest_or_grid_path: Union[str, Path],
+    tile_id: int,
+    tile_size: int = 1200,
+    buffer_size: int = 30
 ) -> Dict[str, Any]:
     """
     Retrieves the spatial specification for a single tile ID.
-    Uses targeted single-row SQL filtering on grid.gpkg for minimal memory footprint (< 0.1 MB RAM).
+    If the requested grid for (tile_size, buffer_size) does not exist on disk,
+    automatically builds the workspace grid first! (Single-command workflow).
 
     Args:
-        manifest_or_grid_path (Path): Path to grid.gpkg or catalog manifest.json directory.
+        manifest_or_grid_path (Union[str, Path]): Path to workspace root directory or manifest.json.
         tile_id (int): Target zero-based tile ID.
+        tile_size (int): Core metric tile size in meters (default: 1200m).
+        buffer_size (int): Overlap buffer size in meters (default: 30m).
 
     Returns:
         Dict[str, Any]: Dictionary containing tile_id, core_poly, buffered_poly, grid_crs, and urls.
     """
     path = Path(manifest_or_grid_path)
-    if not path.exists():
-        raise GridError(f"Grid or manifest path does not exist: {path}")
-
-    # Determine GPKG path
     if path.is_dir():
-        gpkg_path = path / "grid.gpkg"
-        manifest_path = path / "manifest.json"
+        ws_dir = path
     elif path.name == "manifest.json":
-        gpkg_path = path.parent / "grid.gpkg"
-        manifest_path = path
+        ws_dir = path.parent.parent if path.parent.name == "catalog" else path.parent
     elif path.suffix.lower() == ".gpkg":
-        gpkg_path = path
-        manifest_path = path.parent / "manifest.json"
+        ws_dir = path.parent.parent if path.parent.name == "catalog" or "tilesize=" in str(path) else path.parent
     else:
-        raise GridError(f"Unsupported manifest or grid path: {path}")
+        ws_dir = path
 
-    if not gpkg_path.exists():
-        raise GridError(f"Grid GeoPackage file not found: {gpkg_path}")
+    # Check for Hive partitioned grid: catalog/grids/tilesize={tile_size}/buffer={buffer_size}/grid.gpkg
+    hive_gpkg = ws_dir / "catalog" / "grids" / f"tilesize={tile_size}" / f"buffer={buffer_size}" / "grid.gpkg"
+    primary_gpkg = ws_dir / "catalog" / "grid.gpkg" if (ws_dir / "catalog").exists() else ws_dir / "grid.gpkg"
+
+    if hive_gpkg.exists():
+        gpkg_path = hive_gpkg
+    elif primary_gpkg.exists() and tile_size == 1200 and buffer_size == 30:
+        gpkg_path = primary_gpkg
+    else:
+        # LAZY AUTO-BUILD: Automatically build grid if not created yet!
+        logger.info(f"Grid for tile_size={tile_size}m buffer={buffer_size}m not found. Auto-building grid index...")
+        grid_gdf, crs_str = build_workspace_grid(ws_dir, tile_size=tile_size, buffer_size=buffer_size)
+        gpkg_path = ws_dir / "catalog" / "grids" / f"tilesize={tile_size}" / f"buffer={buffer_size}" / "grid.gpkg"
+        if not gpkg_path.exists():
+            gpkg_path = primary_gpkg
 
     # Memory-safe zero-copy single-row SQL query via pyogrio
     sql_query = f"SELECT * FROM grid WHERE tile_id = {tile_id}"
@@ -341,6 +400,7 @@ def get_tile_spec(
     state = "CA"
     dataset_id = "unknown_dataset"
 
+    manifest_path = ws_dir / "catalog" / "manifest.json" if (ws_dir / "catalog").exists() else ws_dir / "manifest.json"
     if manifest_path.exists():
         try:
             with open(manifest_path, "r", encoding="utf-8") as mf:
