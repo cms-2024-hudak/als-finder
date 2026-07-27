@@ -99,8 +99,16 @@ class USGSProvider(BaseProvider):
         logger.warning("To extract natively, use PDAL targeting the ept.json payload directly rather than standard wget endpoints.")
         return output_dir
 
-    def get_pdal_reader(self, urls: List[str], buffered_poly: Polygon) -> List[Dict[str, Any]]:
-        b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
+    def get_pdal_reader(self, urls: List[str], buffered_poly: Polygon, poly_crs: str = "EPSG:3857") -> List[Dict[str, Any]]:
+        # USGS EPT reader expects bounds in Web Mercator (EPSG:3857)
+        if poly_crs and poly_crs.upper() != "EPSG:3857":
+            gdf = gpd.GeoDataFrame(geometry=[buffered_poly], crs=poly_crs)
+            gdf_3857 = gdf.to_crs("EPSG:3857")
+            target_poly = gdf_3857.geometry.iloc[0]
+        else:
+            target_poly = buffered_poly
+
+        b_minx, b_miny, b_maxx, b_maxy = target_poly.bounds
         bounds_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
         return [{
             "type": "readers.ept",

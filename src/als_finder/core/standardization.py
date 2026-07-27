@@ -6,13 +6,13 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Union, List, Optional, Tuple, Dict, Any
 import geopandas as gpd
 from shapely.geometry import Polygon, box
 
 logger = logging.getLogger(__name__)
 
-def execute_with_memory_limit(cmd: List[str], input_data: bytes, memory_limit_mb: int = 1536) -> Tuple[bool, str]:
+def execute_with_memory_limit(cmd: List[str], input_data: bytes, memory_limit_mb: int = 4096) -> Tuple[bool, str]:
     memory_limit_bytes = memory_limit_mb * 1024 * 1024
     
     # Prevent virtual memory explosion from thread allocation by restricting underlying C++ multi-threading.
@@ -568,7 +568,8 @@ def stream_single_tile(
     if str(urls[0]).startswith("http"):
         provider_name = spec.get("provider", "USGS_EPT")
         provider_instance = get_provider(provider_name)
-        reader_stages = provider_instance.get_pdal_reader(urls, buffered_poly)
+        poly_crs = spec.get("grid_crs", "EPSG:4326")
+        reader_stages = provider_instance.get_pdal_reader(urls, buffered_poly, poly_crs=poly_crs)
         pipeline.extend(reader_stages)
     else:
         inputs = []
@@ -580,19 +581,19 @@ def stream_single_tile(
         if len(urls) > 1:
             pipeline.append({"type": "filters.merge", "inputs": inputs})
 
-    # 3. Crop bounds immediately after ingestion
-    b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
-    pipeline.append({
-        "type": "filters.crop",
-        "bounds": f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])",
-    })
-
-    # 4. Reprojection
+    # 3. Reprojection to target CRS so crop bounds match point cloud coordinate space
     if crs and crs.lower() != "native":
         pipeline.append({
             "type": "filters.reprojection",
             "out_srs": crs,
         })
+
+    # 4. Crop bounds immediately after reprojection
+    b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
+    pipeline.append({
+        "type": "filters.crop",
+        "bounds": f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])",
+    })
 
     # 5. Taxonomy assignment & expression filter
     pipeline.append({
