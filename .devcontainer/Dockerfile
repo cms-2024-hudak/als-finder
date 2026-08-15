@@ -34,7 +34,6 @@ RUN micromamba install -y -n base -c conda-forge \
     pyogrio \
     fiona \
     laspy \
-    laz-perf \
     pystac \
     stac-validator \
     requests \
