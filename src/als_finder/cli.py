@@ -159,13 +159,14 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
             if not click.confirm("Are you sure you want to query the entire global index without a spatial boundary?"):
                 raise click.Abort()
         
-        # Initialize Providers
+        # Initialize Providers (case-insensitive with flexible aliases)
+        norm_providers = [str(p).strip().upper() for p in provider]
         active_providers = []
-        if 'OpenTopography' in provider:
+        if any(p in norm_providers for p in ['OPENTOPOGRAPHY', 'OPENTOPO', 'OT']):
             active_providers.append(OpenTopographyProvider())
-        if 'USGS_EPT' in provider:
+        if any(p in norm_providers for p in ['USGS_EPT', 'USGS', 'EPT']):
             active_providers.append(USGSProvider())
-        if 'NOAA_STAC' in provider:
+        if any(p in norm_providers for p in ['NOAA_STAC', 'NOAA', 'STAC']):
             active_providers.append(NOAAProvider())
         
         final_results = []
