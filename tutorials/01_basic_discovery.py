@@ -11,6 +11,7 @@
 # %%
 import sys
 import subprocess
+import als_finder  # Initializes PROJ & environment paths
 print("Extracting sample Lake Tahoe ROI...")
 result = subprocess.run([sys.executable, "-m", "als_finder.cli", "get-example-roi"], capture_output=True, text=True)
 print(result.stdout)
