@@ -9,9 +9,10 @@
 # ### Step 1: Extract Bundled Lake Tahoe ROI
 
 # %%
+import sys
 import subprocess
 print("Extracting sample Lake Tahoe ROI...")
-result = subprocess.run(["als-finder", "get-example-roi"], capture_output=True, text=True)
+result = subprocess.run([sys.executable, "-m", "als_finder.cli", "get-example-roi"], capture_output=True, text=True)
 print(result.stdout)
 
 # %% [markdown]
@@ -33,7 +34,7 @@ import als_finder
 print("Running search across USGS 3DEP and NOAA Coastal...")
 
 cmd = [
-    "als-finder", "search",
+    sys.executable, "-m", "als_finder.cli", "search",
     "--roi", "./ltbmu_boundary.gpkg",
     "--density", "QL1",
     "--workspace", "./demo_workspace/",
