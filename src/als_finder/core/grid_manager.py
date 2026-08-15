@@ -273,15 +273,32 @@ def build_workspace_grid(
     if not catalog_gpkg.exists():
         raise GridError(f"Catalog GeoPackage not found at {catalog_gpkg}. Please run search first.")
 
-    search_gdf = gpd.read_file(catalog_gpkg)
-
     manifest_data = {}
     if manifest_path.exists():
         with open(manifest_path, "r", encoding="utf-8") as f:
             manifest_data = json.load(f)
 
+    # Prioritize ROI geometry over raw remote acquisition footprints
+    roi_file = None
+    if "search_parameters" in manifest_data and manifest_data["search_parameters"].get("roi"):
+        candidate_roi = Path(manifest_data["search_parameters"]["roi"])
+        if candidate_roi.exists():
+            roi_file = candidate_roi
+    if roi_file is None:
+        for candidate in [ws / "roi.gpkg", ws / "catalog" / "roi.gpkg"]:
+            if candidate.exists():
+                roi_file = candidate
+                break
+
+    if roi_file is not None:
+        logger.info(f"Building spatial grid from workspace ROI: {roi_file}")
+        source_gdf = gpd.read_file(roi_file)
+    else:
+        logger.info("No dedicated ROI file found; building spatial grid from catalog footprint.")
+        source_gdf = gpd.read_file(catalog_gpkg)
+
     grid_gdf, crs_str = create_tile_grid_index(
-        search_gdf,
+        source_gdf,
         tile_size=tile_size,
         buffer_size=buffer_size,
         target_crs=target_crs
@@ -364,7 +381,7 @@ def get_tile_spec(
 
     if hive_gpkg.exists():
         gpkg_path = hive_gpkg
-    elif primary_gpkg.exists() and tile_size == 1200 and buffer_size == 30:
+    elif primary_gpkg.exists() and (not (ws_dir / "catalog" / "catalog.gpkg").exists() or (tile_size == 1200 and buffer_size == 30)):
         gpkg_path = primary_gpkg
     else:
         # LAZY AUTO-BUILD: Automatically build grid if not created yet!
@@ -401,8 +418,6 @@ def get_tile_spec(
     c_minx, c_miny, c_maxx, c_maxy = core_poly.bounds
     core_bounds_str = f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
 
-    tile_basename = f"tile_{int(tile_id):04d}.laz"
-
     # Read dataset metadata & urls from manifest if available
     urls: List[str] = []
     provider = "USGS_EPT"
@@ -429,12 +444,19 @@ def get_tile_spec(
         except Exception as e:
             logger.warning(f"Could not parse metadata from manifest {manifest_path}: {e}")
 
-    hive_path = f"provider={provider}/year={year}/state={state}/dataset={dataset_id}/tiles/{tile_basename}"
+    tile_basename = f"tile_{int(tile_id):04d}.laz"
+    spatial_basename = f"tile_E{int(c_minx):07d}_N{int(c_miny):07d}_{tile_size}m.laz"
+
+    # Fully-qualified Hive partition path preventing collisions across multi-scale grids
+    hive_path = f"provider={provider}/year={year}/state={state}/dataset={dataset_id}/tiles/tilesize={tile_size}/buffer={buffer_size}/{tile_basename}"
+    spatial_hive_path = f"provider={provider}/year={year}/state={state}/dataset={dataset_id}/tiles/tilesize={tile_size}/buffer={buffer_size}/{spatial_basename}"
 
     return {
         "tile_id": int(tile_id),
         "basename": tile_basename,
+        "spatial_basename": spatial_basename,
         "hive_path": hive_path,
+        "spatial_hive_path": spatial_hive_path,
         "provider": provider,
         "year": year,
         "state": state,

@@ -1,14 +1,12 @@
 # %% [markdown]
-# # Tutorial 01: Complete ALS-Finder Discovery, Standardization, STAC & Quicklook Pipeline
+# # Tutorial 01: Complete ALS-Finder Discovery, Inspection & Retrieval Pipeline
 # 
-# Welcome to **ALS-Finder**! This comprehensive tutorial walks you through the entire end-to-end LiDAR lifecycle:
+# Welcome to **ALS-Finder**! This interactive tutorial walks you through the core discovery, spatial filtering, and data retrieval workflow:
 # 1. **Federated Discovery**: Query remote cloud point cloud catalogs (**USGS 3DEP EPT**, **NOAA Coastal STAC**, and **OpenTopography**) across flexible spatial, temporal, and point density filters with zero upfront point cloud downloads.
 # 2. **Interactive Leaflet Mapping**: Visualize boundaries, query areas of interest, and overlay discovered LiDAR project footprints with interactive layer controls and tooltips.
-# 3. **Dry-Run & Safe Subsetting**: Preview fetch matrices (`fetch_array.csv`) before downloading or streaming tightly cropped cloud subsets directly from remote servers.
-# 4. **Standardization & Normalization**: Apply automated SMRF ground classification, compute Height Above Ground (HAG), harmonize coordinate reference systems, and conform ASPRS taxonomy into Cloud-Optimized Point Clouds (`.copc.laz`).
-# 5. **OGC STAC Indexing**: Generate standards-compliant SpatioTemporal Asset Catalogs (`catalog/stac/catalog.json`) with relative links and validate with `pystac`.
-# 6. **Visual QA/QC Quicklooks**: Render 2D DEM Hillshade and Canopy Height Model (CHM) preview PNGs to inspect data quality in seconds.
-# 7. **The Mega-Command**: Execute the entire multi-stage pipeline in a single uninterrupted command.
+# 3. **Search Filtering**: Filter by exact dataset names, wildcards, regular expressions, historical date ranges, point density (USGS QL levels), and provider registries.
+# 4. **Atomic Updates**: Sync catalogs with upstream federal registries while maintaining timestamped rollback backups.
+# 5. **Dry-Run & Safe Subsetting**: Preview fetch matrices (`fetch_array.csv`) before downloading or streaming tightly cropped cloud subsets directly from remote servers.
 # 
 # ---
 # 
@@ -20,10 +18,7 @@
 # | `catalog/catalog.gpkg` | GeoPackage | Vector polygon boundaries representing discovered LiDAR project footprints | `als_finder.cli search` |
 # | `catalog/catalog.csv` | CSV | Human-readable tabular summary of discovered projects, dates, and point densities | `als_finder.cli search` |
 # | `catalog/fetch_array.csv`| CSV | Dry-run matrix planning physical tile URLs, download targets, and estimated sizes | `als_finder.cli download` |
-# | `data/raw/` | LAS / LAZ | Unconformed, vendor-specific raw point clouds organized in Hive hierarchy | `als_finder.cli download --execute` |
-# | `data/standardized/` | COPC LAZ | Analysis-ready, taxonomically uniform, HAG-normalized Cloud Optimized Point Clouds | `als_finder.cli standardize` |
-# | `catalog/stac/` | STAC JSON | OGC-compliant SpatioTemporal Asset Catalog searchable hierarchy | `als_finder.cli standardize --stac` |
-# | `data/quicklooks/` | PNG | 2D DEM Hillshade and Canopy Height Model (CHM) color-relief preview images | `als_finder.cli standardize --quicklook` |
+# | `data/raw/` | LAS / LAZ | Raw point cloud subsets organized in Hive hierarchy (`provider=*/dataset=*/`) | `als_finder.cli download --execute` |
 
 # %% [markdown]
 # ---
@@ -41,7 +36,6 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import folium
-import pystac
 from shapely.geometry import box
 
 try:
@@ -337,154 +331,12 @@ for p in raw_laz_files:
 
 # %% [markdown]
 # ---
-# ## Step 8: Normalization & Standardization (Stage 3)
-# 
-# Raw LiDAR point clouds from different federal programs suffer from:
-# - **Coordinate Reference System (CRS) Discrepancies**: Mixing UTM zones, State Planes, or WGS84.
-# - **Taxonomic Inconsistencies**: Non-standard ASPRS class mappings across vendors.
-# - **Elevation vs. Vegetation Height**: Raw data only stores absolute elevation ($Z$), requiring digital terrain subtraction to compute true canopy height.
-# 
-# `als-finder standardize` harmonizes these raw downloads:
-# 1. **Format Upgrade**: Converts point clouds to Cloud-Optimized Point Clouds (`.copc.laz`).
-# 2. **CRS Reprojection**: Harmonizes coordinates into Web Mercator (`EPSG:3857`), target EPSG, or `auto-utm-centroid`.
-# 3. **Taxonomic Standardization**: Wipes vendor noise and conforms bare earth (Class 2) and vegetation classes.
-# 4. **Dynamic Sub-Tiling & RAM Safety**: Automatically subdivides dense tiles on `MemoryError` and clamps thread allocations.
-
-# %%
-print(f"> Running: als-finder standardize --workspace {micro_workspace}")
-
-cmd_standardize = [
-    sys.executable, "-m", "als_finder.cli", "standardize",
-    "--workspace", str(micro_workspace)
-]
-res_std = subprocess.run(cmd_standardize, capture_output=True, text=True)
-print(res_std.stdout)
-
-std_copc_files = list(micro_workspace.glob("data/standardized/**/*.copc.laz"))
-print(f"\n✓ Standardized COPC Files: {len(std_copc_files)} file(s)")
-for p in std_copc_files:
-    size_mb = p.stat().st_size / (1024 * 1024)
-    print(f"  {p.relative_to(micro_workspace)} ({size_mb:.2f} MB)")
-
-# %% [markdown]
-# ---
-# ## Step 9: SpatioTemporal Asset Catalogs (Stage 4: `--stac`)
-# 
-# Appending `--stac` generates an OGC-compliant `PySTAC` catalog hierarchy (`catalog/stac/catalog.json`).
-# Each COPC point cloud becomes a searchable STAC Item with exact 3D bounding boxes, acquisition timestamps, and relative asset references.
-
-# %%
-print(f"> Running: als-finder standardize --workspace {micro_workspace} --stac")
-
-cmd_stac = [
-    sys.executable, "-m", "als_finder.cli", "standardize",
-    "--workspace", str(micro_workspace),
-    "--stac"
-]
-subprocess.run(cmd_stac)
-
-stac_root = micro_workspace / "catalog" / "stac" / "catalog.json"
-assert stac_root.exists(), "STAC catalog generation failed!"
-
-# Inspect STAC catalog using PySTAC
-stac_cat = pystac.Catalog.from_file(str(stac_root))
-print(f"\n✓ STAC Catalog ID:          {stac_cat.id}")
-print(f"✓ STAC Catalog Title:       {stac_cat.title}")
-print(f"✓ STAC Catalog Description: {stac_cat.description}")
-
-print("\nIndexed STAC Items:")
-for item in stac_cat.get_all_items():
-    print(f"  • Item ID:          {item.id}")
-    print(f"    Bounding Box:     {item.bbox}")
-    print(f"    Acquisition Date: {item.datetime}")
-    if "data" in item.assets:
-        print(f"    Asset HREF:       {item.assets['data'].href}")
-
-# %% [markdown]
-# ---
-# ## Step 10: Visual QA/QC Quicklooks (Stage 5: `--quicklook`)
-# 
-# Appending `--quicklook` generates 2D preview images using tiered resolution streaming without downloading the entire point cloud:
-# 1. **DEM Hillshade**: Shaded physical relief of the bare earth terrain (Class 2).
-# 2. **Canopy Height Model (CHM)**: Color-relief tree canopy height map computed via `filters.hag_nn`.
-# 3. **HTML Master Index**: Interactive side-by-side preview gallery saved to `catalog/quicklooks_index.html`.
-
-# %%
-print(f"> Running: als-finder standardize --workspace {micro_workspace} --quicklook")
-
-cmd_quicklook = [
-    sys.executable, "-m", "als_finder.cli", "standardize",
-    "--workspace", str(micro_workspace),
-    "--quicklook"
-]
-subprocess.run(cmd_quicklook)
-
-quicklook_pngs = list(micro_workspace.glob("data/quicklooks/**/*.png"))
-print(f"\n✓ Generated Quicklook Images: {len(quicklook_pngs)} image(s)")
-for p in quicklook_pngs:
-    print(f"  • {p.name} ({p.stat().st_size / 1024:.1f} KB)")
-
-# Display preview renders in Python if matplotlib is available
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-
-if quicklook_pngs:
-    fig, axes = plt.subplots(1, min(len(quicklook_pngs), 2), figsize=(14, 6))
-    if not isinstance(axes, (list, tuple)) and len(quicklook_pngs) == 1:
-        axes = [axes]
-    for ax, p in zip(axes, quicklook_pngs[:2]):
-        img = mpimg.imread(str(p))
-        ax.imshow(img)
-        ax.set_title(p.name, fontsize=11, fontweight="bold")
-        ax.axis("off")
-    plt.tight_layout()
-    plt.show()
-
-# %% [markdown]
-# ---
-# ## Step 11: The Mega-Command (End-to-End Execution)
-# 
-# Once you have finalized your search parameters and target `--roi`, you can chain the entire lifecycle—from federated discovery to raw subsetting, format standardization, STAC indexing, and Quicklook generation—into a single uninterrupted command:
-# 
-# ```bash
-# als-finder download \
-#     --roi "-119.9915, 38.9285, -119.9885, 38.9315" \
-#     --name "CA_SierraNevada_5_2022" \
-#     --workspace ./mega_workspace/ \
-#     --execute \
-#     --standardize \
-#     --stac \
-#     --quicklook
-# ```
-
-# %%
-mega_workspace = Path("./mega_demo_workspace").resolve()
-
-print(f'> Running Mega-Command: als-finder download --roi "{micro_roi}" --name "CA_SierraNevada_5_2022" --workspace mega_demo_workspace --execute --standardize --stac --quicklook')
-cmd_mega = [
-    sys.executable, "-m", "als_finder.cli", "download",
-    "--roi", "-119.9915, 38.9285, -119.9885, 38.9315",
-    "--name", "CA_SierraNevada_5_2022",
-    "--workspace", str(mega_workspace),
-    "--execute",
-    "--standardize",
-    "--stac",
-    "--quicklook"
-]
-
-res_mega = subprocess.run(cmd_mega, capture_output=True, text=True)
-print(res_mega.stdout)
-print("✓ Mega-Command completed successfully!")
-
-# %% [markdown]
-# ---
 # ## Summary & Next Steps
 # 
-# You have completed the full `als-finder` discovery, standardization, and indexing workflow:
+# You have completed the core discovery, spatial filtering, and data retrieval workflow:
 # 1. **Federated Discovery**: Queried multi-agency registries with zero upfront data footprint.
 # 2. **Interactive Leaflet Mapping**: Visualized project boundaries and coverage maps.
-# 3. **Controlled Subsetting**: Previewed download arrays and fetched spatial subsets.
-# 4. **Standardization Engine**: Harmonized CRS, ASPRS classes, and created conformed COPC files.
-# 5. **OGC STAC Catalogs**: Indexed point clouds into a standards-compliant metadata hierarchy.
-# 6. **Visual Quicklooks**: Created 2D DEM Hillshades and Canopy Height Models.
-# 7. **End-to-End Automation**: Executed the entire pipeline in a single Mega-Command.
+# 3. **Search Filtering**: Filtered by name, dates, density (QL levels), and providers.
+# 4. **Controlled Subsetting**: Previewed download arrays and fetched raw spatial subsets.
+# 
+# 👉 **Next Step**: Proceed to [Tutorial 02: Point Cloud Normalization & STAC Catalogs](./02_normalization_and_stac.md) to explore SMRF ground classification, HAG normalization, and OGC STAC schema generation!

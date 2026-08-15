@@ -1,0 +1,2 @@
+provider,dataset_id,source_url,target_path,est_size
+USGS_EPT,CA_SierraNevada_5_2022,https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SierraNevada_5_2022/ept.json,"/mnt/c/Users/gears/git/als-finder/tutorials/tiny_subset/data/raw/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/CA_SierraNevada_5_2022_subset.laz|([-13357442.6795, -13357008.7210], [4711384.9798, 4711914.2796])",0

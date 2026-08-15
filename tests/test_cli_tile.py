@@ -49,3 +49,16 @@ def test_cli_fetch_tile_help():
     result = runner.invoke(cli, ["fetch-tile", "--help"])
     assert result.exit_code == 0
     assert "Stream a single spatial core + buffered tile" in result.output
+
+
+def test_stream_single_tile_directory_hive_resolution(sample_workspace: Path, tmp_path: Path):
+    """Test that stream_single_tile auto-resolves directory outputs using Hive partitioning."""
+    from als_finder.core.grid_manager import get_tile_spec
+
+    manifest_path = sample_workspace / "manifest.json"
+    spec = get_tile_spec(manifest_path, tile_id=0, tile_size=500, buffer_size=30)
+    assert "provider=" in spec["hive_path"]
+    assert "dataset=" in spec["hive_path"]
+    assert "tile_0000.laz" in spec["hive_path"]
+    assert "spatial_basename" in spec
+    assert "spatial_hive_path" in spec

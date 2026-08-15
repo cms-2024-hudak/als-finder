@@ -525,11 +525,12 @@ def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path, crs: s
 def stream_single_tile(
     manifest_or_grid_path: Union[str, Path],
     tile_id: int,
-    out_path: Union[str, Path],
+    out_path: Optional[Union[str, Path]] = None,
     tile_size: int = 1200,
     buffer_size: int = 30,
     crs: str = "EPSG:3857",
-    overwrite: bool = False
+    overwrite: bool = False,
+    use_spatial_name: bool = False,
 ) -> Path:
     """
     Streams a single spatial core + buffered tile directly from remote provider endpoints on demand.
@@ -539,24 +540,19 @@ def stream_single_tile(
     Args:
         manifest_or_grid_path (Union[str, Path]): Path to catalog manifest.json, workspace dir, or grid.gpkg.
         tile_id (int): Target zero-based tile index.
-        out_path (Union[str, Path]): Destination path for the generated .laz tile.
+        out_path (Optional[Union[str, Path]]): Destination file or directory path. If a directory
+            (e.g. /scratch or workspace/data), automatically nests output within Hive partition hierarchy.
         tile_size (int): Core metric tile size in meters (default: 1200m).
         buffer_size (int): Overlap buffer size in meters (default: 30m).
         crs (str): Target coordinate reference system (default: EPSG:3857).
         overwrite (bool): Force re-creation if output tile already exists.
+        use_spatial_name (bool): If True, uses metric coordinate-anchored filename.
 
     Returns:
         Path: Path to the generated .laz tile.
     """
     from als_finder.core.grid_manager import get_tile_spec
     from als_finder.providers import get_provider
-
-    target_out = Path(out_path)
-    if target_out.exists() and not overwrite:
-        logger.info(f"Skipping tile_id {tile_id} - {target_out.name} already exists (Idempotency)")
-        return target_out
-
-    target_out.parent.mkdir(parents=True, exist_ok=True)
 
     # 1. Retrieve tile spec via zero-copy SQL query (lazy auto-builds grid if missing!)
     spec = get_tile_spec(manifest_or_grid_path, tile_id, tile_size=tile_size, buffer_size=buffer_size)
@@ -565,6 +561,26 @@ def stream_single_tile(
 
     if not urls:
         raise ValueError(f"No dataset URLs found in manifest/grid for tile_id {tile_id}")
+
+    rel_hive = spec["spatial_hive_path"] if use_spatial_name else spec["hive_path"]
+
+    # 2. Resolve output path: if directory or None, append Hive partition hierarchy
+    if out_path is None:
+        p = Path(manifest_or_grid_path)
+        ws_dir = p.parent.parent if p.parent.name == "catalog" else (p if p.is_dir() else p.parent)
+        target_out = ws_dir / "data" / rel_hive
+    else:
+        raw_out = Path(out_path)
+        if raw_out.is_dir() or raw_out.suffix.lower() != ".laz":
+            target_out = raw_out / rel_hive
+        else:
+            target_out = raw_out
+
+    if target_out.exists() and not overwrite:
+        logger.info(f"Skipping tile_id {tile_id} - {target_out.name} already exists (Idempotency)")
+        return target_out
+
+    target_out.parent.mkdir(parents=True, exist_ok=True)
 
     pipeline = []
 

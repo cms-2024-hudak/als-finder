@@ -1031,12 +1031,14 @@ def clean_cmd(workspace):
 @cli.command('fetch-tile')
 @click.option('--manifest', required=True, type=click.Path(exists=True), help='Path to catalog manifest.json or grid.gpkg')
 @click.option('--tile-id', required=True, type=int, help='Zero-based tile ID to stream')
-@click.option('--output', required=True, type=click.Path(), help='Target output .laz file path')
+@click.option('--output', default=None, type=click.Path(), help='Target output .laz file path or directory (auto-Hive partitioned if directory or omitted)')
 @click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
 @click.option('--crs', default='EPSG:3857', help='Target CRS (default EPSG:3857)')
+@click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming (e.g. tile_E0759000_N4313000_500m.laz)')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def fetch_tile_cmd(manifest, tile_id, output, buffer_size, crs, overwrite, json_output):
+def fetch_tile_cmd(manifest, tile_id, output, buffer_size, tile_size, crs, spatial_name, overwrite, json_output):
     """Stream a single spatial core + buffered tile on demand."""
     try:
         from als_finder.core.standardization import stream_single_tile
@@ -1044,9 +1046,11 @@ def fetch_tile_cmd(manifest, tile_id, output, buffer_size, crs, overwrite, json_
             manifest_or_grid_path=manifest,
             tile_id=tile_id,
             out_path=output,
+            tile_size=tile_size,
             buffer_size=buffer_size,
             crs=crs,
             overwrite=overwrite,
+            use_spatial_name=spatial_name,
         )
         payload = {
             "status": "success",
