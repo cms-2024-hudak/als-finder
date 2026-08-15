@@ -28,13 +28,19 @@ Welcome to **ALS-Finder**! This comprehensive tutorial guides you through the fu
 
 ## 1. Environment & Workspace Setup
 
-We import required scientific spatial libraries, verify that `als_finder` is installed, and set up an isolated workspace directory.
+We verify our environment, initialize `als_finder` (which configures `PROJ_DATA` and `GDAL_DATA` coordinate system paths), and configure an isolated workspace directory.
 
+### Terminal Command:
 ```bash
 als-finder --version
 ```
 
-### Python Setup:
+**Output:**
+```text
+als-finder, version 0.2.0
+```
+
+### Python Interactive Setup:
 ```python
 import os
 import sys
@@ -72,8 +78,14 @@ print(f"✓ Workspace Root:     {workspace_dir}")
 `als-finder` bundles a sample vector polygon boundary: the **Lake Tahoe Basin Management Unit (LTBMU)**.
 We extract it to our working directory using `get-example-roi` and visualize it on an interactive Leaflet basemap.
 
+### Terminal Command:
 ```bash
 als-finder get-example-roi
+```
+
+**Output:**
+```text
+Success! Example ROI extracted to: ./ltbmu_boundary.gpkg
 ```
 
 ### Python Inspection & Leaflet Mapping:
@@ -107,13 +119,14 @@ The easiest way to search for LiDAR is to provide an Area of Interest (`--roi`) 
 
 `als-finder` queries all remote registries and **deduplicates identical datasets** (by comparing case-insensitive dataset names and unique survey identifiers across providers, so that the same federal survey indexed in both USGS 3DEP and OpenTopography is not duplicated, while fully preserving multi-temporal surveys that spatially overlap the same watershed).
 
+### Terminal Command:
 ```bash
 als-finder search \
     --roi ./ltbmu_boundary.gpkg \
     --workspace ./demo_workspace/
 ```
 
-**Console Output:**
+**Rendered Console Output:**
 ```text
 =================================================================================================================
  LiDAR Data Search Results 
@@ -143,7 +156,7 @@ als-finder search \
 =================================================================================================================
 ```
 
-### Python Execution:
+### Python Interactive Execution:
 ```python
 print("Executing Base Search across USGS 3DEP, NOAA Coastal, and OpenTopography...")
 
@@ -173,6 +186,7 @@ The search stage generates three primary tracking documents inside `catalog/`:
 - `catalog.gpkg`: Vector layer with polygon boundaries of each acquisition.
 - `catalog.csv`: Summary table for quick tabular inspection.
 
+### Python Interactive Inspection & Leaflet Overlay:
 ```python
 # 1. Tabular Summary Table
 catalog_csv = workspace_dir / "catalog" / "catalog.csv"
@@ -216,18 +230,19 @@ display(coverage_map)
 
 Filter by exact name, wildcard string (`*`), or regular expression (prefixed with `~`):
 
+#### Terminal Commands:
 ```bash
-# Exact Name
+# Example A: Exact Name
 als-finder search --roi ./ltbmu_boundary.gpkg --name "CA_SierraNevada_5_2022" --workspace ./demo_workspace/
 
-# Wildcard String
+# Example B: Wildcard String
 als-finder search --roi ./ltbmu_boundary.gpkg --name "*Tahoe*" --workspace ./demo_workspace/
 
-# Python Regular Expression
+# Example C: Python Regular Expression
 als-finder search --roi ./ltbmu_boundary.gpkg --name "~^CA_Sierra.*" --workspace ./demo_workspace/
 ```
 
-### Python Execution:
+#### Python Interactive Execution:
 ```python
 # Example A: Exact Name
 print("--- Filtering by Exact Name ---")
@@ -260,10 +275,13 @@ cmd_name_regex = [
 print(subprocess.run(cmd_name_regex, capture_output=True, text=True).stdout)
 ```
 
+---
+
 ### 5.2 Filtering by Chronology (`--date`)
 
 Search within specific historical windows or isolate datasets collected after a specific date using the slash syntax:
 
+#### Terminal Commands:
 ```bash
 # Open-ended Start Date (Acquisitions >= 2020-01-01)
 als-finder search --roi ./ltbmu_boundary.gpkg --date 2020-01-01/ --workspace ./demo_workspace/
@@ -272,7 +290,7 @@ als-finder search --roi ./ltbmu_boundary.gpkg --date 2020-01-01/ --workspace ./d
 als-finder search --roi ./ltbmu_boundary.gpkg --date 2015-01-01/2019-12-31 --workspace ./demo_workspace/
 ```
 
-### Python Execution:
+#### Python Interactive Execution:
 ```python
 # Example A: Open-ended Start Date (Acquisitions >= 2020-01-01)
 print("--- Filtering by Start Date (2020-01-01/) ---")
@@ -295,10 +313,13 @@ cmd_date_range = [
 print(subprocess.run(cmd_date_range, capture_output=True, text=True).stdout)
 ```
 
+---
+
 ### 5.3 Filtering by Point Density & Quality Level (`--density`)
 
 `als-finder` supports both USGS 3DEP Topographic Quality Levels (`QL0` through `QL3`) or explicit numeric ranges (`pts/m2`).
 
+#### Terminal Commands:
 ```bash
 # USGS QL1 Quality Level (>= 8.0 pts/m2)
 als-finder search --roi ./ltbmu_boundary.gpkg --density QL1 --workspace ./demo_workspace/
@@ -307,7 +328,7 @@ als-finder search --roi ./ltbmu_boundary.gpkg --density QL1 --workspace ./demo_w
 als-finder search --roi ./ltbmu_boundary.gpkg --density 2/10 --workspace ./demo_workspace/
 ```
 
-### Python Execution:
+#### Python Interactive Execution:
 ```python
 # Example A: USGS QL1 Quality Level (>= 8.0 pts/m2)
 print("--- Filtering by Quality Level (QL1) ---")
@@ -330,15 +351,18 @@ cmd_density_range = [
 print(subprocess.run(cmd_density_range, capture_output=True, text=True).stdout)
 ```
 
+---
+
 ### 5.4 Filtering by Specific Provider (`--provider`)
 
 Supply specific provider flags (`USGS_EPT`, `NOAA_STAC`, or `OpenTopography`):
 
+#### Terminal Command:
 ```bash
 als-finder search --roi ./ltbmu_boundary.gpkg --provider USGS_EPT --workspace ./demo_workspace/
 ```
 
-### Python Execution:
+#### Python Interactive Execution:
 ```python
 print("--- Filtering by Provider (USGS_EPT only) ---")
 cmd_provider = [
@@ -359,11 +383,12 @@ The generated `manifest.json` logs your original search parameters. To quickly c
 > [!TIP]
 > `als-finder` automatically makes a timestamped backup of your old `manifest.json`, `catalog.csv`, and `catalog.gpkg` before updating, ensuring old references are never lost.
 
+### Terminal Command:
 ```bash
 als-finder update --workspace ./demo_workspace/
 ```
 
-### Python Execution:
+### Python Interactive Execution:
 ```python
 print("Testing atomic catalog update...")
 cmd_update = [
@@ -383,6 +408,7 @@ To prevent accidentally downloading terabytes of point cloud data and to support
 2. **Physical Execution**: Passing `--execute` streams/downloads the conformed files into a strict `Hive-Partitioned` directory hierarchy (`data/raw/provider=*/dataset=*/`).
 3. **Dynamic EPT Spatial Subsetting**: When querying cloud-native EPT sources with a spatial `--roi`, `als-finder` streams only points intersecting your boundary, creating a single conformed spatial subset file (`[dataset]_subset.laz`).
 
+### Terminal Commands:
 ```bash
 # Dry-run preview
 als-finder download --roi "-119.9915, 38.9285, -119.9885, 38.9315" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/
@@ -391,7 +417,7 @@ als-finder download --roi "-119.9915, 38.9285, -119.9885, 38.9315" --name "CA_Si
 als-finder download --roi "-119.9915, 38.9285, -119.9885, 38.9315" --name "CA_SierraNevada_5_2022" --workspace ./tiny_subset/ --execute
 ```
 
-### Python Execution:
+### Python Interactive Execution:
 ```python
 # Define a small micro-bounding box near Lake Tahoe for safe, rapid physical download testing
 micro_roi = "-119.9915, 38.9285, -119.9885, 38.9315"
@@ -451,11 +477,12 @@ Raw LiDAR point clouds from different federal programs suffer from:
 3. **Taxonomic Standardization**: Wipes vendor noise and conforms bare earth (Class 2) and vegetation classes.
 4. **Dynamic Sub-Tiling & RAM Safety**: Automatically subdivides dense tiles on `MemoryError` and clamps thread allocations.
 
+### Terminal Command:
 ```bash
 als-finder standardize --workspace ./tiny_subset/
 ```
 
-### Python Execution:
+### Python Interactive Execution:
 ```python
 print("Executing Standardization Engine...")
 
@@ -480,11 +507,12 @@ for p in std_copc_files:
 Appending `--stac` generates an OGC-compliant `PySTAC` catalog hierarchy (`catalog/stac/catalog.json`).
 Each COPC point cloud becomes a searchable STAC Item with exact 3D bounding boxes, acquisition timestamps, and relative asset references.
 
+### Terminal Command:
 ```bash
 als-finder standardize --workspace ./tiny_subset/ --stac
 ```
 
-### Python Query:
+### Python Interactive Query:
 ```python
 print("Generating OGC STAC Catalog Hierarchy...")
 
@@ -522,11 +550,12 @@ Appending `--quicklook` generates 2D preview images using tiered resolution stre
 2. **Canopy Height Model (CHM)**: Color-relief tree canopy height map computed via `filters.hag_nn`.
 3. **HTML Master Index**: Interactive side-by-side preview gallery saved to `catalog/quicklooks_index.html`.
 
+### Terminal Command:
 ```bash
 als-finder standardize --workspace ./tiny_subset/ --quicklook
 ```
 
-### Python Execution:
+### Python Interactive Execution:
 ```python
 print("Generating QA/QC Visual Quicklooks...")
 
@@ -565,6 +594,7 @@ if quicklook_pngs:
 
 Once you have finalized your search parameters and target `--roi`, you can chain the entire lifecycle—from federated discovery to raw subsetting, format standardization, STAC indexing, and Quicklook generation—into a single uninterrupted command:
 
+### Terminal Command:
 ```bash
 als-finder download \
     --roi "-119.9915, 38.9285, -119.9885, 38.9315" \
@@ -576,7 +606,7 @@ als-finder download \
     --quicklook
 ```
 
-### Python Execution:
+### Python Interactive Execution:
 ```python
 mega_workspace = Path("./mega_demo_workspace").resolve()
 
