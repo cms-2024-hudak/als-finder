@@ -20,6 +20,10 @@ print(result.stdout)
 
 # %%
 import geopandas as gpd
+try:
+    from IPython.display import display
+except ImportError:
+    display = print
 
 roi_gdf = gpd.read_file("ltbmu_boundary.gpkg")
 print(f"ROI CRS: {roi_gdf.crs}")
