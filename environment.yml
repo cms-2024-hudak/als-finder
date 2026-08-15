@@ -1,21 +1,30 @@
 name: als-finder
 channels:
   - conda-forge
-  - defaults
 dependencies:
-  - python>=3.8
+  - python=3.11
+  - gdal
+  - pdal
+  - python-pdal
   - geopandas
   - shapely
   - pyproj
   - pyogrio
-  - pdal
-  - python-pdal
+  - fiona
+  - laspy
+  - pystac
+  - stac-validator
   - requests
+  - boto3
   - click
   - python-dotenv
   - tqdm
+  - psutil
+  - pyyaml
+  - matplotlib
+  - ipykernel
   - pytest
   - setuptools_scm
   - pip
   - pip:
-    - -e .
+      - -e .

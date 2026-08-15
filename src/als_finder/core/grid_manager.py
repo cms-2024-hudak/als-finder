@@ -170,7 +170,9 @@ def export_grid_manifest(
     grid_gdf: gpd.GeoDataFrame,
     manifest_data: Dict[str, Any],
     output_dir: Path,
-    batch_size: int = 5000
+    batch_size: int = 5000,
+    tile_size: Optional[float] = None,
+    buffer_size: Optional[float] = None
 ) -> Tuple[Path, Path]:
     """
     Exports grid tile index to SQLite/GeoPackage (grid.gpkg) using chunked batch writes
@@ -181,12 +183,20 @@ def export_grid_manifest(
         manifest_data (Dict[str, Any]): Existing catalog manifest dictionary.
         output_dir (Path): Output catalog directory path.
         batch_size (int): Batch size for memory-safe chunked disk writes (default: 5000).
+        tile_size (Optional[float]): Metric tile dimension (meters).
+        buffer_size (Optional[float]): Overlap buffer size (meters).
 
     Returns:
         Tuple[Path, Path]: (grid_gpkg_path, manifest_json_path)
     """
     if grid_gdf is None or grid_gdf.empty:
         raise GridError("Grid GeoDataFrame is empty or None.")
+
+    # Infer from GeoDataFrame attrs if not explicitly passed
+    if tile_size is None and hasattr(grid_gdf, "attrs") and "tile_size" in grid_gdf.attrs:
+        tile_size = grid_gdf.attrs["tile_size"]
+    if buffer_size is None and hasattr(grid_gdf, "attrs") and "buffer_size" in grid_gdf.attrs:
+        buffer_size = grid_gdf.attrs["buffer_size"]
 
     output_dir.mkdir(parents=True, exist_ok=True)
     gpkg_path = output_dir / "grid.gpkg"
