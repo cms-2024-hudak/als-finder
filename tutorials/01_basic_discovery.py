@@ -93,7 +93,8 @@ display(roi_map)
 # ## Step 3: Base Federated Search (All Providers & Dates)
 # 
 # The easiest way to search for LiDAR is to provide an Area of Interest (`--roi`) and a target `--workspace`.
-# `als-finder` queries all remote registries, deduplicates overlapping datasets, and generates a clean tracking directory automatically without downloading any point clouds.
+# 
+# `als-finder` queries all remote registries and **deduplicates identical datasets** (by comparing case-insensitive dataset names and unique survey identifiers across providers, so that the same federal survey indexed in both USGS 3DEP and OpenTopography is not duplicated, while fully preserving multi-temporal surveys that spatially overlap the same watershed).
 
 # %%
 print("Executing Base Search across USGS 3DEP, NOAA Coastal, and OpenTopography...")
@@ -128,7 +129,7 @@ print(f"✓ Successfully indexed {len(datasets)} dataset(s) across federated cat
 catalog_csv = workspace_dir / "catalog" / "catalog.csv"
 catalog_df = pd.read_csv(catalog_csv)
 print("Discovered LiDAR Acquisitions (Top 5):")
-display(catalog_df[["Provider", "Name", "Date", "PointDensity", "Area_km2", "Estimated_GB"]].head())
+display(catalog_df[["Provider", "Name", "Date", "PointDensity", "AreaSqKm", "SizeMB"]].head())
 
 # 2. Interactive Leaflet Multi-Layer Map
 catalog_gpkg = workspace_dir / "catalog" / "catalog.gpkg"
