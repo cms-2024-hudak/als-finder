@@ -68,7 +68,7 @@ print(f"✓ Workspace Root:     {workspace_dir}")
 # We extract it to our working directory using `get-example-roi` and visualize it on an interactive Leaflet basemap.
 
 # %%
-print("Extracting sample Lake Tahoe Basin ROI boundary...")
+print("> Running: als-finder get-example-roi")
 result = subprocess.run([sys.executable, "-m", "als_finder.cli", "get-example-roi"], capture_output=True, text=True)
 print(result.stdout.strip())
 
@@ -97,7 +97,7 @@ display(roi_map)
 # `als-finder` queries all remote registries and **deduplicates identical datasets** (by comparing case-insensitive dataset names and unique survey identifiers across providers, so that the same federal survey indexed in both USGS 3DEP and OpenTopography is not duplicated, while fully preserving multi-temporal surveys that spatially overlap the same watershed).
 
 # %%
-print("Executing Base Search across USGS 3DEP, NOAA Coastal, and OpenTopography...")
+print(f"> Running: als-finder search --roi {roi_path} --workspace {workspace_dir}")
 
 cmd_base = [
     sys.executable, "-m", "als_finder.cli", "search",
@@ -169,7 +169,7 @@ display(coverage_map)
 
 # %%
 # Example A: Exact Name
-print("--- Filtering by Exact Name ---")
+print('> Running: als-finder search --roi ltbmu_boundary.gpkg --name "CA_SierraNevada_5_2022" --workspace demo_workspace')
 cmd_name_exact = [
     sys.executable, "-m", "als_finder.cli", "search",
     "--roi", str(roi_path),
@@ -179,7 +179,7 @@ cmd_name_exact = [
 print(subprocess.run(cmd_name_exact, capture_output=True, text=True).stdout)
 
 # Example B: Wildcard
-print("--- Filtering by Wildcard (*Tahoe*) ---")
+print('> Running: als-finder search --roi ltbmu_boundary.gpkg --name "*Tahoe*" --workspace demo_workspace')
 cmd_name_wildcard = [
     sys.executable, "-m", "als_finder.cli", "search",
     "--roi", str(roi_path),
@@ -189,7 +189,7 @@ cmd_name_wildcard = [
 print(subprocess.run(cmd_name_wildcard, capture_output=True, text=True).stdout)
 
 # Example C: Python Regular Expression (~^CA_Sierra.*)
-print("--- Filtering by Regex (~^CA_Sierra.*) ---")
+print('> Running: als-finder search --roi ltbmu_boundary.gpkg --name "~^CA_Sierra.*" --workspace demo_workspace')
 cmd_name_regex = [
     sys.executable, "-m", "als_finder.cli", "search",
     "--roi", str(roi_path),
@@ -205,7 +205,7 @@ print(subprocess.run(cmd_name_regex, capture_output=True, text=True).stdout)
 
 # %%
 # Example A: Open-ended Start Date (Acquisitions >= 2020-01-01)
-print("--- Filtering by Start Date (2020-01-01/) ---")
+print('> Running: als-finder search --roi ltbmu_boundary.gpkg --date 2020-01-01/ --workspace demo_workspace')
 cmd_date_open = [
     sys.executable, "-m", "als_finder.cli", "search",
     "--roi", str(roi_path),
@@ -215,7 +215,7 @@ cmd_date_open = [
 print(subprocess.run(cmd_date_open, capture_output=True, text=True).stdout)
 
 # Example B: Bounded Historical Window (2015-01-01 to 2019-12-31)
-print("--- Filtering by Date Range (2015-01-01 to 2019-12-31) ---")
+print('> Running: als-finder search --roi ltbmu_boundary.gpkg --date 2015-01-01/2019-12-31 --workspace demo_workspace')
 cmd_date_range = [
     sys.executable, "-m", "als_finder.cli", "search",
     "--roi", str(roi_path),
@@ -231,7 +231,7 @@ print(subprocess.run(cmd_date_range, capture_output=True, text=True).stdout)
 
 # %%
 # Example A: USGS QL1 Quality Level (>= 8.0 pts/m2)
-print("--- Filtering by Quality Level (QL1) ---")
+print('> Running: als-finder search --roi ltbmu_boundary.gpkg --density QL1 --workspace demo_workspace')
 cmd_density_ql1 = [
     sys.executable, "-m", "als_finder.cli", "search",
     "--roi", str(roi_path),
@@ -241,7 +241,7 @@ cmd_density_ql1 = [
 print(subprocess.run(cmd_density_ql1, capture_output=True, text=True).stdout)
 
 # Example B: Numeric Density Range (2.0 to 10.0 pts/m2)
-print("--- Filtering by Numeric Density Range (2/10 pts/m2) ---")
+print('> Running: als-finder search --roi ltbmu_boundary.gpkg --density 2/10 --workspace demo_workspace')
 cmd_density_range = [
     sys.executable, "-m", "als_finder.cli", "search",
     "--roi", str(roi_path),
@@ -256,7 +256,7 @@ print(subprocess.run(cmd_density_range, capture_output=True, text=True).stdout)
 # Supply specific provider flags (`USGS_EPT`, `NOAA_STAC`, or `OpenTopography`):
 
 # %%
-print("--- Filtering by Provider (USGS_EPT only) ---")
+print('> Running: als-finder search --roi ltbmu_boundary.gpkg --provider USGS_EPT --workspace demo_workspace')
 cmd_provider = [
     sys.executable, "-m", "als_finder.cli", "search",
     "--roi", str(roi_path),
@@ -274,7 +274,7 @@ print(subprocess.run(cmd_provider, capture_output=True, text=True).stdout)
 # *`als-finder` automatically makes a timestamped backup of your old `manifest.json`, `catalog.csv`, and `catalog.gpkg` before updating, ensuring old references are never lost.*
 
 # %%
-print("Testing atomic catalog update...")
+print(f"> Running: als-finder update --workspace {workspace_dir}")
 cmd_update = [
     sys.executable, "-m", "als_finder.cli", "update",
     "--workspace", str(workspace_dir)
@@ -298,7 +298,7 @@ micro_workspace = Path("./tiny_subset").resolve()
 micro_workspace.mkdir(parents=True, exist_ok=True)
 
 # Step 7.1: Dry-Run Search and Fetch Matrix Generation
-print("--- 7.1 Dry-Run Fetch Array Generation ---")
+print(f'> Running: als-finder search --roi "{micro_roi}" --name "CA_SierraNevada_5_2022" --workspace tiny_subset')
 cmd_search_micro = [
     sys.executable, "-m", "als_finder.cli", "search",
     "--roi", micro_roi,
@@ -307,6 +307,7 @@ cmd_search_micro = [
 ]
 subprocess.run(cmd_search_micro)
 
+print(f'> Running: als-finder download --roi "{micro_roi}" --name "CA_SierraNevada_5_2022" --workspace tiny_subset')
 cmd_dry_run = [
     sys.executable, "-m", "als_finder.cli", "download",
     "--roi", micro_roi,
@@ -317,7 +318,7 @@ res_dry = subprocess.run(cmd_dry_run, capture_output=True, text=True)
 print(res_dry.stdout)
 
 # Step 7.2: Physical Download Execution
-print("--- 7.2 Physical Download Execution (--execute) ---")
+print(f'> Running: als-finder download --roi "{micro_roi}" --name "CA_SierraNevada_5_2022" --workspace tiny_subset --execute')
 cmd_exec_download = [
     sys.executable, "-m", "als_finder.cli", "download",
     "--roi", micro_roi,
@@ -350,7 +351,7 @@ for p in raw_laz_files:
 # 4. **Dynamic Sub-Tiling & RAM Safety**: Automatically subdivides dense tiles on `MemoryError` and clamps thread allocations.
 
 # %%
-print("Executing Standardization Engine...")
+print(f"> Running: als-finder standardize --workspace {micro_workspace}")
 
 cmd_standardize = [
     sys.executable, "-m", "als_finder.cli", "standardize",
@@ -373,7 +374,7 @@ for p in std_copc_files:
 # Each COPC point cloud becomes a searchable STAC Item with exact 3D bounding boxes, acquisition timestamps, and relative asset references.
 
 # %%
-print("Generating OGC STAC Catalog Hierarchy...")
+print(f"> Running: als-finder standardize --workspace {micro_workspace} --stac")
 
 cmd_stac = [
     sys.executable, "-m", "als_finder.cli", "standardize",
@@ -409,7 +410,7 @@ for item in stac_cat.get_all_items():
 # 3. **HTML Master Index**: Interactive side-by-side preview gallery saved to `catalog/quicklooks_index.html`.
 
 # %%
-print("Generating QA/QC Visual Quicklooks...")
+print(f"> Running: als-finder standardize --workspace {micro_workspace} --quicklook")
 
 cmd_quicklook = [
     sys.executable, "-m", "als_finder.cli", "standardize",
@@ -459,6 +460,7 @@ if quicklook_pngs:
 # %%
 mega_workspace = Path("./mega_demo_workspace").resolve()
 
+print(f'> Running Mega-Command: als-finder download --roi "{micro_roi}" --name "CA_SierraNevada_5_2022" --workspace mega_demo_workspace --execute --standardize --stac --quicklook')
 cmd_mega = [
     sys.executable, "-m", "als_finder.cli", "download",
     "--roi", "-119.9915, 38.9285, -119.9885, 38.9315",
@@ -470,7 +472,6 @@ cmd_mega = [
     "--quicklook"
 ]
 
-print("Executing Mega-Command end-to-end...")
 res_mega = subprocess.run(cmd_mega, capture_output=True, text=True)
 print(res_mega.stdout)
 print("✓ Mega-Command completed successfully!")
