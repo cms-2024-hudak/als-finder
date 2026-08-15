@@ -1,23 +1,35 @@
 # %% [markdown]
-# # Tutorial 01: Big-Data LiDAR Discovery, Spatial Tiling & Single-Tile Streaming
+# # Tutorial 01: Complete ALS-Finder Discovery, Standardization, STAC & Quicklook Pipeline
 # 
-# Welcome to **ALS-Finder**! This interactive tutorial demonstrates how to search, grid, and stream massive airborne LiDAR point cloud datasets on-demand without downloading gigabytes of unneeded raw files upfront.
+# Welcome to **ALS-Finder**! This comprehensive tutorial walks you through the entire end-to-end LiDAR lifecycle:
+# 1. **Federated Discovery**: Query remote cloud point cloud catalogs (**USGS 3DEP EPT**, **NOAA Coastal STAC**, and **OpenTopography**) across flexible spatial, temporal, and point density filters with zero upfront point cloud downloads.
+# 2. **Interactive Leaflet Mapping**: Visualize boundaries, query areas of interest, and overlay discovered LiDAR project footprints with interactive layer controls and tooltips.
+# 3. **Dry-Run & Safe Subsetting**: Preview fetch matrices (`fetch_array.csv`) before downloading or streaming tightly cropped cloud subsets directly from remote servers.
+# 4. **Standardization & Normalization**: Apply automated SMRF ground classification, compute Height Above Ground (HAG), harmonize coordinate reference systems, and conform ASPRS taxonomy into Cloud-Optimized Point Clouds (`.copc.laz`).
+# 5. **OGC STAC Indexing**: Generate standards-compliant SpatioTemporal Asset Catalogs (`catalog/stac/catalog.json`) with relative links and validate with `pystac`.
+# 6. **Visual QA/QC Quicklooks**: Render 2D DEM Hillshade and Canopy Height Model (CHM) preview PNGs to inspect data quality in seconds.
+# 7. **The Mega-Command**: Execute the entire multi-stage pipeline in a single uninterrupted command.
 # 
-# ### 🌟 Key Concepts & Architectural Components
+# ---
 # 
-# | Concept | Description | Underlying Module |
-# | :--- | :--- | :--- |
-# | **`workspace_dir`** | Isolated root directory containing catalog metadata, grids, and outputs | Filesystem path |
-# | **`manifest.json`** | Catalog database indexing federated remote cloud endpoints (USGS, NOAA, OpenTopography) | `als_finder.cli search` |
-# | **`grid.gpkg`** | Spatial index dividing ROI into uniform metric core tiles + edge overlap buffers | `als_finder.core.grid_manager` |
-# | **`get_tile_spec()`** | Zero-copy query to retrieve single-tile bounds, crop strings, and Hive paths | `als_finder.core.grid_manager` |
-# | **`stream_single_tile()`** | On-demand HTTP streaming of a single buffered tile with SMRF and HAG normalization | `als_finder.core.standardization` |
+# ### 🌟 Architectural Overview & Core Workspace Components
+# 
+# | Workspace Path | Format | Description | Underlying Engine |
+# | :--- | :--- | :--- | :--- |
+# | `catalog/manifest.json` | JSON | Master registry tracking federated endpoints, bounding boxes, and project metadata | `als_finder.cli search` |
+# | `catalog/catalog.gpkg` | GeoPackage | Vector polygon boundaries representing discovered LiDAR project footprints | `als_finder.cli search` |
+# | `catalog/catalog.csv` | CSV | Human-readable tabular summary of discovered projects, dates, and point densities | `als_finder.cli search` |
+# | `catalog/fetch_array.csv`| CSV | Dry-run matrix planning physical tile URLs, download targets, and estimated sizes | `als_finder.cli download` |
+# | `data/raw/` | LAS / LAZ | Unconformed, vendor-specific raw point clouds organized in Hive hierarchy | `als_finder.cli download --execute` |
+# | `data/standardized/` | COPC LAZ | Analysis-ready, taxonomically uniform, HAG-normalized Cloud Optimized Point Clouds | `als_finder.cli standardize` |
+# | `catalog/stac/` | STAC JSON | OGC-compliant SpatioTemporal Asset Catalog searchable hierarchy | `als_finder.cli standardize --stac` |
+# | `data/quicklooks/` | PNG | 2D DEM Hillshade and Canopy Height Model (CHM) color-relief preview images | `als_finder.cli standardize --quicklook` |
 
 # %% [markdown]
 # ---
-# ## Step 1: Environment & Workspace Initialization
+# ## Step 1: Environment & Workspace Setup
 # 
-# We import required libraries, verify that `als_finder` is accessible, and configure an isolated workspace directory.
+# We import required scientific spatial libraries, verify that `als_finder` is installed, and set up an isolated workspace folder.
 
 # %%
 import os
@@ -29,6 +41,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 import folium
+import pystac
 from shapely.geometry import box
 
 try:
@@ -36,44 +49,39 @@ try:
 except ImportError:
     display = print
 
-# Import als_finder to auto-configure PROJ_DATA and GDAL_DATA paths
+# Import als_finder to auto-configure PROJ_DATA and GDAL_DATA coordinate system paths
 import als_finder
-from als_finder.core.grid_manager import (
-    build_workspace_grid,
-    get_tile_spec,
-    create_tile_grid_index,
-)
-from als_finder.core.standardization import stream_single_tile
 
-# Setup demo workspace directory
+# Set up dedicated workspace for this tutorial
 workspace_dir = Path("./demo_workspace").resolve()
 workspace_dir.mkdir(parents=True, exist_ok=True)
 
 print(f"✓ Python Interpreter: {sys.executable}")
 print(f"✓ ALS-Finder Version: {als_finder.__version__}")
-print(f"✓ Workspace Directory: {workspace_dir}")
+print(f"✓ Workspace Root:     {workspace_dir}")
 
 # %% [markdown]
 # ---
 # ## Step 2: Extract & Inspect Region of Interest (ROI) with Leaflet
 # 
-# `als-finder` bundles a sample vector dataset: the **Lake Tahoe Basin Management Unit (LTBMU)** boundary.
-# We extract it using `get-example-roi` and visualize it on an interactive Leaflet basemap.
+# `als-finder` bundles a sample vector polygon boundary: the **Lake Tahoe Basin Management Unit (LTBMU)**.
+# We extract it to our working directory using `get-example-roi` and visualize it on an interactive Leaflet basemap.
 
 # %%
-print("Extracting sample Lake Tahoe ROI...")
+print("Extracting sample Lake Tahoe Basin ROI boundary...")
 result = subprocess.run([sys.executable, "-m", "als_finder.cli", "get-example-roi"], capture_output=True, text=True)
 print(result.stdout.strip())
 
 roi_path = Path("ltbmu_boundary.gpkg")
 roi_gdf = gpd.read_file(roi_path)
+
 print(f"\n✓ ROI Coordinate Reference System: {roi_gdf.crs}")
-print(f"✓ ROI Total Bounds (WGS84): {roi_gdf.total_bounds}")
+print(f"✓ ROI Bounds (WGS84 minx, miny, maxx, maxy): {roi_gdf.total_bounds}")
 
 # Display interactive Leaflet Map of the ROI
 roi_map = roi_gdf.explore(
     style_kwds={"fillColor": "#3388ff", "fillOpacity": 0.2, "color": "#0033aa", "weight": 2.5},
-    name="Lake Tahoe Basin ROI",
+    name="Lake Tahoe Basin ROI Boundary",
     tooltip=False,
     popup=True
 )
@@ -82,56 +90,54 @@ display(roi_map)
 
 # %% [markdown]
 # ---
-# ## Step 3: Search Remote LiDAR Catalogs (Zero Point Cloud Download)
+# ## Step 3: Base Federated Search (All Providers & Dates)
 # 
-# We query federated providers (**USGS 3DEP EPT** and **NOAA Coastal**) across the Lake Tahoe ROI.
-# This queries cloud metadata and creates `catalog/manifest.json`, `catalog/catalog.gpkg`, and `catalog/catalog.csv` without downloading point clouds.
+# The easiest way to search for LiDAR is to provide an Area of Interest (`--roi`) and a target `--workspace`.
+# `als-finder` queries all remote registries, deduplicates overlapping datasets, and generates a clean tracking directory automatically without downloading any point clouds.
 
 # %%
-print("Searching federated catalogs (USGS 3DEP + NOAA Coastal)...")
+print("Executing Base Search across USGS 3DEP, NOAA Coastal, and OpenTopography...")
 
-search_cmd = [
+cmd_base = [
     sys.executable, "-m", "als_finder.cli", "search",
     "--roi", str(roi_path),
-    "--density", "QL1",
-    "--workspace", str(workspace_dir),
-    "--provider", "USGS_EPT",
-    "--provider", "NOAA_STAC"
+    "--workspace", str(workspace_dir)
 ]
 
-res = subprocess.run(search_cmd, capture_output=True, text=True)
+res = subprocess.run(cmd_base, capture_output=True, text=True)
 print(res.stdout)
-if res.stderr:
-    print("Logs:", res.stderr)
 
 manifest_path = workspace_dir / "catalog" / "manifest.json"
-assert manifest_path.exists(), "Search stage failed to produce manifest.json!"
+assert manifest_path.exists(), "Search failed to produce manifest.json!"
 
 with open(manifest_path) as f:
     datasets = json.load(f)
-print(f"✓ Successfully indexed {len(datasets)} dataset(s) in manifest.json!")
+print(f"✓ Successfully indexed {len(datasets)} dataset(s) across federated catalogs!")
 
 # %% [markdown]
 # ---
-# ## Step 4: Explore Discovered Acquisitions & Interactive Leaflet Overlay
+# ## Step 4: Explore Catalog Metadata & Interactive Leaflet Overlay
 # 
-# We inspect the tabular metadata summary and overlay the discovered acquisition footprints onto our ROI in Leaflet.
+# The search stage generates three primary tracking documents inside `catalog/`:
+# - `manifest.json`: Full master metadata database.
+# - `catalog.gpkg`: Vector layer with polygon boundaries of each acquisition.
+# - `catalog.csv`: Summary table for quick tabular inspection.
 
 # %%
-# 1. Inspect Tabular Catalog Summary
+# 1. Tabular Summary Table
 catalog_csv = workspace_dir / "catalog" / "catalog.csv"
 catalog_df = pd.read_csv(catalog_csv)
-print("Top Discovered LiDAR Acquisitions:")
-display(catalog_df[["Provider", "Name", "Date", "PointDensity"]].head(6))
+print("Discovered LiDAR Acquisitions (Top 5):")
+display(catalog_df[["Provider", "Name", "Date", "PointDensity", "Area_km2", "Estimated_GB"]].head())
 
 # 2. Interactive Leaflet Multi-Layer Map
 catalog_gpkg = workspace_dir / "catalog" / "catalog.gpkg"
 catalog_gdf = gpd.read_file(catalog_gpkg)
 
-# Base Leaflet map centered on ROI
+# Base Leaflet map centered on the ROI
 coverage_map = roi_gdf.explore(
     style_kwds={"fillColor": "none", "color": "#000000", "weight": 3, "dashArray": "5, 5"},
-    name="ROI (Tahoe Basin Boundary)",
+    name="ROI (Lake Tahoe Basin Boundary)",
     tooltip=False,
     popup=True
 )
@@ -140,9 +146,9 @@ coverage_map = roi_gdf.explore(
 catalog_gdf.explore(
     m=coverage_map,
     column="name",
-    cmap="Set2",
+    cmap="tab20",
     style_kwds={"fillOpacity": 0.4, "weight": 1.5},
-    name="LiDAR Acquisitions",
+    name="Discovered LiDAR Footprints",
     legend=True
 )
 
@@ -151,150 +157,332 @@ display(coverage_map)
 
 # %% [markdown]
 # ---
-# ## Step 5: Lazy Metric Grid Generation (Core + Buffer Tiling)
+# ## Step 5: Advanced Search Filters (Name, Chronology, Density, Provider)
 # 
-# Large-scale point cloud processing requires uniform metric grid tiles with spatial overlap buffers (e.g. 1200m core + 30m edge buffer) to eliminate boundary edge artifacts in ground classification (SMRF) and DTM/CHM interpolation.
+# `als-finder` supports powerful filtering flags to isolate specific acquisitions before any downloading begins.
+
+# %% [markdown]
+# ### 5.1 Filtering by Dataset Name (`--name`)
 # 
-# `get_tile_spec()` dynamically:
-# 1. Checks if the metric grid already exists,
-# 2. Snaps the ROI to clean metric multiples in the projected CRS (e.g. UTM Zone 10N / EPSG:32610),
-# 3. Lazily creates and exports the spatial vector grid into Hive storage: `catalog/grids/tilesize=1200/buffer=30/grid.gpkg`.
+# Filter by exact name, wildcard string (`*`), or regular expression (prefixed with `~`):
 
 # %%
-# Request Tile ID #0 with 1200m core size + 30m buffer
-tile_spec = get_tile_spec(workspace_dir, tile_id=0, tile_size=1200, buffer_size=30)
+# Example A: Exact Name
+print("--- Filtering by Exact Name ---")
+cmd_name_exact = [
+    sys.executable, "-m", "als_finder.cli", "search",
+    "--roi", str(roi_path),
+    "--name", "CA_SierraNevada_5_2022",
+    "--workspace", str(workspace_dir)
+]
+print(subprocess.run(cmd_name_exact, capture_output=True, text=True).stdout)
 
-print("=" * 65)
-print("                SINGLE TILE SPECIFICATION (TILE #0)              ")
-print("=" * 65)
-print(f"Tile ID:                {tile_spec['tile_id']}")
-print(f"Basename:               {tile_spec['basename']}")
-print(f"Projected Grid CRS:     {tile_spec['grid_crs']}")
-print(f"Proposed Hive Path:     {tile_spec['hive_path']}")
-print(f"Core PDAL Crop Bounds:  {tile_spec['core_bounds_str']}")
-print(f"Buffered Stream Bounds: {tile_spec['buffered_bounds_str']}")
-print("=" * 65)
+# Example B: Wildcard
+print("--- Filtering by Wildcard (*Tahoe*) ---")
+cmd_name_wildcard = [
+    sys.executable, "-m", "als_finder.cli", "search",
+    "--roi", str(roi_path),
+    "--name", "*Tahoe*",
+    "--workspace", str(workspace_dir)
+]
+print(subprocess.run(cmd_name_wildcard, capture_output=True, text=True).stdout)
+
+# Example C: Python Regular Expression (~^CA_Sierra.*)
+print("--- Filtering by Regex (~^CA_Sierra.*) ---")
+cmd_name_regex = [
+    sys.executable, "-m", "als_finder.cli", "search",
+    "--roi", str(roi_path),
+    "--name", "~^CA_Sierra.*",
+    "--workspace", str(workspace_dir)
+]
+print(subprocess.run(cmd_name_regex, capture_output=True, text=True).stdout)
+
+# %% [markdown]
+# ### 5.2 Filtering by Chronology (`--date`)
+# 
+# Search within specific historical windows or isolate datasets collected after a specific date using the slash syntax:
+
+# %%
+# Example A: Open-ended Start Date (Acquisitions >= 2020-01-01)
+print("--- Filtering by Start Date (2020-01-01/) ---")
+cmd_date_open = [
+    sys.executable, "-m", "als_finder.cli", "search",
+    "--roi", str(roi_path),
+    "--date", "2020-01-01/",
+    "--workspace", str(workspace_dir)
+]
+print(subprocess.run(cmd_date_open, capture_output=True, text=True).stdout)
+
+# Example B: Bounded Historical Window (2015-01-01 to 2019-12-31)
+print("--- Filtering by Date Range (2015-01-01 to 2019-12-31) ---")
+cmd_date_range = [
+    sys.executable, "-m", "als_finder.cli", "search",
+    "--roi", str(roi_path),
+    "--date", "2015-01-01/2019-12-31",
+    "--workspace", str(workspace_dir)
+]
+print(subprocess.run(cmd_date_range, capture_output=True, text=True).stdout)
+
+# %% [markdown]
+# ### 5.3 Filtering by Point Density & Quality Level (`--density`)
+# 
+# `als-finder` supports both USGS 3DEP Topographic Quality Levels (`QL0` through `QL3`) or explicit numeric ranges (`pts/m2`).
+
+# %%
+# Example A: USGS QL1 Quality Level (>= 8.0 pts/m2)
+print("--- Filtering by Quality Level (QL1) ---")
+cmd_density_ql1 = [
+    sys.executable, "-m", "als_finder.cli", "search",
+    "--roi", str(roi_path),
+    "--density", "QL1",
+    "--workspace", str(workspace_dir)
+]
+print(subprocess.run(cmd_density_ql1, capture_output=True, text=True).stdout)
+
+# Example B: Numeric Density Range (2.0 to 10.0 pts/m2)
+print("--- Filtering by Numeric Density Range (2/10 pts/m2) ---")
+cmd_density_range = [
+    sys.executable, "-m", "als_finder.cli", "search",
+    "--roi", str(roi_path),
+    "--density", "2/10",
+    "--workspace", str(workspace_dir)
+]
+print(subprocess.run(cmd_density_range, capture_output=True, text=True).stdout)
+
+# %% [markdown]
+# ### 5.4 Filtering by Specific Provider (`--provider`)
+# 
+# Supply specific provider flags (`USGS_EPT`, `NOAA_STAC`, or `OpenTopography`):
+
+# %%
+print("--- Filtering by Provider (USGS_EPT only) ---")
+cmd_provider = [
+    sys.executable, "-m", "als_finder.cli", "search",
+    "--roi", str(roi_path),
+    "--provider", "USGS_EPT",
+    "--workspace", str(workspace_dir)
+]
+print(subprocess.run(cmd_provider, capture_output=True, text=True).stdout)
 
 # %% [markdown]
 # ---
-# ## Step 6: Interactive Spatial Grid Visualization in Leaflet
+# ## Step 6: Atomic Rollback Updates (`als-finder update`)
 # 
-# Let's inspect the complete generated grid and display all tiles on our Leaflet map with Tile #0 highlighted.
+# The generated `manifest.json` logs your original search parameters. To quickly check upstream federal registries for newly published data in your project area, run `update`.
+# 
+# *`als-finder` automatically makes a timestamped backup of your old `manifest.json`, `catalog.csv`, and `catalog.gpkg` before updating, ensuring old references are never lost.*
 
 # %%
-grid_gpkg = workspace_dir / "catalog" / "grids" / "tilesize=1200" / "buffer=30" / "grid.gpkg"
-grid_gdf = gpd.read_file(grid_gpkg)
-print(f"✓ Total Tiles in Projected Metric Grid: {len(grid_gdf)}")
-print(f"✓ Grid Projected CRS: {grid_gdf.crs}")
-
-# Create highlighted column for visual distinction of Tile #0
-grid_gdf["highlight"] = grid_gdf["tile_id"].apply(lambda tid: "Tile #0 (Active Target)" if tid == 0 else "Grid Tiles")
-
-grid_map = roi_gdf.explore(
-    style_kwds={"fillColor": "none", "color": "#000000", "weight": 2.5},
-    name="ROI Boundary"
-)
-
-grid_gdf.explore(
-    m=grid_map,
-    column="highlight",
-    cmap=["#1f77b4", "#ff7f0e"],
-    style_kwds={"fillOpacity": 0.35, "weight": 1.2},
-    name="1200m Metric Grid",
-    legend=True
-)
-
-folium.LayerControl().add_to(grid_map)
-display(grid_map)
+print("Testing atomic catalog update...")
+cmd_update = [
+    sys.executable, "-m", "als_finder.cli", "update",
+    "--workspace", str(workspace_dir)
+]
+res_update = subprocess.run(cmd_update, capture_output=True, text=True)
+print(res_update.stdout)
 
 # %% [markdown]
 # ---
-# ## Step 7: On-Demand Single-Tile Streaming (`stream_single_tile`)
+# ## Step 7: Downloading & Subsetting (Stage 2)
 # 
-# Now we stream **only Tile #0** directly over HTTP. Under the hood:
-# 1. Streams points from remote EPT cloud endpoints bounded by `buffered_bounds_str`,
-# 2. Applies on-the-fly SMRF ground classification and HAG (Height Above Ground) tree height normalization,
-# 3. Crops the overlap buffer and writes the standardized `.laz` tile inside an OS-level virtual memory sandbox.
+# To prevent accidentally downloading terabytes of point cloud data and to support High-Performance Computing (HPC) workflows, `als-finder` decouples search from download:
+# 1. **Dry-Run Matrix Generation**: Running `download` without `--execute` creates `catalog/fetch_array.csv` containing tile URLs, download targets, and estimated sizes.
+# 2. **Physical Execution**: Passing `--execute` streams/downloads the conformed files into a strict `Hive-Partitioned` directory hierarchy (`data/raw/provider=*/dataset=*/`).
+# 3. **Dynamic EPT Spatial Subsetting**: When querying cloud-native EPT sources with a spatial `--roi`, `als-finder` streams only points intersecting your boundary, creating a single conformed spatial subset file (`[dataset]_subset.laz`).
 
 # %%
-import laspy
+# Define a small micro-bounding box near Lake Tahoe for safe, rapid physical download testing
+micro_roi = "-119.9915, 38.9285, -119.9885, 38.9315"
+micro_workspace = Path("./tiny_subset").resolve()
+micro_workspace.mkdir(parents=True, exist_ok=True)
 
-out_tile_path = workspace_dir / "output_tiles" / tile_spec["basename"]
-out_tile_path.parent.mkdir(parents=True, exist_ok=True)
+# Step 7.1: Dry-Run Search and Fetch Matrix Generation
+print("--- 7.1 Dry-Run Fetch Array Generation ---")
+cmd_search_micro = [
+    sys.executable, "-m", "als_finder.cli", "search",
+    "--roi", micro_roi,
+    "--name", "CA_SierraNevada_5_2022",
+    "--workspace", str(micro_workspace)
+]
+subprocess.run(cmd_search_micro)
 
-print(f"Streaming single tile #{tile_spec['tile_id']} over HTTP...")
-streamed_path = stream_single_tile(
-    manifest_or_grid_path=manifest_path,
-    tile_id=0,
-    out_path=out_tile_path,
-    buffer_size=30,
-    crs=tile_spec["grid_crs"],
-    overwrite=True
-)
+cmd_dry_run = [
+    sys.executable, "-m", "als_finder.cli", "download",
+    "--roi", micro_roi,
+    "--name", "CA_SierraNevada_5_2022",
+    "--workspace", str(micro_workspace)
+]
+res_dry = subprocess.run(cmd_dry_run, capture_output=True, text=True)
+print(res_dry.stdout)
 
-size_mb = streamed_path.stat().st_size / (1024 * 1024)
-print(f"\n✓ Successfully streamed and standardized single tile!")
-print(f"  Output File: {streamed_path}")
-print(f"  File Size:   {size_mb:.2f} MB")
+# Step 7.2: Physical Download Execution
+print("--- 7.2 Physical Download Execution (--execute) ---")
+cmd_exec_download = [
+    sys.executable, "-m", "als_finder.cli", "download",
+    "--roi", micro_roi,
+    "--name", "CA_SierraNevada_5_2022",
+    "--workspace", str(micro_workspace),
+    "--execute"
+]
+res_exec = subprocess.run(cmd_exec_download, capture_output=True, text=True)
+print(res_exec.stdout)
 
-# Inspect the standardized point cloud header using laspy
-with laspy.open(str(streamed_path)) as fh:
-    header = fh.header
-    print(f"\n  Point Count:  {header.point_count:,}")
-    print(f"  Point Format: {header.point_format.id}")
-    print(f"  Bounds X:     [{header.x_min:.2f}, {header.x_max:.2f}]")
-    print(f"  Bounds Y:     [{header.y_min:.2f}, {header.y_max:.2f}]")
-    print(f"  Bounds Z:     [{header.z_min:.2f}, {header.z_max:.2f}]")
+raw_laz_files = list(micro_workspace.glob("data/raw/**/*.laz"))
+print(f"\n✓ Downloaded Raw Subsets: {len(raw_laz_files)} file(s)")
+for p in raw_laz_files:
+    size_mb = p.stat().st_size / (1024 * 1024)
+    print(f"  {p.relative_to(micro_workspace)} ({size_mb:.2f} MB)")
 
 # %% [markdown]
 # ---
-# ## Step 8: CLI Equivalent for HPC Job Arrays
+# ## Step 8: Normalization & Standardization (Stage 3)
 # 
-# On high-performance compute clusters (such as SDSC Expanse or Slurm HPC clusters), distributed worker nodes execute this single-tile streaming workflow in parallel using `$SLURM_ARRAY_TASK_ID`:
+# Raw LiDAR point clouds from different federal programs suffer from:
+# - **Coordinate Reference System (CRS) Discrepancies**: Mixing UTM zones, State Planes, or WGS84.
+# - **Taxonomic Inconsistencies**: Non-standard ASPRS class mappings across vendors.
+# - **Elevation vs. Vegetation Height**: Raw data only stores absolute elevation ($Z$), requiring digital terrain subtraction to compute true canopy height.
+# 
+# `als-finder standardize` harmonizes these raw downloads:
+# 1. **Format Upgrade**: Converts point clouds to Cloud-Optimized Point Clouds (`.copc.laz`).
+# 2. **CRS Reprojection**: Harmonizes coordinates into Web Mercator (`EPSG:3857`), target EPSG, or `auto-utm-centroid`.
+# 3. **Taxonomic Standardization**: Wipes vendor noise and conforms bare earth (Class 2) and vegetation classes.
+# 4. **Dynamic Sub-Tiling & RAM Safety**: Automatically subdivides dense tiles on `MemoryError` and clamps thread allocations.
+
+# %%
+print("Executing Standardization Engine...")
+
+cmd_standardize = [
+    sys.executable, "-m", "als_finder.cli", "standardize",
+    "--workspace", str(micro_workspace)
+]
+res_std = subprocess.run(cmd_standardize, capture_output=True, text=True)
+print(res_std.stdout)
+
+std_copc_files = list(micro_workspace.glob("data/standardized/**/*.copc.laz"))
+print(f"\n✓ Standardized COPC Files: {len(std_copc_files)} file(s)")
+for p in std_copc_files:
+    size_mb = p.stat().st_size / (1024 * 1024)
+    print(f"  {p.relative_to(micro_workspace)} ({size_mb:.2f} MB)")
+
+# %% [markdown]
+# ---
+# ## Step 9: SpatioTemporal Asset Catalogs (Stage 4: `--stac`)
+# 
+# Appending `--stac` generates an OGC-compliant `PySTAC` catalog hierarchy (`catalog/stac/catalog.json`).
+# Each COPC point cloud becomes a searchable STAC Item with exact 3D bounding boxes, acquisition timestamps, and relative asset references.
+
+# %%
+print("Generating OGC STAC Catalog Hierarchy...")
+
+cmd_stac = [
+    sys.executable, "-m", "als_finder.cli", "standardize",
+    "--workspace", str(micro_workspace),
+    "--stac"
+]
+subprocess.run(cmd_stac)
+
+stac_root = micro_workspace / "catalog" / "stac" / "catalog.json"
+assert stac_root.exists(), "STAC catalog generation failed!"
+
+# Inspect STAC catalog using PySTAC
+stac_cat = pystac.Catalog.from_file(str(stac_root))
+print(f"\n✓ STAC Catalog ID:          {stac_cat.id}")
+print(f"✓ STAC Catalog Title:       {stac_cat.title}")
+print(f"✓ STAC Catalog Description: {stac_cat.description}")
+
+print("\nIndexed STAC Items:")
+for item in stac_cat.get_all_items():
+    print(f"  • Item ID:          {item.id}")
+    print(f"    Bounding Box:     {item.bbox}")
+    print(f"    Acquisition Date: {item.datetime}")
+    if "data" in item.assets:
+        print(f"    Asset HREF:       {item.assets['data'].href}")
+
+# %% [markdown]
+# ---
+# ## Step 10: Visual QA/QC Quicklooks (Stage 5: `--quicklook`)
+# 
+# Appending `--quicklook` generates 2D preview images using tiered resolution streaming without downloading the entire point cloud:
+# 1. **DEM Hillshade**: Shaded physical relief of the bare earth terrain (Class 2).
+# 2. **Canopy Height Model (CHM)**: Color-relief tree canopy height map computed via `filters.hag_nn`.
+# 3. **HTML Master Index**: Interactive side-by-side preview gallery saved to `catalog/quicklooks_index.html`.
+
+# %%
+print("Generating QA/QC Visual Quicklooks...")
+
+cmd_quicklook = [
+    sys.executable, "-m", "als_finder.cli", "standardize",
+    "--workspace", str(micro_workspace),
+    "--quicklook"
+]
+subprocess.run(cmd_quicklook)
+
+quicklook_pngs = list(micro_workspace.glob("data/quicklooks/**/*.png"))
+print(f"\n✓ Generated Quicklook Images: {len(quicklook_pngs)} image(s)")
+for p in quicklook_pngs:
+    print(f"  • {p.name} ({p.stat().st_size / 1024:.1f} KB)")
+
+# Display preview renders in Python if matplotlib is available
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
+if quicklook_pngs:
+    fig, axes = plt.subplots(1, min(len(quicklook_pngs), 2), figsize=(14, 6))
+    if not isinstance(axes, (list, tuple)) and len(quicklook_pngs) == 1:
+        axes = [axes]
+    for ax, p in zip(axes, quicklook_pngs[:2]):
+        img = mpimg.imread(str(p))
+        ax.imshow(img)
+        ax.set_title(p.name, fontsize=11, fontweight="bold")
+        ax.axis("off")
+    plt.tight_layout()
+    plt.show()
+
+# %% [markdown]
+# ---
+# ## Step 11: The Mega-Command (End-to-End Execution)
+# 
+# Once you have finalized your search parameters and target `--roi`, you can chain the entire lifecycle—from federated discovery to raw subsetting, format standardization, STAC indexing, and Quicklook generation—into a single uninterrupted command:
 # 
 # ```bash
-# # Slurm Worker single-tile execution command:
-# als-finder fetch-tile \
-#   --manifest demo_workspace/catalog/manifest.json \
-#   --tile-id $SLURM_ARRAY_TASK_ID \
-#   --buffer-size 30 \
-#   --crs EPSG:32610 \
-#   --output demo_workspace/scratch/tile_${SLURM_ARRAY_TASK_ID}.laz \
-#   --json
+# als-finder download \
+#     --roi "-119.9915, 38.9285, -119.9885, 38.9315" \
+#     --name "CA_SierraNevada_5_2022" \
+#     --workspace ./mega_workspace/ \
+#     --execute \
+#     --standardize \
+#     --stac \
+#     --quicklook
 # ```
 
 # %%
-# Execute the CLI fetch-tile command to verify command-line parity
-cli_out = workspace_dir / "output_tiles" / "tile_cli_test.laz"
-fetch_cmd = [
-    sys.executable, "-m", "als_finder.cli", "fetch-tile",
-    "--manifest", str(manifest_path),
-    "--tile-id", "0",
-    "--buffer-size", "30",
-    "--output", str(cli_out),
-    "--json"
+mega_workspace = Path("./mega_demo_workspace").resolve()
+
+cmd_mega = [
+    sys.executable, "-m", "als_finder.cli", "download",
+    "--roi", "-119.9915, 38.9285, -119.9885, 38.9315",
+    "--name", "CA_SierraNevada_5_2022",
+    "--workspace", str(mega_workspace),
+    "--execute",
+    "--standardize",
+    "--stac",
+    "--quicklook"
 ]
 
-print("Running CLI fetch-tile command...")
-res = subprocess.run(fetch_cmd, capture_output=True, text=True)
-print("CLI JSON Response:")
-print(res.stdout)
+print("Executing Mega-Command end-to-end...")
+res_mega = subprocess.run(cmd_mega, capture_output=True, text=True)
+print(res_mega.stdout)
+print("✓ Mega-Command completed successfully!")
 
 # %% [markdown]
 # ---
-# ## Step 9: Memory Safety & Recursive Sub-Tiling Guardrails
+# ## Summary & Next Steps
 # 
-# `als-finder` protects compute nodes from out-of-memory crashes using three key architectural invariants:
-# 1. **OS Virtual Memory Limit**: Wraps subprocesses in `execute_with_memory_limit()` using `resource.setrlimit(RLIMIT_AS)` on Linux.
-# 2. **Thread Clamping**: Enforces `OPENBLAS_NUM_THREADS=1`, `OMP_NUM_THREADS=1`, `GDAL_NUM_THREADS=1` to prevent underlying C++ libraries from spawning thread stacks that exceed memory limits.
-# 3. **Dynamic Recursive Sub-Tiling**: If an unexpectedly dense tile triggers an OOM, the engine catches `MemoryError`, automatically subdivides the tile into 4 sub-quadrants, processes each with safety bounds, and merges them cleanly.
-# 
-# ---
-# ## Summary
-# 
-# You have successfully executed the end-to-end cloud-native LiDAR streaming pipeline:
-# 1. **Search & Discovery**: Lightweight metadata query producing `manifest.json` and `catalog.gpkg`.
-# 2. **Interactive Leaflet Mapping**: Visual inspection of ROI and acquisition footprints.
-# 3. **Dynamic Metric Gridding**: ROI snapped and decomposed into uniform 1200m core tiles + 30m overlap buffers in Hive storage.
-# 4. **On-Demand Streaming**: Single tiles fetched over HTTP with on-the-fly SMRF and HAG standardization.
-# 5. **HPC Ready**: Slurm array task compatibility with zero-disk master node footprint.
+# You have completed the full `als-finder` discovery, standardization, and indexing workflow:
+# 1. **Federated Discovery**: Queried multi-agency registries with zero upfront data footprint.
+# 2. **Interactive Leaflet Mapping**: Visualized project boundaries and coverage maps.
+# 3. **Controlled Subsetting**: Previewed download arrays and fetched spatial subsets.
+# 4. **Standardization Engine**: Harmonized CRS, ASPRS classes, and created conformed COPC files.
+# 5. **OGC STAC Catalogs**: Indexed point clouds into a standards-compliant metadata hierarchy.
+# 6. **Visual Quicklooks**: Created 2D DEM Hillshades and Canopy Height Models.
+# 7. **End-to-End Automation**: Executed the entire pipeline in a single Mega-Command.
