@@ -2,9 +2,20 @@
 
 **A high-performance, cloud-native CLI engine for discovering and downloading raw LiDAR point cloud data across the globe.**
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/cms-2024-hudak/als-finder)
+
 `als-finder` gathers complete acquisition footprints (project boundaries), true WGS84 point densities, and metadata from **USGS**, **NOAA**, and **OpenTopography** into clean `.json` manifests and `QGIS`-ready `.gpkg` tables.
 
+## 🎓 Interactive Cloud Tutorials (1-Click Run)
+Try `als-finder` immediately in your browser with pre-installed Python, C++ (PDAL/GDAL), and R (`sf`/`lidR`) via GitHub Codespaces:
+- [**Tutorials Hub & Curriculum**](tutorials/README.md)
+  - [Tutorial 01: Basic Discovery & Federated Ingestion](tutorials/01_basic_discovery.md) ([Notebook](tutorials/01_basic_discovery.ipynb))
+  - [Tutorial 02: Point Cloud Normalization & STAC](tutorials/02_normalization_and_stac.md) ([Notebook](tutorials/02_normalization_and_stac.ipynb))
+  - [Tutorial 03: Metric Spatial Tiling & Cloud-Native Streaming](tutorials/03_spatial_tiling_and_streaming.md) ([Notebook](tutorials/03_spatial_tiling_and_streaming.ipynb))
+  - [Tutorial 04: Cross-Language R/lidR & HPC Integration](tutorials/04_hpc_and_r_integration.md) ([Notebook](tutorials/04_hpc_and_r_integration.ipynb))
+
 ## 📖 Table of Contents
+- [🎓 Interactive Cloud Tutorials](#-interactive-cloud-tutorials-1-click-run)
 - [🔑 OpenTopography API Key Setup](#-opentopography-api-key-setup)
 - [🚀 Installation](#-installation)
 - [⚡ Usage & Full Tutorial (Stage 1)](#-usage--full-tutorial)
@@ -17,146 +28,21 @@
 
 ---
 
-## 🔑 OpenTopography API Key Setup
-To pull datasets from OpenTopography, you must provide a free authorization token. 
-1. Create an account at [OpenTopography.org](https://opentopography.org).
-2. Navigate to **MyAccount** -> **Request API Key**.
-3. Supply this key to `als-finder` using the `--ot-key` flag during your first search. The engine will transparently cache it into a local `.env` file directly in your active working directory for all future executions:
+## 🚀 Quick Install
+
+Because `als-finder` uses advanced C++ geospatial libraries (GDAL, PDAL, GEOS), **Conda** or **Docker** is the recommended installation method:
 
 ```bash
-# 1. Extract the example ROI to your local directory
-als-finder get-example-roi
+# 1. Create environment with all C++ and Python dependencies
+conda create -n als-finder -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv -y
 
-# 2. Run your search with the key
-als-finder search --roi ./ltbmu_boundary.gpkg --ot-key "your_token_here" --workspace ./my_lidar_project/
-```
-
----
-
-## 🚀 Installation
-
-Because `als-finder` relies on advanced spatial libraries (`geopandas`, `shapely`, `pyproj`), distributing it means managing complex C++ dependencies (GDAL and GEOS). 
-
-> [!IMPORTANT]
-> **Windows Native (CMD/PowerShell) Users:**
-> Do **NOT** attempt to use `pip install als-finder[all]` on native Windows. The C++ dependencies for PDAL and GDAL cannot be easily compiled via Pip on Windows. If you are not using WSL2, you **must** use the **Conda** installation method below, which handles the Windows C++ binaries for you perfectly.
-
-If you attempt a raw `pip install` on Mac or Linux without these underlying C++ compilers pre-installed, Python will throw compiler errors due to missing C++ dependencies. For this reason, we highly recommend **Conda** (for desktop environments) or **Docker/Singularity** (for server and HPC execution).
-
-### 1. Conda (Recommended & Official)
-Conda natively handles downloading and compiling the complex C-binaries (GDAL, PDAL) in the background automatically. This is our general recommendation for most scientific desktop users.
-
-#### Option A: Install from conda-forge (Official Stable Release)
-Once the conda-forge package is fully active, this is the easiest single-command network installation:
-
-```bash
-# Create a fresh environment and install the official stable release from conda-forge
-conda create -n als-finder -c conda-forge als-finder
-
-# Activate the newly created environment
+# 2. Activate environment & install als-finder
 conda activate als-finder
-```
-
-#### Option B: Direct Install from GitHub via Conda (Backup / Pending conda-forge Release)
-While we wait for the official conda-forge package to be merged and published, you can still use Conda to automatically manage and compile the C++ binaries (`pdal`, `geopandas`, etc.) in the background while pulling the latest package code directly from GitHub:
-
-```bash
-# 1. Create a fresh environment with all C++ and Python dependencies pre-installed from conda-forge
-conda create -n als-finder -c conda-forge python geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv -y
-
-# 2. Activate the environment
-conda activate als-finder
-
-# 3. Install als-finder directly from the GitHub main branch
 pip install git+https://github.com/cms-2024-hudak/als-finder.git
 ```
 
-#### Installing Bleeding-Edge / From Source (Development)
-If you want to build the package from source or contribute to development using a local clone:
-
-```bash
-# 1. Clone the repository and navigate into it
-git clone https://github.com/cms-2024-hudak/als-finder.git
-cd als-finder
-
-# 2. Create the environment from the local environment.yml
-conda env create -f environment.yml
-
-# 3. Activate the environment
-conda activate als-finder
-```
-
-### 2. Docker / Singularity (Recommended for Server & HPC Environments)
-The absolute safest way to execute spatial code without triggering dependency conflicts on local servers, cloud instances, or high-performance supercomputers is through containers.
-
-**Option A: Pull Pre-Built Image**
-```bash
-docker pull ghcr.io/cms-2024-hudak/als-finder:latest
-
-# Basic Run (Bypasses OpenTopography)
-docker run -v $(pwd):/app/data ghcr.io/cms-2024-hudak/als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
-
-# Run with OpenTopography API Key enabled
-docker run -e OPENTOPOGRAPHY_API_KEY="your_api_key_here" -v $(pwd):/app/data ghcr.io/cms-2024-hudak/als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
-```
-
-**Option B: Singularity / Apptainer Build (For HPCs)**
-If you are deploying `als-finder` on an HPC cluster where root privileges are not available to run Docker, you can compile a standard **Singularity Image File (.sif)** directly from our public GitHub Container Registry (GHCR):
-```bash
-# Pull and build the Singularity image natively
-singularity build als-finder.sif docker://ghcr.io/cms-2024-hudak/als-finder:latest
-
-# Execute the container natively on the HPC cluster
-singularity run als-finder.sif search --roi "-124,42,-123,43" --workspace ./my_lidar_project
-```
-
-**Option C: Build Docker from Source**
-If your enterprise firewall blocks GHCR or you are modifying the source code:
-```bash
-git clone https://github.com/cms-2024-hudak/als-finder.git
-cd als-finder
-docker build -t als-finder:latest .
-
-# Run with environment variables from a .env file
-docker run --env-file .env -v $(pwd):/app/data als-finder:latest search --roi "-124,42,-123,43" --workspace /app/data/my_lidar_project/
-```
-
-### 3. Pip (Advanced / System-Level)
-> [!WARNING]
-> **Important Note for Pip Users**
-> While PyPI hosts the `pdal` Python package (which provides the Python bindings), its wheels **do not bundle the core PDAL C++ library**. If you wish to use pure `pip` to install the complete package (including the Stage 3 Normalization engine), you **MUST** pre-install the C++ PDAL binaries on your host operating system. Otherwise, compiling or running the Python `pdal` bindings will fail.
-
-**A. Install System Binaries First**
-
-**Ubuntu/Debian/WSL2:**
-```bash
-sudo apt-get update
-sudo apt-get install -y libpdal-dev pdal
-```
-
-**MacOS:**
-```bash
-brew install pdal
-```
-
-**Windows (Native):**
-*(Not supported via Pip. Use the Conda installation method above.)*
-
-**B. Install the Python Wrappers**
-Once the C++ dependencies are satisfied on your host OS, you can safely install the python wrappers into a clean environment:
-
-```bash
-# 1. Create a clean virtual environment sandbox
-python3 -m venv .venv
-
-# 2. Activate the environment
-source .venv/bin/activate  # On Windows, use `.venv\Scripts\activate`
-
-# 3. Install the complete package with normalization engines
-pip install "als-finder[all]"
-```
-
-*(Note: If you only need the Stage 1 search engine and do not want to compile C++ binaries, you can run `pip install als-finder` without the `[all]` tag.)*
+> [!TIP]
+> 📖 **Full Installation Guide:** See [**docs/INSTALLATION.md**](docs/INSTALLATION.md) for Conda-Forge releases, Docker container runs, Singularity/Apptainer HPC setup, and Windows/WSL2 instructions.
 
 ---
 

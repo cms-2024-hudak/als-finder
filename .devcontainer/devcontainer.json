@@ -1,0 +1,27 @@
+{
+  "name": "ALS-Finder Cloud Tutorial & Dev Environment (Python + R + PDAL)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/conda/bin/python",
+        "python.formatting.provider": "none",
+        "r.rpath.linux": "/opt/conda/bin/R",
+        "jupyter.notebookFileRoot": "${workspaceFolder}"
+      },
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter",
+        "ms-toolsai.vscode-jupyter-slideshow",
+        "REditorSupport.r",
+        "GitHub.vscode-pull-request-github",
+        "yzhang.markdown-all-in-one"
+      ]
+    }
+  },
+  "postCreateCommand": "pip install -e . && als-finder get-example-roi",
+  "remoteUser": "mambauser"
+}

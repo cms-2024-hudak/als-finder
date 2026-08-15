@@ -1,0 +1,73 @@
+name: Auto-Render Tutorials to Markdown
+
+on:
+  push:
+    branches: [ "main", "dev", "feat/**" ]
+    paths:
+      - "tutorials/**"
+      - "src/**"
+      - "docs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render-and-sync-tutorials:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Micromamba (Python & Spatial Stack)
+        uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-name: tutorial-env
+          create-args: >-
+            python=3.11
+            geopandas
+            shapely
+            pyproj
+            pyogrio
+            pdal
+            python-pdal
+            pystac
+            stac-validator
+            laspy
+            requests
+            boto3
+            click
+            python-dotenv
+            tqdm
+            psutil
+            jupyter
+            nbconvert
+            matplotlib
+            pip
+          condarc: |
+            channels:
+              - conda-forge
+
+      - name: Install als-finder in editable mode
+        shell: bash -el {0}
+        run: |
+          pip install -e .
+          als-finder get-example-roi
+
+      - name: Synchronize & Render Tutorials to Markdown
+        shell: bash -el {0}
+        run: |
+          python scripts/sync_tutorials.py
+          echo "Tutorials rendered successfully."
+
+      - name: Auto-Commit Rendered Markdown Files to GitHub
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs(tutorials): auto-render markdown tutorials with outputs [skip ci]"
+          file_pattern: "tutorials/*.md tutorials/*.ipynb"
+          commit_user_name: "github-actions[bot]"
+          commit_user_email: "github-actions[bot]@users.noreply.github.com"
