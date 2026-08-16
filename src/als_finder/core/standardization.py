@@ -554,8 +554,14 @@ def stream_single_tile(
     from als_finder.core.grid_manager import get_tile_spec
     from als_finder.providers import get_provider
 
-    # 1. Retrieve tile spec via zero-copy SQL query (lazy auto-builds grid if missing!)
-    spec = get_tile_spec(manifest_or_grid_path, tile_id, tile_size=tile_size, buffer_size=buffer_size)
+    # 1. Retrieve tile spec via zero-copy SQL query (lazy auto-builds grid if missing or overwrite=True!)
+    spec = get_tile_spec(
+        manifest_or_grid_path,
+        tile_id,
+        tile_size=tile_size,
+        buffer_size=buffer_size,
+        overwrite=overwrite
+    )
     buffered_poly = spec["buffered_poly"]
     urls = spec["urls"]
 

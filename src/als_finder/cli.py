@@ -1072,12 +1072,15 @@ def fetch_tile_cmd(manifest, tile_id, output, buffer_size, tile_size, crs, spati
 
 @cli.command('grid-info')
 @click.option('--manifest', required=True, type=click.Path(exists=True), help='Path to catalog manifest.json or grid.gpkg')
+@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
+@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def grid_info_cmd(manifest, json_output):
+def grid_info_cmd(manifest, tile_size, buffer_size, overwrite, json_output):
     """Retrieve spatial grid metadata for R / sf ingestion."""
     try:
         from als_finder.core.grid_manager import get_tile_spec
-        spec = get_tile_spec(manifest, tile_id=0)
+        spec = get_tile_spec(manifest, tile_id=0, tile_size=tile_size, buffer_size=buffer_size, overwrite=overwrite)
         payload = {
             "status": "success",
             "grid_crs": spec["grid_crs"],

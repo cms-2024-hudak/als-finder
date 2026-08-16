@@ -250,11 +250,12 @@ def build_workspace_grid(
     workspace_dir: Union[str, Path],
     tile_size: int = 1200,
     buffer_size: int = 30,
-    target_crs: Optional[str] = None
+    target_crs: Optional[str] = None,
+    overwrite: bool = False
 ) -> Tuple[gpd.GeoDataFrame, str]:
     """
     Automatically builds the spatial tile grid index for a workspace directory
-    using the search catalog coverage layer (catalog.gpkg). Saves grid to Hive partitioned
+    using the search catalog coverage layer (catalog.gpkg) or workspace ROI. Saves grid to Hive partitioned
     directory catalog/grids/tilesize={tile_size}/buffer={buffer_size}/grid.gpkg.
 
     Args:
@@ -262,11 +263,21 @@ def build_workspace_grid(
         tile_size (int): Core metric tile size in meters (default: 1200m).
         buffer_size (int): Overlap buffer in meters (default: 30m).
         target_crs (Optional[str]): Explicit target metric CRS or None for auto-detection.
+        overwrite (bool): If True, forces regeneration of the grid even if grid.gpkg exists.
 
     Returns:
         Tuple[gpd.GeoDataFrame, str]: (grid_gdf, resolved_crs_string)
     """
     ws = Path(workspace_dir)
+    hive_grid_dir = ws / "catalog" / "grids" / f"tilesize={tile_size}" / f"buffer={buffer_size}"
+    gpkg_path = hive_grid_dir / "grid.gpkg"
+    
+    if gpkg_path.exists() and not overwrite:
+        logger.info(f"Using existing grid at {gpkg_path} (use overwrite=True to rebuild)")
+        existing_gdf = pyogrio.read_dataframe(gpkg_path)
+        crs_str = existing_gdf.crs.to_string() if existing_gdf.crs else "EPSG:3857"
+        return existing_gdf, crs_str
+
     catalog_gpkg = ws / "catalog" / "catalog.gpkg"
     manifest_path = ws / "catalog" / "manifest.json"
 
@@ -305,9 +316,7 @@ def build_workspace_grid(
     )
     
     # Export to Hive partitioned path catalog/grids/tilesize={tile_size}/buffer={buffer_size}/grid.gpkg
-    hive_grid_dir = ws / "catalog" / "grids" / f"tilesize={tile_size}" / f"buffer={buffer_size}"
     hive_grid_dir.mkdir(parents=True, exist_ok=True)
-    gpkg_path = hive_grid_dir / "grid.gpkg"
     if gpkg_path.exists():
         gpkg_path.unlink()
 
@@ -349,11 +358,12 @@ def get_tile_spec(
     manifest_or_grid_path: Union[str, Path],
     tile_id: int,
     tile_size: int = 1200,
-    buffer_size: int = 30
+    buffer_size: int = 30,
+    overwrite: bool = False
 ) -> Dict[str, Any]:
     """
     Retrieves the spatial specification for a single tile ID.
-    If the requested grid for (tile_size, buffer_size) does not exist on disk,
+    If the requested grid for (tile_size, buffer_size) does not exist on disk (or if overwrite=True),
     automatically builds the workspace grid first! (Single-command workflow).
 
     Args:
@@ -361,6 +371,7 @@ def get_tile_spec(
         tile_id (int): Target zero-based tile ID.
         tile_size (int): Core metric tile size in meters (default: 1200m).
         buffer_size (int): Overlap buffer size in meters (default: 30m).
+        overwrite (bool): If True, forces grid regeneration.
 
     Returns:
         Dict[str, Any]: Dictionary containing tile_id, core_poly, buffered_poly, grid_crs, and urls.
@@ -379,14 +390,14 @@ def get_tile_spec(
     hive_gpkg = ws_dir / "catalog" / "grids" / f"tilesize={tile_size}" / f"buffer={buffer_size}" / "grid.gpkg"
     primary_gpkg = ws_dir / "catalog" / "grid.gpkg" if (ws_dir / "catalog").exists() else ws_dir / "grid.gpkg"
 
-    if hive_gpkg.exists():
+    if hive_gpkg.exists() and not overwrite:
         gpkg_path = hive_gpkg
-    elif primary_gpkg.exists() and (not (ws_dir / "catalog" / "catalog.gpkg").exists() or (tile_size == 1200 and buffer_size == 30)):
+    elif primary_gpkg.exists() and not overwrite and (not (ws_dir / "catalog" / "catalog.gpkg").exists() or (tile_size == 1200 and buffer_size == 30)):
         gpkg_path = primary_gpkg
     else:
-        # LAZY AUTO-BUILD: Automatically build grid if not created yet!
-        logger.info(f"Grid for tile_size={tile_size}m buffer={buffer_size}m not found. Auto-building grid index...")
-        grid_gdf, crs_str = build_workspace_grid(ws_dir, tile_size=tile_size, buffer_size=buffer_size)
+        # LAZY AUTO-BUILD or OVERWRITE
+        logger.info(f"Building grid index (tile_size={tile_size}m, buffer={buffer_size}m, overwrite={overwrite})...")
+        grid_gdf, crs_str = build_workspace_grid(ws_dir, tile_size=tile_size, buffer_size=buffer_size, overwrite=overwrite)
         gpkg_path = ws_dir / "catalog" / "grids" / f"tilesize={tile_size}" / f"buffer={buffer_size}" / "grid.gpkg"
         if not gpkg_path.exists():
             gpkg_path = primary_gpkg
