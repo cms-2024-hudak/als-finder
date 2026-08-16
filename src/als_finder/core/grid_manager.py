@@ -447,9 +447,10 @@ def get_tile_spec(
     tile_basename = f"tile_{int(tile_id):04d}.laz"
     spatial_basename = f"tile_E{int(c_minx):07d}_N{int(c_miny):07d}_{tile_size}m.laz"
 
-    # Fully-qualified Hive partition path preventing collisions across multi-scale grids
-    hive_path = f"provider={provider}/year={year}/state={state}/dataset={dataset_id}/tiles/tilesize={tile_size}/buffer={buffer_size}/{tile_basename}"
-    spatial_hive_path = f"provider={provider}/year={year}/state={state}/dataset={dataset_id}/tiles/tilesize={tile_size}/buffer={buffer_size}/{spatial_basename}"
+    # Aligns strictly with als-finder's standard upper-level Hive hierarchy: provider=*/dataset=*/
+    hive_prefix = f"provider={provider}/dataset={dataset_id}"
+    hive_path = f"{hive_prefix}/tiles/tilesize={tile_size}/buffer={buffer_size}/{tile_basename}"
+    spatial_hive_path = f"{hive_prefix}/tiles/tilesize={tile_size}/buffer={buffer_size}/{spatial_basename}"
 
     return {
         "tile_id": int(tile_id),
