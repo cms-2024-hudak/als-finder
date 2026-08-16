@@ -190,7 +190,7 @@ catalog_gdf.explore(
 grid_gdf.explore(
     m=tiling_map,
     column="status",
-    cmap={"Adjacent Tiles": "#3182bd", "Tile #0 (Target)": "#e31a1c"},
+    cmap=["#3182bd", "#e31a1c"],
     style_kwds={"fillOpacity": 0.35, "weight": 2.0},
     name=f"3. Metric Grid ({tile_size_m}m Core Tiles)",
     legend=True,

@@ -199,22 +199,26 @@ tiling_map = roi_gdf.explore(
     name="1. Study Area (ROI Boundary)"
 )
 
+# Render remote acquisitions without redundant floating legend (accessible via popups & layer control)
 catalog_gdf.explore(
     m=tiling_map,
     column="name",
     cmap="Set2",
-    style_kwds={"fillOpacity": 0.25, "weight": 1.2},
+    style_kwds={"fillOpacity": 0.20, "weight": 1.2},
     name="2. Remote Acquisition Footprints",
-    legend=True
+    legend=False,
+    popup=True
 )
 
+# Render metric grid with clean single legend and prominent target tile distinction
 grid_gdf.explore(
     m=tiling_map,
     column="status",
-    cmap=["#1f77b4", "#e31a1c"],
-    style_kwds={"fillOpacity": 0.35, "weight": 1.5},
+    cmap=["#3182bd", "#e31a1c"],
+    style_kwds={"fillOpacity": 0.35, "weight": 2.0},
     name=f"3. Metric Grid ({tile_size_m}m Core Tiles)",
-    legend=True
+    legend=True,
+    popup=True
 )
 
 folium.LayerControl().add_to(tiling_map)
