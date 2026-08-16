@@ -397,6 +397,16 @@ For researchers working in R, the exact same memory-safe and storage-safe paradi
 # ==============================================================================
 # R Equivalent Pipeline: Memory-Safe Single-Tile Streaming & DTM Generation
 # ==============================================================================
+req_pkgs <- c("jsonlite", "sf")
+missing_pkgs <- req_pkgs[!sapply(req_pkgs, requireNamespace, quietly = TRUE)]
+
+if (length(missing_pkgs) > 0) {
+  cat("[NOTE] The following R packages are not installed in host R:", paste(missing_pkgs, collapse = ", "), "\n")
+  cat("  Install them in R via: install.packages(c('jsonlite', 'sf', 'lidR', 'terra'))\n")
+  cat("  Script is saved for execution in RStudio / HPC environments.\n")
+  quit(status = 0)
+}
+
 library(jsonlite)
 library(sf)
 

@@ -356,11 +356,21 @@ display(summary_df)
 r_script_content = f"""# ==============================================================================
 # R Equivalent Pipeline: Memory-Safe Single-Tile Streaming & DTM Generation
 # ==============================================================================
+req_pkgs <- c("jsonlite", "sf")
+missing_pkgs <- req_pkgs[!sapply(req_pkgs, requireNamespace, quietly = TRUE)]
+
+if (length(missing_pkgs) > 0) {{
+  cat("[NOTE] The following R packages are not installed in host R:", paste(missing_pkgs, collapse = ", "), "\\n")
+  cat("  Install them in R via: install.packages(c('jsonlite', 'sf', 'lidR', 'terra'))\\n")
+  cat("  Script is saved for execution in RStudio / HPC environments.\\n")
+  quit(status = 0)
+}}
+
 library(jsonlite)
 library(sf)
 
 # 1. Query Grid Info via als-finder CLI JSON API
-grid_info_raw <- system("als-finder grid-info --manifest {manifest_path} --json", intern = TRUE)
+grid_info_raw <- system("{sys.executable} -m als_finder.cli grid-info --manifest {manifest_path} --json", intern = TRUE)
 grid_meta <- fromJSON(paste(grid_info_raw, collapse = ""))
 cat("✓ Grid System CRS:", grid_meta$grid_crs, "\\n")
 
@@ -374,7 +384,7 @@ if (file.exists(grid_gpkg)) {{
 # 3. Simulate processing Tile ID #0 in R
 scratch_tile <- "{workspace_dir / 'scratch' / 'tile_0_r_stream.laz'}"
 fetch_cmd <- paste(
-  "als-finder fetch-tile",
+  "{sys.executable} -m als_finder.cli fetch-tile",
   "--manifest {manifest_path}",
   "--tile-id 0",
   "--buffer-size {buffer_size_m}",
