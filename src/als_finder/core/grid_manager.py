@@ -444,8 +444,8 @@ def get_tile_spec(
         except Exception as e:
             logger.warning(f"Could not parse metadata from manifest {manifest_path}: {e}")
 
-    tile_basename = f"tile_{int(tile_id):04d}.laz"
-    spatial_basename = f"tile_E{int(c_minx):07d}_N{int(c_miny):07d}_{tile_size}m.laz"
+    tile_basename = f"{dataset_id}_tile_{int(tile_id):04d}.laz"
+    spatial_basename = f"{dataset_id}_tile_E{int(c_minx):07d}_N{int(c_miny):07d}_{tile_size}m.laz"
 
     # Aligns strictly with als-finder's standard upper-level Hive hierarchy: provider=*/dataset=*/
     hive_prefix = f"provider={provider}/dataset={dataset_id}"
