@@ -213,15 +213,15 @@ display(tiling_map)
 # %%
 import laspy
 
-# Stream single tile using Python API
-output_tile_0 = workspace_dir / "scratch" / "tile_0000_raw.laz"
-output_tile_0.parent.mkdir(parents=True, exist_ok=True)
+# Stream single tile using Python API into scratch root (auto-nests into Hive partition tree)
+scratch_dir = workspace_dir / "scratch"
+scratch_dir.mkdir(parents=True, exist_ok=True)
 
-print(f"> Streaming single Tile #0 over HTTP into: {output_tile_0.name}...")
+print(f"> Streaming single Tile #0 over HTTP into: {tile_spec_0['basename']}...")
 streamed_tile = stream_single_tile(
     manifest_or_grid_path=manifest_path,
     tile_id=0,
-    out_path=output_tile_0,
+    out_path=scratch_dir,
     tile_size=tile_size_m,
     buffer_size=buffer_size_m,
     crs=tile_spec_0["grid_crs"],
@@ -250,7 +250,7 @@ with laspy.open(str(streamed_tile)) as fh:
 # 1. **Stream Single Buffered Tile** over HTTP into local scratch storage.
 # 2. **Apply Ground Classification (SMRF)**: Execute a PDAL pipeline applying `filters.smrf` to classify bare-earth points (Class 2).
 # 3. **Crop Overlap Buffer**: Apply `filters.crop` with `core_bounds_str` to discard edge margins and prevent boundary seams.
-# 4. **Export Conformed Output**: Write the final standardized `.laz` tile.
+# 4. **Export Conformed Output**: Write the final standardized `.laz` tile into the Hive partition hierarchy.
 # 5. **Purge Scratch Memory/Storage**: Immediately delete raw streamed files to maintain a **constant, minimal disk footprint**.
 
 # %%
@@ -258,7 +258,7 @@ import pdal
 
 # Define target tiles to loop through (e.g. first 2 tiles in our micro-grid)
 target_tile_ids = [0, 1] if len(grid_gdf) >= 2 else [0]
-standardized_out_dir = workspace_dir / "output_standardized_tiles"
+standardized_out_dir = workspace_dir / "data" / "standardized"
 standardized_out_dir.mkdir(parents=True, exist_ok=True)
 
 processing_records = []
@@ -267,19 +267,20 @@ print(f"=== Starting Out-Of-Core PDAL Processing Loop ({len(target_tile_ids)} ti
 
 for tid in target_tile_ids:
     spec = get_tile_spec(workspace_dir, tile_id=tid, tile_size=tile_size_m, buffer_size=buffer_size_m)
-    raw_scratch_path = workspace_dir / "scratch" / f"streamed_raw_tile_{tid:04d}.laz"
-    final_tile_path = standardized_out_dir / spec["basename"]
+    final_tile_path = standardized_out_dir / spec["hive_path"]
+    final_tile_path.parent.mkdir(parents=True, exist_ok=True)
     
     print(f"--- Processing Tile ID #{tid} ---")
     print(f"  Target File:     {spec['basename']}")
+    print(f"  Hive Path:       {spec['hive_path']}")
     print(f"  Core Bounds:     {spec['core_bounds_str']}")
     print(f"  Buffered Bounds: {spec['buffered_bounds_str']}")
     
-    # 1. Stream buffered tile from remote cloud
-    stream_single_tile(
+    # 1. Stream buffered tile from remote cloud into scratch (auto-nests to scratch / hive_path)
+    raw_scratch_path = stream_single_tile(
         manifest_or_grid_path=manifest_path,
         tile_id=tid,
-        out_path=raw_scratch_path,
+        out_path=scratch_dir,
         tile_size=tile_size_m,
         buffer_size=buffer_size_m,
         crs=spec["grid_crs"],
