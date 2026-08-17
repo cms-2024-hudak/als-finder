@@ -183,7 +183,7 @@ catalog_gdf.explore(
     style_kwds={"fillOpacity": 0.20, "weight": 1.2},
     name="2. Remote Acquisition Footprints",
     legend=False,
-    popup=True
+    popup=["name"]
 )
 
 # Render metric grid with clean single legend and prominent target tile distinction
@@ -194,7 +194,7 @@ grid_gdf.explore(
     style_kwds={"fillOpacity": 0.35, "weight": 2.0},
     name=f"3. Metric Grid ({tile_size_m}m Core Tiles)",
     legend=True,
-    popup=True
+    popup=["tile_id", "status"]
 )
 
 folium.LayerControl().add_to(tiling_map)
