@@ -43,3 +43,4 @@ test_workspace/
 *_workspace/
 demo/*_workspace/
 tiny_subset/
+tutorials/*_subset/
