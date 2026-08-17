@@ -88,16 +88,18 @@ catalog_path = workspace_dir / "catalog" / "catalog.gpkg"
 tile_size_m = 500
 buffer_size_m = 20
 
-spec_0 = als_finder.get_tile_spec(workspace_dir, tile_id=0, tile_size=tile_size_m, buffer_size=buffer_size_m)
+spec_0 = als_finder.get_tile_spec(workspace_dir, tile_id=0, tile_size=tile_size_m, buffer_size=buffer_size_m, overwrite=True)
 grid_crs = spec_0["grid_crs"]
 grid_gpkg_path = als_finder.get_grid_path(workspace_dir, tile_size=tile_size_m, buffer_size=buffer_size_m)
 
-print(f"Tile ID:         {spec_0['tile_id']}")
-print(f"Basename:        {spec_0['basename']}")
-print(f"Projected CRS:   {spec_0['grid_crs']}")
-print(f"Hive Path:       {spec_0['hive_path']}")
-print(f"Core Bounds:     {spec_0['core_bounds_str']}")
-print(f"Buffered Bounds: {spec_0['buffered_bounds_str']}")
+print(f"Tile ID:             {spec_0['tile_id']}")
+print(f"Basename:            {spec_0['basename']}")
+print(f"Projected CRS:       {spec_0['grid_crs']}")
+print(f"Hive Path:           {spec_0['hive_path']}")
+print(f"Point Density:       {spec_0['point_density']} pts/m²")
+print(f"Core Bounds:         {spec_0['core_bounds_str']}")
+print(f"Buffered Bounds:     {spec_0['buffered_bounds_str']}")
+print(f"Additional Metadata: {spec_0['additional_metadata']}")
 
 # %% [markdown]
 # ---

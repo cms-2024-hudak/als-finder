@@ -151,6 +151,26 @@ folium.LayerControl().add_to(coverage_map)
 display(coverage_map)
 
 # %% [markdown]
+# ### 4.3 Inspecting Flexible "Additional Metadata" Across Providers
+#
+# In addition to standard columns (Name, Date, Point Density), `als-finder` automatically captures 100% of provider-specific and un-standardized metadata attributes in `additional_metadata` (stored in `manifest.json` and as `additional_metadata_json` in `catalog.gpkg`).
+
+# %%
+# Inspect rich additional metadata from discovered datasets
+with open(manifest_path) as f:
+    manifest_data = json.load(f)
+
+for ds in manifest_data.get("datasets", []):
+    name = ds.get("name")
+    prov = ds.get("provider")
+    extra = ds.get("additional_metadata") or ds.get("raw_metadata") or {}
+    print(f"\nDataset: {name} [{prov}]")
+    print(f"  Available Extra Metadata Keys ({len(extra)}): {list(extra.keys())}")
+    # Display sample key-values
+    for k in list(extra.keys())[:3]:
+        print(f"    - {k}: {extra[k]}")
+
+# %% [markdown]
 # ---
 # ## Step 5: Advanced Search Filters (Name, Chronology, Density, Provider)
 # 

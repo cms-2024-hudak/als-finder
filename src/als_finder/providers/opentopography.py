@@ -164,6 +164,7 @@ class OpenTopographyProvider(BaseProvider):
                     except:
                         pass
 
+                clean_meta = self.sanitize_metadata(meta)
                 results.append({
                     "provider": "OpenTopography",
                     "dataset_id": dataset_id,
@@ -176,8 +177,9 @@ class OpenTopographyProvider(BaseProvider):
                     "point_count": point_count, 
                     "point_density": point_density,
                     "area_sqkm": area,
-                    # Store raw for full context
-                    "raw_metadata": meta
+                    # Store all raw and random metadata for full context
+                    "raw_metadata": clean_meta,
+                    "additional_metadata": clean_meta
                 })
             return results
 

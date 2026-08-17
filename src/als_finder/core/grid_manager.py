@@ -205,10 +205,66 @@ def export_grid_manifest(
     if gpkg_path.exists():
         gpkg_path.unlink()
 
+    # Extract dataset metadata from manifest_data if available
+    datasets = manifest_data.get("datasets", manifest_data.get("features", [])) if manifest_data else []
+    default_ds = datasets[0] if datasets else {}
+    provider = str(default_ds.get("provider", "USGS_EPT"))
+    dataset_id = str(default_ds.get("dataset_id", default_ds.get("name", "dataset")))
+    name_str = str(default_ds.get("name", dataset_id))
+    raw_date = str(default_ds.get("date", "2022"))
+    year = raw_date[:4] if len(raw_date) >= 4 else "2022"
+    state = "CA"
+    point_count = default_ds.get("point_count")
+    point_density = default_ds.get("point_density")
+    area_sqkm = default_ds.get("area_sqkm")
+    
+    urls: List[str] = []
+    for d in datasets:
+        u = d.get("url") or d.get("assets", {}).get("data", {}).get("href")
+        if u:
+            urls.append(u)
+    additional_meta = default_ds.get("additional_metadata") or default_ds.get("raw_metadata") or {}
+
     # Memory-safe chunked batch writes to GeoPackage
     # Store buffered_geometry as WKT string in GeoPackage table for portability
     export_df = grid_gdf.copy()
     export_df["buffered_wkt"] = export_df["buffered_geometry"].apply(lambda g: g.wkt)
+    export_df["core_bounds_str"] = export_df.geometry.apply(
+        lambda g: f"([{g.bounds[0]}, {g.bounds[2]}], [{g.bounds[1]}, {g.bounds[3]}])"
+    )
+    export_df["buffered_bounds_str"] = export_df["buffered_geometry"].apply(
+        lambda g: f"([{g.bounds[0]}, {g.bounds[2]}], [{g.bounds[1]}, {g.bounds[3]}])"
+    )
+    t_size = int(tile_size) if tile_size is not None else 1200
+    b_size = int(buffer_size) if buffer_size is not None else 30
+    export_df["tile_size"] = t_size
+    export_df["buffer_size"] = b_size
+    export_df["grid_crs"] = grid_gdf.crs.to_string()
+    
+    hive_prefix = f"provider={provider}/dataset={dataset_id}"
+    export_df["basename"] = export_df["tile_id"].apply(lambda tid: f"{dataset_id}_tile_{int(tid):04d}.laz")
+    export_df["spatial_basename"] = export_df.apply(
+        lambda r: f"{dataset_id}_tile_E{int(r.geometry.bounds[0]):07d}_N{int(r.geometry.bounds[1]):07d}_{t_size}m.laz",
+        axis=1
+    )
+    export_df["hive_path"] = export_df["basename"].apply(
+        lambda bn: f"{hive_prefix}/tiles/tilesize={t_size}/buffer={b_size}/{bn}"
+    )
+    export_df["spatial_hive_path"] = export_df["spatial_basename"].apply(
+        lambda sbn: f"{hive_prefix}/tiles/tilesize={t_size}/buffer={b_size}/{sbn}"
+    )
+    export_df["provider"] = provider
+    export_df["dataset_id"] = dataset_id
+    export_df["name"] = name_str
+    export_df["date"] = raw_date
+    export_df["year"] = year
+    export_df["state"] = state
+    export_df["point_count"] = point_count if point_count is not None else None
+    export_df["point_density"] = float(point_density) if point_density is not None else None
+    export_df["area_sqkm"] = float(area_sqkm) if area_sqkm is not None else None
+    export_df["source_urls"] = json.dumps(urls)
+    export_df["additional_metadata_json"] = json.dumps(additional_meta, default=str)
+    
     export_df.drop(columns=["buffered_geometry"], inplace=True)
 
     num_rows = len(export_df)
@@ -315,14 +371,80 @@ def build_workspace_grid(
         target_crs=target_crs
     )
     
+    # Extract dataset provenance and additional/rando metadata from manifest or catalog
+    datasets = manifest_data.get("datasets", manifest_data.get("features", []))
+    default_ds = datasets[0] if datasets else {}
+    provider = default_ds.get("provider", "USGS_EPT")
+    dataset_id = default_ds.get("dataset_id", default_ds.get("name", "dataset"))
+    name_str = default_ds.get("name", dataset_id)
+    raw_date = str(default_ds.get("date", "2022"))
+    year = raw_date[:4] if len(raw_date) >= 4 else "2022"
+    state = "CA"
+    point_count = default_ds.get("point_count")
+    point_density = default_ds.get("point_density")
+    area_sqkm = default_ds.get("area_sqkm")
+    
+    # Collect all remote URLs
+    urls: List[str] = []
+    for d in datasets:
+        u = d.get("url") or d.get("assets", {}).get("data", {}).get("href")
+        if u:
+            urls.append(u)
+            
+    # Generic additional metadata from provider
+    additional_meta = default_ds.get("additional_metadata") or default_ds.get("raw_metadata") or {}
+
     # Export to Hive partitioned path catalog/grids/tilesize={tile_size}/buffer={buffer_size}/grid.gpkg
     hive_grid_dir.mkdir(parents=True, exist_ok=True)
     if gpkg_path.exists():
         gpkg_path.unlink()
 
-    # Store buffered_geometry as WKT string
+    # Enrich grid dataframe with full metadata columns
     export_df = grid_gdf.copy()
+    
+    # Bounding boxes and WKT strings
     export_df["buffered_wkt"] = export_df["buffered_geometry"].apply(lambda g: g.wkt)
+    export_df["core_bounds_str"] = export_df.geometry.apply(
+        lambda g: f"([{g.bounds[0]}, {g.bounds[2]}], [{g.bounds[1]}, {g.bounds[3]}])"
+    )
+    export_df["buffered_bounds_str"] = export_df["buffered_geometry"].apply(
+        lambda g: f"([{g.bounds[0]}, {g.bounds[2]}], [{g.bounds[1]}, {g.bounds[3]}])"
+    )
+    
+    # Grid tile specifications
+    export_df["tile_size"] = int(tile_size)
+    export_df["buffer_size"] = int(buffer_size)
+    export_df["grid_crs"] = str(crs_str)
+    
+    # File and Hive hierarchy names
+    hive_prefix = f"provider={provider}/dataset={dataset_id}"
+    export_df["basename"] = export_df["tile_id"].apply(lambda tid: f"{dataset_id}_tile_{int(tid):04d}.laz")
+    export_df["spatial_basename"] = export_df.apply(
+        lambda r: f"{dataset_id}_tile_E{int(r.geometry.bounds[0]):07d}_N{int(r.geometry.bounds[1]):07d}_{tile_size}m.laz",
+        axis=1
+    )
+    export_df["hive_path"] = export_df["basename"].apply(
+        lambda bn: f"{hive_prefix}/tiles/tilesize={tile_size}/buffer={buffer_size}/{bn}"
+    )
+    export_df["spatial_hive_path"] = export_df["spatial_basename"].apply(
+        lambda sbn: f"{hive_prefix}/tiles/tilesize={tile_size}/buffer={buffer_size}/{sbn}"
+    )
+    
+    # Dataset provenance
+    export_df["provider"] = str(provider)
+    export_df["dataset_id"] = str(dataset_id)
+    export_df["name"] = str(name_str)
+    export_df["date"] = str(raw_date)
+    export_df["year"] = str(year)
+    export_df["state"] = str(state)
+    export_df["point_count"] = point_count if point_count is not None else None
+    export_df["point_density"] = float(point_density) if point_density is not None else None
+    export_df["area_sqkm"] = float(area_sqkm) if area_sqkm is not None else None
+    
+    # URLs and generic additional metadata
+    export_df["source_urls"] = json.dumps(urls)
+    export_df["additional_metadata_json"] = json.dumps(additional_meta, default=str)
+    
     export_df.drop(columns=["buffered_geometry"], inplace=True)
     pyogrio.write_dataframe(export_df, gpkg_path, layer="grid", driver="GPKG")
 
@@ -362,7 +484,7 @@ def get_tile_spec(
     overwrite: bool = False
 ) -> Dict[str, Any]:
     """
-    Retrieves the spatial specification for a single tile ID.
+    Retrieves the spatial specification and complete multi-level metadata for a single tile ID.
     If the requested grid for (tile_size, buffer_size) does not exist on disk (or if overwrite=True),
     automatically builds the workspace grid first! (Single-command workflow).
 
@@ -374,7 +496,8 @@ def get_tile_spec(
         overwrite (bool): If True, forces grid regeneration.
 
     Returns:
-        Dict[str, Any]: Dictionary containing tile_id, core_poly, buffered_poly, grid_crs, and urls.
+        Dict[str, Any]: Dictionary containing tile_id, core_poly, buffered_poly, grid_crs, urls,
+                       dataset provenance, point metrics, and additional_metadata.
     """
     path = Path(manifest_or_grid_path)
     if path.is_dir():
@@ -424,44 +547,71 @@ def get_tile_spec(
         buffered_poly = core_poly
 
     b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
-    buffered_bounds_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
+    buffered_bounds_str = row.get("buffered_bounds_str") or f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
 
     c_minx, c_miny, c_maxx, c_maxy = core_poly.bounds
-    core_bounds_str = f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
+    core_bounds_str = row.get("core_bounds_str") or f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
 
-    # Read dataset metadata & urls from manifest if available
+    # Parse URLs from source_urls column
     urls: List[str] = []
-    provider = "USGS_EPT"
-    year = "2022"
-    state = "CA"
-    dataset_id = "unknown_dataset"
-
-    manifest_path = ws_dir / "catalog" / "manifest.json" if (ws_dir / "catalog").exists() else ws_dir / "manifest.json"
-    if manifest_path.exists():
+    if "source_urls" in row and isinstance(row["source_urls"], str):
         try:
-            with open(manifest_path, "r", encoding="utf-8") as mf:
-                m_data = json.load(mf)
-                datasets = m_data.get("datasets", m_data.get("features", []))
-                if datasets:
-                    ds = datasets[0]
-                    provider = ds.get("provider", provider)
-                    dataset_id = ds.get("dataset_id", ds.get("name", dataset_id))
-                    raw_date = str(ds.get("date", "2022"))
-                    year = raw_date[:4] if len(raw_date) >= 4 else "2022"
-                    for d in datasets:
-                        url = d.get("url") or d.get("assets", {}).get("data", {}).get("href")
-                        if url:
-                            urls.append(url)
-        except Exception as e:
-            logger.warning(f"Could not parse metadata from manifest {manifest_path}: {e}")
+            urls = json.loads(row["source_urls"])
+        except Exception:
+            urls = []
 
-    tile_basename = f"{dataset_id}_tile_{int(tile_id):04d}.laz"
-    spatial_basename = f"{dataset_id}_tile_E{int(c_minx):07d}_N{int(c_miny):07d}_{tile_size}m.laz"
+    # Parse additional / rando metadata
+    additional_metadata: Dict[str, Any] = {}
+    if "additional_metadata_json" in row and isinstance(row["additional_metadata_json"], str):
+        try:
+            additional_metadata = json.loads(row["additional_metadata_json"])
+        except Exception:
+            additional_metadata = {}
 
-    # Aligns strictly with als-finder's standard upper-level Hive hierarchy: provider=*/dataset=*/
-    hive_prefix = f"provider={provider}/dataset={dataset_id}"
-    hive_path = f"{hive_prefix}/tiles/tilesize={tile_size}/buffer={buffer_size}/{tile_basename}"
-    spatial_hive_path = f"{hive_prefix}/tiles/tilesize={tile_size}/buffer={buffer_size}/{spatial_basename}"
+    dataset_id = str(row.get("dataset_id") or "")
+    provider = str(row.get("provider") or "")
+    name_str = str(row.get("name") or "")
+    raw_date = str(row.get("date") or "2022")
+    year = str(row.get("year") or raw_date[:4])
+    state = str(row.get("state") or "CA")
+
+    # Fallback to manifest.json if dataset provenance or URLs were missing from table
+    if not urls or not dataset_id or dataset_id in ("unknown_dataset", "dataset"):
+        manifest_path = ws_dir / "catalog" / "manifest.json" if (ws_dir / "catalog").exists() else ws_dir / "manifest.json"
+        if manifest_path.exists():
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as mf:
+                    m_data = json.load(mf)
+                    datasets = m_data.get("datasets", m_data.get("features", []))
+                    if datasets:
+                        default_ds = datasets[0]
+                        if not provider:
+                            provider = str(default_ds.get("provider", "USGS_EPT"))
+                        if not dataset_id or dataset_id in ("unknown_dataset", "dataset"):
+                            dataset_id = str(default_ds.get("dataset_id", default_ds.get("name", "dataset")))
+                        if not name_str:
+                            name_str = str(default_ds.get("name", dataset_id))
+                        if not urls:
+                            for d in datasets:
+                                u = d.get("url") or d.get("assets", {}).get("data", {}).get("href")
+                                if u:
+                                    urls.append(u)
+                        if not additional_metadata:
+                            additional_metadata = default_ds.get("additional_metadata") or default_ds.get("raw_metadata") or {}
+            except Exception as e:
+                logger.warning(f"Could not parse manifest fallback {manifest_path}: {e}")
+
+    if not provider:
+        provider = "USGS_EPT"
+    if not dataset_id:
+        dataset_id = "dataset"
+    if not name_str:
+        name_str = dataset_id
+
+    tile_basename = str(row.get("basename") or f"{dataset_id}_tile_{int(tile_id):04d}.laz")
+    spatial_basename = str(row.get("spatial_basename") or f"{dataset_id}_tile_E{int(c_minx):07d}_N{int(c_miny):07d}_{tile_size}m.laz")
+    hive_path = str(row.get("hive_path") or f"provider={provider}/dataset={dataset_id}/tiles/tilesize={tile_size}/buffer={buffer_size}/{tile_basename}")
+    spatial_hive_path = str(row.get("spatial_hive_path") or f"provider={provider}/dataset={dataset_id}/tiles/tilesize={tile_size}/buffer={buffer_size}/{spatial_basename}")
 
     return {
         "tile_id": int(tile_id),
@@ -473,7 +623,12 @@ def get_tile_spec(
         "provider": provider,
         "year": year,
         "state": state,
+        "date": raw_date,
+        "name": name_str,
         "dataset_id": dataset_id,
+        "point_count": row.get("point_count"),
+        "point_density": row.get("point_density"),
+        "area_sqkm": row.get("area_sqkm"),
         "core_poly": core_poly,
         "buffered_poly": buffered_poly,
         "grid_crs": grid_crs,
@@ -481,7 +636,11 @@ def get_tile_spec(
         "buffered_bounds_str": buffered_bounds_str,
         "bbox_str": buffered_bounds_str,
         "urls": urls,
+        "source_urls": urls,
+        "additional_metadata": additional_metadata,
+        "raw_metadata": additional_metadata,
     }
+
 
 
 def get_grid_path(

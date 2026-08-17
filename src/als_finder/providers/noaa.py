@@ -212,6 +212,12 @@ class NOAAProvider(BaseProvider):
                 except Exception as e:
                     logger.debug(f"NOAA EPT extraction failed for {ept_url}: {e}")
 
+            raw_dict = {}
+            for k in row.index:
+                if k not in ('geometry', 'index_right'):
+                    raw_dict[str(k)] = row[k]
+            clean_meta = self.sanitize_metadata(raw_dict)
+
             results.append({
                 "provider": "NOAA_STAC",
                 "dataset_id": row.get("id"),
@@ -228,7 +234,8 @@ class NOAAProvider(BaseProvider):
                 "srs": row.get("srs", "EPSG:4326"),
                 "point_density": None,
                 "area_sqkm": None,
-                "raw_metadata": {"id": row.get("id"), "title": row.get("title"), "description": row.get("description", "")}
+                "raw_metadata": clean_meta,
+                "additional_metadata": clean_meta
             })
             
         return results

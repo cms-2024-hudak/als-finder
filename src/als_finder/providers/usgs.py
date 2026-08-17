@@ -15,13 +15,19 @@ class USGSProvider(BaseProvider):
     """
     
     REGISTRY_URL = "https://raw.githubusercontent.com/hobu/usgs-lidar/master/boundaries/resources.geojson"
+    CACHE_DIR = Path.home() / ".cache" / "als_finder"
+    CACHE_FILE = CACHE_DIR / "usgs_resources.geojson"
 
     def check_access(self) -> bool:
-        """Check if Github registry is reachable."""
-        try:
-            requests.head(self.REGISTRY_URL, timeout=10)
+        """Check if Github registry is reachable or cached."""
+        if self.CACHE_FILE.exists() and self.CACHE_FILE.stat().st_size > 10000:
             return True
+        try:
+            r = requests.get(self.REGISTRY_URL, headers={"User-Agent": "als-finder/1.1"}, stream=True, timeout=10)
+            return r.status_code == 200
         except requests.RequestException:
+            if self.CACHE_FILE.exists():
+                return True
             logger.warning("AWS USGS Entwine boundary registry unreachable.")
             return False
 
@@ -30,8 +36,15 @@ class USGSProvider(BaseProvider):
         Search for USGS 3DEP LiDAR Point Cloud products intersecting the ROI.
         """
         try:
-            logger.info(f"Downloading Hobu USGS 3DEP Global AWS Index...")
-            gdf = gpd.read_file(self.REGISTRY_URL)
+            if not (self.CACHE_FILE.exists() and self.CACHE_FILE.stat().st_size > 10000):
+                logger.info("Downloading Hobu USGS 3DEP Global AWS Index...")
+                self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                r = requests.get(self.REGISTRY_URL, headers={"User-Agent": "als-finder/1.1"}, timeout=30)
+                r.raise_for_status()
+                with open(self.CACHE_FILE, "w", encoding="utf-8") as f:
+                    f.write(r.text)
+
+            gdf = gpd.read_file(self.CACHE_FILE)
             logger.info(f"Loaded {len(gdf)} entire USGS acquisitions natively.")
             
             if roi:
@@ -67,6 +80,7 @@ class USGSProvider(BaseProvider):
                     if k != 'geometry':
                         raw_dict[str(k)] = str(row[k])
                         
+                clean_raw = self.sanitize_metadata(raw_dict)
                 results.append({
                     "provider": "USGS_EPT",
                     "dataset_id": name,
@@ -83,7 +97,8 @@ class USGSProvider(BaseProvider):
                     "point_count": row.get('count'),
                     "point_density": None,
                     "area_sqkm": None,
-                    "raw_metadata": raw_dict
+                    "raw_metadata": clean_raw,
+                    "additional_metadata": clean_raw
                 })
             return results
 

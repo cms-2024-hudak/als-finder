@@ -470,7 +470,28 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
                         if item.get('srs') == 'EPSG:3857':
                             geom = transform(transformer_3857_to_4326.transform, geom)
                         
-                        rec = {k: str(v) for k, v in item.items() if k not in ['bounds', 'geometry', 'raw_metadata']}
+                        rec = {}
+                        for k, v in item.items():
+                            if k in ['bounds', 'geometry', 'raw_metadata', 'additional_metadata']:
+                                continue
+                            if k in ['point_count', 'size']:
+                                try:
+                                    rec[k] = int(v) if v is not None else None
+                                except:
+                                    rec[k] = None
+                            elif k in ['point_density', 'area_sqkm']:
+                                try:
+                                    rec[k] = float(v) if v is not None else None
+                                except:
+                                    rec[k] = None
+                            elif isinstance(v, (dict, list)):
+                                rec[k] = json.dumps(v, default=str)
+                            else:
+                                rec[k] = str(v) if v is not None else None
+                                
+                        # Generic preservation: serialize all raw/rando metadata as JSON string
+                        add_meta = item.get('additional_metadata') or item.get('raw_metadata') or {}
+                        rec['additional_metadata_json'] = json.dumps(add_meta, default=str)
                         rec['geometry'] = geom
                         records.append(rec)
                 except Exception as parse_e:
