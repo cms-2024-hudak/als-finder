@@ -347,79 +347,87 @@ display(summary_df)
 # ## Step 8: Equivalent R-Based Tile Processing Pipeline (`sf` + `lidR` + `terra`)
 # 
 # For researchers working in R, the exact same memory-safe and storage-safe paradigm applies:
-# 1. R queries `als-finder grid-info --json` or reads `grid.gpkg` using `sf`.
-# 2. R loops through tile IDs, calls `als-finder fetch-tile` via system subprocess to stream isolated tiles into scratch storage.
-# 3. Ingests the tile into **`lidR`** (`readLAS`), performs ground classification (`classify_ground(las, csf())` or `smrf()`), clips the buffer, and computes a 1-meter Digital Terrain Model (**DTM**).
-# 4. Deletes the scratch tile immediately after processing.
+# 1. R queries `als-finder grid-info --json` and reads `grid.gpkg` using `terra::vect()`.
+# 2. R requests single tiles on demand via `als-finder fetch-tile` streamed over HTTP into scratch storage.
+# 3. Ingests the tile into R via **`rlas`** (or **`lidR`** when available), inspecting points, headers, bounding boxes, and elevation distributions.
+# 4. Cleans up scratch storage immediately after tile processing to guarantee strict out-of-core memory safety.
 
 # %%
 # Generate a self-contained R script demonstrating the equivalent out-of-core pipeline
 r_script_content = f"""# ==============================================================================
-# R Equivalent Pipeline: Memory-Safe Single-Tile Streaming & DTM Generation
+# R Pipeline: Memory-Safe Single-Tile Streaming & Out-Of-Core Processing
 # ==============================================================================
-req_pkgs <- c("jsonlite", "sf")
-missing_pkgs <- req_pkgs[!sapply(req_pkgs, requireNamespace, quietly = TRUE)]
 
-if (length(missing_pkgs) > 0) {{
-  cat("[NOTE] The following R packages are not installed in host R:", paste(missing_pkgs, collapse = ", "), "\\n")
-  cat("  Install them in R via: install.packages(c('jsonlite', 'sf', 'lidR', 'terra'))\\n")
-  cat("  Script is saved for execution in RStudio / HPC environments.\\n")
-  quit(status = 0)
-}}
+suppressPackageStartupMessages({{
+  library(jsonlite)
+  library(terra)
+  library(rlas)
+}})
 
-library(jsonlite)
-library(sf)
+cat("✓ Loaded Core R Geospatial Libraries: jsonlite, terra, rlas\\n")
 
-# 1. Query Grid Info via als-finder CLI JSON API
-grid_info_raw <- system("{sys.executable} -m als_finder.cli grid-info --manifest {manifest_path} --json", intern = TRUE)
-grid_meta <- fromJSON(paste(grid_info_raw, collapse = ""))
-cat("✓ Grid System CRS:", grid_meta$grid_crs, "\\n")
+# 1. Query Grid Metadata via als-finder CLI JSON API
+grid_info_cmd <- "{sys.executable} -m als_finder.cli grid-info --manifest {manifest_path} --tile-size {tile_size_m} --buffer-size {buffer_size_m} --json"
+grid_info_raw <- system(grid_info_cmd, intern = TRUE)
+grid_meta <- fromJSON(paste(grid_info_raw, collapse = "\\n"))
+cat("✓ Grid System CRS (from als-finder):", grid_meta$grid_crs, "\\n")
 
-# 2. Load the vector grid table in R using sf
+# 2. Load the vector grid table in R using terra::vect
 grid_gpkg <- "{grid_gpkg_path}"
 if (file.exists(grid_gpkg)) {{
-  grid_sf <- st_read(grid_gpkg, layer = "grid", quiet = TRUE)
-  cat("✓ Total Tiles Loaded in R sf:", nrow(grid_sf), "\\n")
+  grid_vect <- terra::vect(grid_gpkg)
+  cat("✓ Total Tiles Loaded in R (terra::vect):", nrow(grid_vect), "\\n")
+  cat("  Grid Extent [xmin, xmax, ymin, ymax]:", paste(round(ext(grid_vect)[], 1), collapse = ", "), "\\n")
 }}
 
-# 3. Simulate processing Tile ID #0 in R
+# 3. Stream Tile ID #0 on demand over HTTP into node-local scratch storage
 scratch_tile <- "{workspace_dir / 'scratch' / 'tile_0_r_stream.laz'}"
 fetch_cmd <- paste(
   "{sys.executable} -m als_finder.cli fetch-tile",
   "--manifest {manifest_path}",
   "--tile-id 0",
+  "--tile-size {tile_size_m}",
   "--buffer-size {buffer_size_m}",
+  "--crs", grid_meta$grid_crs,
   "--output", scratch_tile,
+  "--overwrite",
   "--json"
 )
 
-cat("Fetching Tile #0 via als-finder CLI...\\n")
+cat("\\nFetching Tile #0 via als-finder CLI...\\n")
 system(fetch_cmd)
 
+# 4. Ingest and inspect streamed point cloud in R
 if (file.exists(scratch_tile)) {{
-  cat("✓ Streamed Tile in R Scratch. Size:", file.info(scratch_tile)$size / 1e6, "MB\\n")
-  
-  # Check if lidR and terra are available for scientific processing
-  if (requireNamespace("lidR", quietly = TRUE) && requireNamespace("terra", quietly = TRUE)) {{
-    library(lidR)
-    library(terra)
-    
-    las <- readLAS(scratch_tile)
-    cat("  Point Count in R:", length(las$X), "\\n")
-    
-    # Ground classification via CSF algorithm
-    las <- classify_ground(las, csf())
-    
-    # 1-meter Digital Terrain Model (DTM) via TIN interpolation
-    dtm <- rasterize_terrain(las, res = 1.0, algorithm = tin())
-    cat("  ✓ Successfully generated 1m DTM in R!\\n")
-  }} else {{
-    cat("  (Note: Install 'lidR' and 'terra' in R for full DTM rasterization)\\n")
+  tile_size_mb <- file.info(scratch_tile)$size / 1e6
+  cat(sprintf("✓ Streamed Tile in R Scratch (Size: %.2f MB)\\n", tile_size_mb))
+
+  # Read LAS Header via rlas
+  hdr <- rlas::read.lasheader(scratch_tile)
+  cat("  LAS Header Point Count:", hdr[["Number of point records"]], "\\n")
+
+  # Read Point Records into R Data Table / Memory
+  pts <- rlas::read.las(scratch_tile)
+  cat("  Point Cloud Ingested in R:", nrow(pts), "points with", ncol(pts), "attributes\\n")
+
+  if (nrow(pts) > 0) {{
+    cat(sprintf("  Elevation Range [Z]: [%.2f m, %.2f m]\\n", min(pts$Z), max(pts$Z)))
+    cat(sprintf("  X Range:             [%.2f m, %.2f m]\\n", min(pts$X), max(pts$X)))
+    cat(sprintf("  Y Range:             [%.2f m, %.2f m]\\n", min(pts$Y), max(pts$Y)))
   }}
-  
-  # Storage Safety: Clean up scratch tile
+
+  # If lidR is installed, demonstrate full DTM rasterization
+  if (requireNamespace("lidR", quietly = TRUE)) {{
+    suppressPackageStartupMessages(library(lidR))
+    las <- readLAS(scratch_tile)
+    las <- classify_ground(las, csf())
+    dtm <- rasterize_terrain(las, res = 1.0, algorithm = tin())
+    cat("  ✓ Successfully generated 1m DTM via lidR!\\n")
+  }}
+
+  # Storage Safety: Clean up scratch tile immediately after processing
   unlink(scratch_tile)
-  cat("✓ Cleaned up scratch tile in R.\\n")
+  cat("✓ Storage Hygiene: Purged scratch tile from local disk.\\n")
 }}
 """
 
@@ -537,8 +545,11 @@ fetch_cmd_cli = [
     sys.executable, "-m", "als_finder.cli", "fetch-tile",
     "--manifest", str(manifest_path),
     "--tile-id", "0",
+    "--tile-size", str(tile_size_m),
     "--buffer-size", str(buffer_size_m),
+    "--crs", str(grid_crs),
     "--output", str(cli_test_tile),
+    "--overwrite",
     "--json"
 ]
 
