@@ -221,39 +221,24 @@ pd.DataFrame(results)
 
 # %% [markdown]
 # ---
-# ## Step 8: Equivalent R-Based Tile Processing Pipeline (`terra` + `rlas` + `lidR`)
+# ## Step 8: Native R Spatial Processing Pipeline (`tutorials/02_spatial_tiling_and_streaming.R`)
 # 
-# R researchers use the exact same out-of-core streaming architecture:
+# For R researchers (`terra` + `rlas` + `lidR`), ALS-Finder provides a dedicated standalone native script: [`tutorials/02_spatial_tiling_and_streaming.R`](./02_spatial_tiling_and_streaming.R).
+# 
+# ### Key Highlights of the R Pipeline:
+# 1. **Index-Driven Ingestion**: Query the tile directly by integer `tile_id` (no manual file naming).
+# 2. **Dynamic Output Naming**: Extract `spatial_basename` and `hive_path` directly from `grid.gpkg`.
+# 3. **Handling ASPRS 'Withheld' Points**: Flags flight line edge turns / scanner blunders and filters them cleanly.
+# 4. **Raster Generation**: Rasterizes a 2m Canopy Surface Model (DSM) and saves it to structured directories.
 
 # %%
-r_script_content = f"""
-suppressPackageStartupMessages({{
-  library(jsonlite)
-  library(terra)
-  library(rlas)
-}})
+r_companion_script = Path("./tutorials/02_spatial_tiling_and_streaming.R").resolve()
 
-# 1. Read vector grid in R
-grid <- terra::vect("{grid_gpkg_path}")
-cat("Loaded", length(grid), "tiles in R (CRS:", crs(grid, proj=TRUE), ")\\n")
-
-# 2. Stream single tile via als-finder CLI into scratch
-scratch <- "{scratch_dir / 'r_stream_tile_0.laz'}"
-system(paste("{sys.executable} -m als_finder.cli fetch-tile --manifest {manifest_path} --tile-id 0 --tile-size {tile_size_m} --buffer-size {buffer_size_m} --crs {grid_crs} --output", scratch, "--overwrite --json"))
-
-# 3. Read point records in R
-if (file.exists(scratch)) {{
-  pts <- rlas::read.las(scratch)
-  cat("Ingested", nrow(pts), "points in R | Elevation Range:", min(pts$Z), "to", max(pts$Z), "m\\n")
-  unlink(scratch)  # Storage hygiene
-}}
-"""
-
-r_script_path = workspace_dir / "process_tile.R"
-r_script_path.write_text(r_script_content)
-
-if shutil.which("Rscript"):
-    subprocess.run(["Rscript", str(r_script_path)], check=True)
+if shutil.which("Rscript") and r_companion_script.exists():
+    print(f"> Executing Native R Tutorial: {r_companion_script.name}...")
+    subprocess.run(["Rscript", str(r_companion_script)], check=True)
+else:
+    print(f"Native R script ready at: {r_companion_script}")
 
 # %% [markdown]
 # ---
@@ -279,6 +264,41 @@ if shutil.which("Rscript"):
 #     --overwrite \
 #     --json
 # ```
+
+# %%
+# Test Containerized Execution (Docker) if Docker daemon is accessible
+docker_bin = shutil.which("docker")
+docker_output_laz = scratch_dir / "docker_tile_0.laz"
+
+if docker_bin:
+    print("> Executing Containerized Tile Stream inside Docker (4GB RAM Cap)...")
+    docker_cmd = [
+        "docker", "run", "--rm",
+        "--memory=4g", "--memory-swap=4g",
+        "-e", "OMP_NUM_THREADS=1",
+        "-v", f"{Path.cwd() / 'src'}:/app/src",
+        "-v", f"{workspace_dir}:/workspace",
+        "als-finder:latest",
+        "fetch-tile",
+        "--manifest", "/workspace/catalog/manifest.json",
+        "--tile-id", "0",
+        "--tile-size", str(tile_size_m),
+        "--buffer-size", str(buffer_size_m),
+        "--crs", str(grid_crs),
+        "--output", "/workspace/scratch/docker_tile_0.laz",
+        "--overwrite", "--json"
+    ]
+    try:
+        docker_res = subprocess.run(docker_cmd, capture_output=True, text=True)
+        if docker_res.returncode == 0 and docker_output_laz.exists():
+            print(f"✓ Docker Container Stream Success: {docker_output_laz.name} ({docker_output_laz.stat().st_size / 1e6:.2f} MB)")
+            docker_output_laz.unlink(missing_ok=True)
+        else:
+            print(f"Docker run completed with code {docker_res.returncode}")
+    except Exception as e:
+        print(f"Docker execution notice: {e}")
+else:
+    print("Docker is not active in this environment; container recipe is ready for cloud/HPC deployment.")
 
 # %% [markdown]
 # ---
