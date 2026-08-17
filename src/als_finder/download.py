@@ -125,9 +125,18 @@ def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquis
                 minx, miny, maxx, maxy = roi_native.bounds
                 bounds_str = f"([{minx:.4f}, {maxx:.4f}], [{miny:.4f}, {maxy:.4f}])"
                 
-                # For EPT Subsets, the physical download size is unknown until the stream finishes.
-                # Do NOT use the massive STAC size attribute, otherwise the progress bar will expect terabytes.
-                est_sz = 0
+                # Estimate subset payload dynamically from ROI area (m^2) and point density
+                # In compressed LAZ, point records typically average ~6.5 bytes per point
+                try:
+                    from pyproj import Geod
+                    geod = Geod(ellps="WGS84")
+                    poly_area_m2, _ = geod.geometry_area_perimeter(roi_poly)
+                    poly_area_m2 = abs(poly_area_m2)
+                    density = float(item.get('point_density') or 10.0)
+                    est_pts = max(1, int(poly_area_m2 * density))
+                    est_sz = int(est_pts * 6.5)
+                except Exception:
+                    est_sz = 10 * 1024 * 1024  # Fallback ~10 MB
                 
                 # Encode bounds safely into target_path placeholder natively
                 f.write(f"{p_name},{d_name},{url},\"{hive_target.absolute()}|{bounds_str}\",{est_sz}\n")
@@ -152,8 +161,8 @@ def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquis
         if gb >= 1.0: return f"{gb:.2f} GB"
         return f"{b / (1024**2):.2f} MB"
         
-    col_widths = {"Provider": 15, "Name": 38, "Tiles": 8, "True Size": 12, "Format": 8}
-    header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Tiles':>{col_widths['Tiles']}} | {'True Size':>{col_widths['True Size']}} | {'Format':>{col_widths['Format']}} |"
+    col_widths = {"Provider": 15, "Name": 38, "Tiles": 8, "Est Size": 12, "Format": 8}
+    header = f" | {'Provider':<{col_widths['Provider']}} | {'Name':<{col_widths['Name']}} | {'Tiles':>{col_widths['Tiles']}} | {'Est Size':>{col_widths['Est Size']}} | {'Format':>{col_widths['Format']}} |"
     
     print("\n" + "=" * len(header))
     print(" LiDAR Fetch Array Matrix ")
@@ -167,7 +176,7 @@ def generate_fetch_array(workspace_path: Path, roi_path: str = None, full_acquis
         tiles = str(v["Tiles"])
         sz_str = format_sz(v["Bytes"])
         fmt = v["Format"]
-        print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {tiles:>{col_widths['Tiles']}} | {sz_str:>{col_widths['True Size']}} | {fmt:>{col_widths['Format']}} |")
+        print(f" | {prov:<{col_widths['Provider']}} | {name:<{col_widths['Name']}} | {tiles:>{col_widths['Tiles']}} | {sz_str:>{col_widths['Est Size']}} | {fmt:>{col_widths['Format']}} |")
         
     print("=" * len(header))
     print(f" TOTAL ACQUISITIONS: {len(fetch_matrix_manifest)} | PHYSICAL TILES: {total_tiles} | EXPECTED PAYLOAD: {format_sz(total_estimated_bytes)}")
