@@ -112,7 +112,7 @@ print(f"Additional Metadata: {spec_0['additional_metadata']}")
 grid_gdf = als_finder.read_grid(workspace_dir, tile_size=tile_size_m, buffer_size=buffer_size_m)
 catalog_gdf = gpd.read_file(catalog_path)
 
-# Build interactive 3-layer map
+# Build interactive 4-layer map
 tiling_map = roi_gdf.explore(
     style_kwds={"fillColor": "none", "color": "#000000", "weight": 3, "dashArray": "6, 6"},
     name="1. Study Area (ROI)"
@@ -129,9 +129,19 @@ catalog_gdf.explore(
 grid_gdf.explore(
     m=tiling_map,
     color="#3182bd",
-    style_kwds={"fillOpacity": 0.25, "weight": 1.5},
+    style_kwds={"fillOpacity": 0.20, "weight": 1.2},
     name=f"3. Metric Grid ({tile_size_m}m)",
     popup=["tile_id"]
+)
+
+# Highlight Target Tile #0 in vibrant red for the upcoming stream demonstration
+target_tile_gdf = grid_gdf[grid_gdf["tile_id"] == 0]
+target_tile_gdf.explore(
+    m=tiling_map,
+    color="#e41a1c",
+    style_kwds={"fillColor": "#e41a1c", "fillOpacity": 0.55, "weight": 2.5},
+    name="4. Target Stream Candidate (Tile #0)",
+    popup=["tile_id", "point_density", "spatial_basename"]
 )
 
 folium.LayerControl().add_to(tiling_map)
@@ -173,14 +183,25 @@ with laspy.open(str(streamed_tile)) as fh:
 # %%
 out_dir = workspace_dir / "data" / "standardized"
 out_dir.mkdir(parents=True, exist_ok=True)
+target_tile_ids = [0, 1]
 results = []
 
-for tid in [0, 1]:
+print("==========================================================================================")
+print(f" Out-of-Core Processing Loop: {len(target_tile_ids)} Tiles (PDAL SMRF Filter & Crop)")
+print("==========================================================================================")
+
+for idx, tid in enumerate(target_tile_ids):
     spec = als_finder.get_tile_spec(workspace_dir, tile_id=tid, tile_size=tile_size_m, buffer_size=buffer_size_m)
     out_tile = out_dir / spec["hive_path"]
     out_tile.parent.mkdir(parents=True, exist_ok=True)
     
+    print(f"\n--- [Tile {idx + 1}/{len(target_tile_ids)}] Processing Index #{tid}: {spec['spatial_basename']} ---")
+    print(f"  Provider / Dataset: {spec['provider']} / {spec['dataset_id']}")
+    print(f"  Core Extent:        {spec['core_bounds_str']}")
+    print(f"  Buffered Extent:    {spec['buffered_bounds_str']}")
+    
     # 1. Stream buffered tile into scratch
+    print(f"  > Step 1: HTTP Stream: Fetching buffered tile ({tile_size_m}m + {buffer_size_m}m buffer)...")
     raw_tile = als_finder.stream_single_tile(
         manifest_or_grid_path=manifest_path,
         tile_id=tid,
@@ -190,8 +211,10 @@ for tid in [0, 1]:
         crs=grid_crs,
         overwrite=True
     )
+    print(f"    Streamed Raw LAZ: {raw_tile.name} ({raw_tile.stat().st_size / 1e6:.2f} MB)")
     
     # 2. PDAL: SMRF Ground Filtering -> Crop Buffer Margin -> Export LAZ
+    print("  > Step 2: Executing PDAL Pipeline: SMRF Ground Filter -> Crop Margin -> Write Standardized LAZ...")
     pipeline_json = {
         "pipeline": [
             str(raw_tile),
@@ -214,10 +237,16 @@ for tid in [0, 1]:
             "Ground_%": round(ground_cnt / len(pts) * 100, 1) if len(pts) > 0 else 0,
             "Size_MB": round(out_tile.stat().st_size / 1e6, 2)
         })
+        print(f"  > Step 3: Standardized Output Wrote: {out_tile.relative_to(workspace_dir)}")
+        print(f"    Core Points: {len(pts):,} (Ground: {ground_cnt:,} / {ground_cnt/len(pts)*100:.1f}%) | Size: {out_tile.stat().st_size / 1e6:.2f} MB")
         
     raw_tile.unlink(missing_ok=True)
+    print(f"    ✓ Purged temporary scratch file: {raw_tile.name} (Zero-disk footprint maintained)")
 
-pd.DataFrame(results)
+print("\n==========================================================================================")
+print(" Standardized Tile Processing Summary Table:")
+print("==========================================================================================")
+print(pd.DataFrame(results).to_string(index=False))
 
 # %% [markdown]
 # ---
@@ -235,7 +264,7 @@ pd.DataFrame(results)
 r_companion_script = Path("./tutorials/02_spatial_tiling_and_streaming.R").resolve()
 
 if shutil.which("Rscript") and r_companion_script.exists():
-    print(f"> Executing Native R Tutorial: {r_companion_script.name}...")
+    print(f"> Executing Native R Tutorial: Rscript {r_companion_script.name}...")
     subprocess.run(["Rscript", str(r_companion_script)], check=True)
 else:
     print(f"Native R script ready at: {r_companion_script}")

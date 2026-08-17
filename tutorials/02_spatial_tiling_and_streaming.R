@@ -89,6 +89,9 @@ for (target_tile_id in subset_tile_ids) {
     as.character(tile_row$grid_crs),
     shQuote(streamed_laz)
   )
+  
+  cat("  > Step 1: Executing ALS-Finder CLI Stream Command:\n")
+  cat("   ", cli_cmd, "\n")
   system(cli_cmd)
   
   if (file.exists(streamed_laz)) {
@@ -96,24 +99,26 @@ for (target_tile_id in subset_tile_ids) {
     # In ASPRS LAS standards, bit flag 4 is the 'Withheld' flag.
     # USGS 3DEP and survey vendors flag flight-line turns, scanner mirror turnarounds,
     # and atmospheric noise as 'withheld' so they are excluded from terrain models.
+    cat("  > Step 2: Reading LAS Header & Ingesting Points in R...\n")
     hdr <- rlas::read.lasheader(streamed_laz)
     pts <- suppressWarnings(rlas::read.las(streamed_laz))
     
     withheld_count <- sum(pts$Withheld)
     clean_pts <- pts[!pts$Withheld, ]
     
-    cat(sprintf("  Streamed Points:   %s (Withheld: %s / %.2f%%)\n",
+    cat(sprintf("    Streamed Points: %s (Withheld Noise Flagged: %s / %.2f%%)\n",
                 format(hdr$`Number of point records`, big.mark = ","),
                 format(withheld_count, big.mark = ","),
                 withheld_count / nrow(pts) * 100))
-    cat(sprintf("  Valid Analysis:    %s points\n", format(nrow(clean_pts), big.mark = ",")))
-    cat(sprintf("  Elevation (Z):     %.2f m to %.2f m (Mean: %.2f m)\n",
+    cat(sprintf("    Valid Analysis:  %s points\n", format(nrow(clean_pts), big.mark = ",")))
+    cat(sprintf("    Elevation (Z):   %.2f m to %.2f m (Mean: %.2f m)\n",
                 min(clean_pts$Z), max(clean_pts$Z), mean(clean_pts$Z)))
     
     # --- Step 5: Dynamically Name & Save Output DSM Raster ---
     raster_filename <- sub("\\.laz$", "_dsm.tif", as.character(tile_row$spatial_basename))
     out_raster_path <- file.path(out_raster_dir, raster_filename)
     
+    cat("  > Step 3: Rasterizing 2m Canopy DSM with terra...\n")
     r_template <- terra::rast(
       xmin = min(clean_pts$X), xmax = max(clean_pts$X),
       ymin = min(clean_pts$Y), ymax = max(clean_pts$Y),
@@ -129,10 +134,11 @@ for (target_tile_id in subset_tile_ids) {
     )
     
     terra::writeRaster(dsm_raster, out_raster_path, overwrite = TRUE)
-    cat("  ✓ Raster Saved:    ", out_raster_path, "\n")
+    cat("    ✓ Output Raster Saved: ", out_raster_path, "\n")
     
     # --- Step 6: Zero-Disk Storage Hygiene ---
     unlink(streamed_laz)
+    cat("    ✓ Purged temporary scratch stream file to maintain zero-disk footprint.\n")
   }
 }
 
