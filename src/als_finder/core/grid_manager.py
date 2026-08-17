@@ -452,9 +452,6 @@ def build_workspace_grid(
     primary_gpkg = ws / "catalog" / "grid.gpkg"
     pyogrio.write_dataframe(export_df, primary_gpkg, layer="grid", driver="GPKG")
 
-    del export_df
-    gc.collect()
-
     # Update manifest grids dictionary
     if "grids" not in manifest_data:
         manifest_data["grids"] = {}
@@ -464,7 +461,7 @@ def build_workspace_grid(
         "tile_size": tile_size,
         "buffer_size": buffer_size,
         "grid_crs": crs_str,
-        "total_tiles": len(grid_gdf),
+        "total_tiles": len(export_df),
         "gpkg_file": f"grids/tilesize={tile_size}/buffer={buffer_size}/grid.gpkg"
     }
     manifest_data["grid_info"] = manifest_data["grids"][grid_key]
@@ -472,8 +469,8 @@ def build_workspace_grid(
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest_data, f, indent=2)
 
-    logger.info(f"Built workspace grid ({len(grid_gdf)} tiles, size={tile_size}m, buf={buffer_size}m) at {gpkg_path}")
-    return grid_gdf, crs_str
+    logger.info(f"Built workspace grid ({len(export_df)} tiles, size={tile_size}m, buf={buffer_size}m) at {gpkg_path}")
+    return export_df, crs_str
 
 
 def get_tile_spec(
