@@ -192,17 +192,34 @@ class OpenTopographyProvider(BaseProvider):
         """
         pass
 
-    def get_pdal_reader(self, urls: List[str], buffered_poly: Polygon) -> List[Dict[str, Any]]:
+    def get_pdal_reader(
+        self,
+        urls: List[str],
+        buffered_poly: Polygon,
+        poly_crs: Optional[str] = None,
+        **kwargs: Any
+    ) -> List[Dict[str, Any]]:
         pipeline = []
         inputs = []
+        b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
+        bounds_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
+
         for i, url in enumerate(urls):
             tag = f"reader_{i}"
-            pipeline.append({
-                "type": "readers.copc",
-                "filename": url,
-                "polygon": buffered_poly.wkt,
-                "tag": tag
-            })
+            if url.lower().endswith("ept.json"):
+                pipeline.append({
+                    "type": "readers.ept",
+                    "filename": url,
+                    "bounds": bounds_str,
+                    "tag": tag
+                })
+            else:
+                pipeline.append({
+                    "type": "readers.copc",
+                    "filename": url,
+                    "polygon": buffered_poly.wkt,
+                    "tag": tag
+                })
             inputs.append(tag)
             
         if len(urls) > 1:

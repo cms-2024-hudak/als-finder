@@ -263,7 +263,13 @@ class NOAAProvider(BaseProvider):
                 out_path.unlink()
             raise
 
-    def get_pdal_reader(self, urls: List[str], buffered_poly: Polygon) -> List[Dict[str, Any]]:
+    def get_pdal_reader(
+        self,
+        urls: List[str],
+        buffered_poly: Polygon,
+        poly_crs: Optional[str] = None,
+        **kwargs: Any
+    ) -> List[Dict[str, Any]]:
         pipeline = []
         inputs = []
         b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds

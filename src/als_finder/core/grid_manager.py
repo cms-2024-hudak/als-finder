@@ -469,6 +469,7 @@ def get_tile_spec(
         "spatial_basename": spatial_basename,
         "hive_path": hive_path,
         "spatial_hive_path": spatial_hive_path,
+        "grid_gpkg_path": str(gpkg_path),
         "provider": provider,
         "year": year,
         "state": state,
@@ -481,3 +482,57 @@ def get_tile_spec(
         "bbox_str": buffered_bounds_str,
         "urls": urls,
     }
+
+
+def get_grid_path(
+    workspace_or_manifest: Union[str, Path],
+    tile_size: int = 1200,
+    buffer_size: int = 30
+) -> Path:
+    """
+    Returns the filesystem path to the Hive-partitioned grid.gpkg for given tile and buffer size.
+
+    Args:
+        workspace_or_manifest (Union[str, Path]): Workspace root or manifest.json path.
+        tile_size (int): Core metric tile size in meters.
+        buffer_size (int): Overlap buffer size in meters.
+
+    Returns:
+        Path: Path to the grid.gpkg file.
+    """
+    ws = Path(workspace_or_manifest)
+    if ws.name == "manifest.json" or ws.suffix.lower() == ".gpkg":
+        ws = ws.parent.parent if ws.parent.name == "catalog" else ws.parent
+
+    hive_path = ws / "catalog" / "grids" / f"tilesize={tile_size}" / f"buffer={buffer_size}" / "grid.gpkg"
+    if hive_path.exists():
+        return hive_path
+    primary_path = ws / "catalog" / "grid.gpkg"
+    if primary_path.exists():
+        return primary_path
+    return hive_path
+
+
+def read_grid(
+    workspace_or_manifest: Union[str, Path],
+    tile_size: int = 1200,
+    buffer_size: int = 30
+) -> gpd.GeoDataFrame:
+    """
+    Reads and returns the spatial grid as a GeoDataFrame for the requested tile and buffer configuration.
+    Lazily generates the grid if not already present on disk.
+
+    Args:
+        workspace_or_manifest (Union[str, Path]): Workspace root or manifest.json path.
+        tile_size (int): Core metric tile size in meters.
+        buffer_size (int): Overlap buffer size in meters.
+
+    Returns:
+        gpd.GeoDataFrame: The grid vector layer.
+    """
+    grid_path = get_grid_path(workspace_or_manifest, tile_size=tile_size, buffer_size=buffer_size)
+    if not grid_path.exists():
+        build_workspace_grid(workspace_or_manifest, tile_size=tile_size, buffer_size=buffer_size)
+        grid_path = get_grid_path(workspace_or_manifest, tile_size=tile_size, buffer_size=buffer_size)
+    return gpd.read_file(grid_path)
+
