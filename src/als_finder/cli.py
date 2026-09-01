@@ -16,7 +16,7 @@ except importlib.metadata.PackageNotFoundError:
     __version__ = "1.1.0-dev"
 
 from als_finder.core.input_manager import load_roi, ROIError
-from als_finder.providers import get_active_providers, get_provider, list_available_providers, BaseProvider
+from als_finder.providers import get_active_providers, get_provider, list_available_providers, BaseProvider, get_provider_priority
 from als_finder.download import generate_fetch_array, execute_fetch_array
 
 # Configure logging
@@ -89,7 +89,8 @@ def get_example_roi():
 @click.option('--ot-key', help='OpenTopography API Key. Auto-saved to workspace .env.')
 @click.option('--earthdata-token', help='NASA Earthdata Login (EDL) Bearer Token. Auto-saved to workspace .env.')
 @click.option('--neon-key', help='NEON API Token. Auto-saved to workspace .env.')
-def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, earthdata_token, neon_key):
+@click.option('--dedup', is_flag=True, help='Deduplicate multi-archive surveys, prioritizing open repositories (USGS > NOAA > GLiHT > NEON > Earthdata > OpenTopography).')
+def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, earthdata_token, neon_key, dedup):
     """Search for available LiDAR data."""
     start_time_exec = time.time()
     
@@ -347,8 +348,52 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
                     
                 item['display_date'] = display_date
                 item['sort_date'] = sort_date
+                item['priority'] = get_provider_priority(item.get('provider', ''))
             
-            unique_results.sort(key=lambda k: k.get('sort_date', '0000-00-00'), reverse=True)
+            # Sort primarily by date (newest first), secondarily by provider priority (Open/Octree first)
+            unique_results.sort(key=lambda k: (k.get('sort_date', '0000-00-00'), -k.get('priority', 99)), reverse=True)
+
+            if dedup:
+                deduped: List[Dict[str, Any]] = []
+                for candidate in unique_results:
+                    c_name = str(candidate.get('name', '')).lower().replace('_', ' ').replace('-', ' ')
+                    c_year = str(candidate.get('year', '') or '')
+                    c_bounds = candidate.get('bounds')
+                    
+                    is_dup = False
+                    for kept in deduped:
+                        k_name = str(kept.get('name', '')).lower().replace('_', ' ').replace('-', ' ')
+                        k_year = str(kept.get('year', '') or '')
+                        k_bounds = kept.get('bounds')
+                        
+                        # Name + year match
+                        if c_year and k_year and c_year == k_year:
+                            c_words = set([w for w in c_name.split() if len(w) > 4])
+                            k_words = set([w for w in k_name.split() if len(w) > 4])
+                            if c_words and k_words and len(c_words.intersection(k_words)) >= 2:
+                                is_dup = True
+                                break
+                        
+                        # Bounding box IoU overlap > 0.80 with matching year
+                        if c_bounds and k_bounds and c_year and k_year and c_year == k_year:
+                            minx = max(c_bounds[0], k_bounds[0])
+                            miny = max(c_bounds[1], k_bounds[1])
+                            maxx = min(c_bounds[2], k_bounds[2])
+                            maxy = min(c_bounds[3], k_bounds[3])
+                            if maxx > minx and maxy > miny:
+                                inter_area = (maxx - minx) * (maxy - miny)
+                                c_area = (c_bounds[2] - c_bounds[0]) * (c_bounds[3] - c_bounds[1])
+                                k_area = (k_bounds[2] - k_bounds[0]) * (k_bounds[3] - k_bounds[1])
+                                union_area = c_area + k_area - inter_area
+                                if union_area > 0 and (inter_area / union_area) > 0.80:
+                                    is_dup = True
+                                    break
+                    
+                    if not is_dup:
+                        deduped.append(candidate)
+                        
+                unique_results = deduped
+                logger.info(f"Deduplication retained {len(unique_results)} distinct surveys.")
             
             for item in unique_results:
                 prov = str(item.get('provider', 'Unknown'))[:col_widths['Provider']]

@@ -76,6 +76,23 @@ def list_available_providers() -> List[str]:
     """
     return list(PROVIDER_REGISTRY.keys())
 
+# 2-Tier Provider Priority: 1. Open Repositories (No Key) -> 2. Streaming Format Quality (Octree > LAS/LAZ)
+PROVIDER_PRIORITIES: Dict[str, int] = {
+    "USGS_EPT": 1,        # 100% Open + Native EPT/COPC Octree Streaming
+    "NOAA_STAC": 2,       # 100% Open + Native EPT/COPC Octree Streaming
+    "NASA_GLIHT": 3,      # 100% Open + Direct HTTPS LAZ Swaths
+    "NEON_AOP": 4,        # 100% Open Public Access + 1km LAZ Tiles
+    "NASA_EARTHDATA": 5,  # Requires Login Token + Direct DAAC LAZ
+    "OPENTOPOGRAPHY": 6,  # Requires API Key + Daily Point Extraction Limits
+}
+
+def get_provider_priority(provider_name: str) -> int:
+    """
+    Return the integer priority rank (1 = highest, 6 = lowest) for a provider.
+    """
+    canonical = PROVIDER_ALIASES.get(str(provider_name).strip().upper(), str(provider_name).strip().upper())
+    return PROVIDER_PRIORITIES.get(canonical, 99)
+
 __all__ = [
     "BaseProvider",
     "USGSProvider",
@@ -88,5 +105,7 @@ __all__ = [
     "get_provider",
     "get_active_providers",
     "list_available_providers",
-    "PROVIDER_REGISTRY"
+    "PROVIDER_REGISTRY",
+    "PROVIDER_PRIORITIES",
+    "get_provider_priority"
 ]
