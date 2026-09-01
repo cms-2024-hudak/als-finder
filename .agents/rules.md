@@ -126,3 +126,13 @@ When resolving and closing a GitHub Issue:
 - **Docstrings:** All public modules, classes, and functions must include Google-style docstrings.
 - **Testing:** New spatial features or fixes must include unit tests in `tests/` executed via `pytest tests/`.
 - **Atomic Commits:** Follow Conventional Commits format: `feat:`, `fix:`, `docs:`, `refactor:`, `perf:`, `test:`, `chore:`. Commit and push immediately upon reaching a stable verified state.
+
+---
+
+## 6. Communication & Language Standards
+
+- **Persona & Tone**: Speak plainly, clearly, and directly—the way a professor or senior scientist explains concepts to graduate students and lab researchers.
+- **No Corporate Buzzwords**: Strictly avoid tech-corporate jargon, marketing buzzwords, and hand-waving intensifiers (*seamlessly, organically, federated paradigm, state-of-the-art, zero-copy, cloud-native, revolutionizing*).
+- **No Misuse of Scientific Filler**: Do not use "mathematically" or "theoretically" as rhetorical filler. Describe the actual computation plainly.
+- **Accurate Environment Phrasing**: Do not refer to "the cloud" when describing local workstation code, lab servers, or HPC Slurm supercomputers.
+- **Estimated vs. Exact**: Always explicitly distinguish between estimated values (e.g. bounding box pulse density approximations) and exact values (e.g. true point counts read from LAS headers).

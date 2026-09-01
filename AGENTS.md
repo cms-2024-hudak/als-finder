@@ -5,6 +5,7 @@ Welcome to the `als-finder` workspace.
 ## Active Rules
 The following modular rules apply across all agent sessions in this workspace:
 - [Operational Standards & Environmental Boundaries](.agents/rules/operational-standards.md)
+- [Communication & Language Standards](.agents/rules/communication-and-language-standards.md)
 - [GitHub Issues & External Memory Protocol](.agents/rules/github-issues.md)
 
 ## Workspace Architecture & Key References
