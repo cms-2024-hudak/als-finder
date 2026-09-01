@@ -230,18 +230,27 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
                     poly = shape(geom_dict)
                     area_sqm = abs(geod.geometry_area_perimeter(poly)[0])
                     item['area_sqkm'] = round(area_sqm / 1e6, 2)
-                    
-                    if count and not item.get('point_density') and area_sqm > 0:
-                        calc_density = float(count) / area_sqm
-                        if calc_density < 0.01:
-                            item['point_density'] = round(calc_density, 4)
-                        else:
-                            item['point_density'] = round(calc_density, 2)
-                    elif item.get('point_density') and not count and area_sqm > 0:
-                        imputed_count = int(float(item.get('point_density')) * area_sqm)
-                        item['point_count'] = imputed_count
-                        # Automatically track the new sizes globally
-                        item['size'] = imputed_count * 8 
+                elif item.get('area_sqkm'):
+                    area_sqm = float(item['area_sqkm']) * 1e6
+                else:
+                    area_sqm = 0
+
+                if count and not item.get('point_density') and area_sqm > 0:
+                    calc_density = float(count) / area_sqm
+                    if calc_density < 0.01:
+                        item['point_density'] = round(calc_density, 4)
+                    else:
+                        item['point_density'] = round(calc_density, 2)
+                elif item.get('point_density') and not count and area_sqm > 0:
+                    imputed_count = int(float(item.get('point_density')) * area_sqm)
+                    item['point_count'] = imputed_count
+
+                if not item.get('size') and item.get('point_count'):
+                    item['size'] = int(item['point_count']) * 8
+                elif not item.get('size') and item.get('point_density') and area_sqm > 0:
+                    imputed_count = int(float(item.get('point_density')) * area_sqm)
+                    item['point_count'] = imputed_count
+                    item['size'] = imputed_count * 8
             except Exception as e:
                 logger.debug(f"Failed calculating density: {e}")
 

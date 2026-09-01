@@ -129,6 +129,9 @@ class GLiHTProvider(BaseProvider):
                 "provider_type": "NASA_Airborne"
             }
 
+            estimated_pts = int(point_density * geom_area_sqkm * 1_000_000)
+            estimated_bytes = estimated_pts * 8
+
             results.append({
                 "provider": "NASA_GLIHT",
                 "dataset_id": dataset_id,
@@ -140,6 +143,8 @@ class GLiHTProvider(BaseProvider):
                 "srs": srs_str,
                 "url": url,
                 "point_density": point_density,
+                "point_count": estimated_pts,
+                "size": estimated_bytes,
                 "area_sqkm": geom_area_sqkm,
                 "additional_metadata": self.sanitize_metadata(additional_meta)
             })

@@ -144,6 +144,9 @@ class NEONProvider(BaseProvider):
                     "landing_page": f"https://data.neonscience.org/data-products/{self.PRODUCT_ID}"
                 }
 
+                estimated_pts = int(point_density * geom_area_sqkm * 1_000_000)
+                estimated_bytes = estimated_pts * 8
+
                 results.append({
                     "provider": "NEON_AOP",
                     "dataset_id": dataset_id,
@@ -155,6 +158,8 @@ class NEONProvider(BaseProvider):
                     "srs": srs_str,
                     "url": direct_url,
                     "point_density": point_density,
+                    "point_count": estimated_pts,
+                    "size": estimated_bytes,
                     "area_sqkm": geom_area_sqkm,
                     "additional_metadata": self.sanitize_metadata(additional_meta)
                 })
