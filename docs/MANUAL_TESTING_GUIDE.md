@@ -61,19 +61,19 @@ als-finder search \
 
 ## Test 3: Extract a Single Sub-Tile on Demand (`fetch-tile`)
 
-Extract a single 500m sub-tile (tile ID 0) directly from the search manifest with a 30m buffer around the perimeter:
+Extract a single 500m sub-tile (e.g. tile ID 15) directly from the workspace with a 30m buffer around the perimeter:
 
 ```bash
 als-finder fetch-tile \
-  --manifest scratch/test_workspace/catalog/manifest.json \
-  --tile-id 0 \
-  --output scratch/test_tile_0.laz \
+  --workspace scratch/test_workspace \
+  --tile-id 15 \
+  --output scratch/test_tile_15.laz \
   --overwrite
 ```
 
 ### What to check:
-- [ ] Terminal prints: `Successfully streamed tile 0 to scratch/test_tile_0.laz`.
-- [ ] The file `scratch/test_tile_0.laz` is created locally in `scratch/`.
+- [ ] Terminal prints: `Successfully streamed tile 15 to scratch/test_tile_15.laz`.
+- [ ] The file `scratch/test_tile_15.laz` is created locally in `scratch/`.
 
 ---
 

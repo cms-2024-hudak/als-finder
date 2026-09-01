@@ -1112,7 +1112,8 @@ def clean_cmd(workspace):
         raise click.ClickException(str(e))
 
 @cli.command('fetch-tile')
-@click.option('--manifest', required=True, type=click.Path(exists=True), help='Path to catalog manifest.json or grid.gpkg')
+@click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
+@click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
 @click.option('--tile-id', required=True, type=int, help='Zero-based tile ID to stream')
 @click.option('--output', default=None, type=click.Path(), help='Target output .laz file path or directory (auto-Hive partitioned if directory or omitted)')
 @click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
@@ -1121,12 +1122,26 @@ def clean_cmd(workspace):
 @click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming (e.g. tile_E0759000_N4313000_500m.laz)')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def fetch_tile_cmd(manifest, tile_id, output, buffer_size, tile_size, crs, spatial_name, overwrite, json_output):
+def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size, crs, spatial_name, overwrite, json_output):
     """Stream a single spatial core + buffered tile on demand."""
     try:
+        # Resolve manifest or workspace
+        if workspace:
+            ws_path = Path(workspace)
+            manifest_candidate = ws_path / "catalog" / "grid.gpkg"
+            if not manifest_candidate.exists():
+                manifest_candidate = ws_path / "catalog" / "manifest.json"
+            if not manifest_candidate.exists():
+                raise click.UsageError(f"Neither grid.gpkg nor manifest.json found in workspace '{workspace}/catalog/'. Run 'search' first.")
+            target_manifest = manifest_candidate
+        elif manifest:
+            target_manifest = Path(manifest)
+        else:
+            raise click.UsageError("Either --workspace or --manifest must be provided.")
+
         from als_finder.core.standardization import stream_single_tile
         res_path = stream_single_tile(
-            manifest_or_grid_path=manifest,
+            manifest_or_grid_path=target_manifest,
             tile_id=tile_id,
             out_path=output,
             tile_size=tile_size,
