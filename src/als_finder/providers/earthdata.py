@@ -26,6 +26,12 @@ class EarthdataProvider(BaseProvider):
             cli_value=earthdata_token,
             provider_name="NASA Earthdata (ORNL DAAC / CMS)",
             signup_url="https://urs.earthdata.nasa.gov/",
+            instructions=[
+                "Sign in or register for a free account at: https://urs.earthdata.nasa.gov/",
+                "In the top navigation bar, click the 'Generate Token' tab (or go to: https://urs.earthdata.nasa.gov/users/YOUR_USERNAME/user_tokens)",
+                "Click the green 'GENERATE TOKEN' button, then click 'SHOW TOKEN' and copy the Bearer token string.",
+                "Pass it once via CLI to auto-cache in your workspace: als-finder search --roi <file> --earthdata-token <YOUR_TOKEN>"
+            ],
             auto_save_workspace_env=True
         )
 

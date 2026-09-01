@@ -27,6 +27,12 @@ class NEONProvider(BaseProvider):
             cli_value=neon_key,
             provider_name="NEON AOP",
             signup_url="https://data.neonscience.org/home",
+            instructions=[
+                "Create a free user account at: https://data.neonscience.org/home",
+                "Sign in and navigate to 'My Account' -> 'API Tokens'.",
+                "Click 'Generate New Token' and copy the token string.",
+                "Pass it once via CLI to auto-cache in your workspace: als-finder search --roi <file> --neon-key <YOUR_KEY>"
+            ],
             auto_save_workspace_env=True
         )
 

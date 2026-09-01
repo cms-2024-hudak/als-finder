@@ -24,6 +24,12 @@ class OpenTopographyProvider(BaseProvider):
             cli_value=ot_key,
             provider_name="OpenTopography",
             signup_url="https://portal.opentopography.org/myopentopo",
+            instructions=[
+                "Create a free account at: https://portal.opentopography.org/myopentopo",
+                "Navigate to 'My Account' -> 'OpenTopography API Key'.",
+                "Click 'Request an API Key' and copy the alphanumeric key string.",
+                "Pass it once via CLI to auto-cache in your workspace: als-finder search --roi <file> --ot-key <YOUR_KEY>"
+            ],
             auto_save_workspace_env=True
         )
 

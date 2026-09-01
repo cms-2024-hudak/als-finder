@@ -86,17 +86,19 @@ def get_example_roi():
 @click.option('--workspace', help='Path to project workspace directory')
 @click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NASA_GLIHT'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
-@click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
-def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
+@click.option('--ot-key', help='OpenTopography API Key. Auto-saved to workspace .env.')
+@click.option('--earthdata-token', help='NASA Earthdata Login (EDL) Bearer Token. Auto-saved to workspace .env.')
+@click.option('--neon-key', help='NEON API Token. Auto-saved to workspace .env.')
+def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, earthdata_token, neon_key):
     """Search for available LiDAR data."""
     start_time_exec = time.time()
     
     if ot_key:
-        env_path = Path.cwd() / '.env'
-        with open(env_path, 'a') as f:
-            f.write(f"\nOPENTOPOGRAPHY_API_KEY={ot_key}\n")
         os.environ['OPENTOPOGRAPHY_API_KEY'] = ot_key
-        logger.info(f"OpenTopography API key successfully cached locally to {env_path}")
+    if earthdata_token:
+        os.environ['EARTHDATA_BEARER_TOKEN'] = earthdata_token
+    if neon_key:
+        os.environ['NEON_API_KEY'] = neon_key
         
     if not (roi or name or date or density):
         raise click.UsageError("At least one filter (--roi, --name, --date, or --density) must be provided to execute a pipeline search securely avoiding arbitrary global extraction ceilings.")
@@ -584,7 +586,9 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
 @click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NASA_GLIHT'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
-@click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
+@click.option('--ot-key', help='OpenTopography API Key. Auto-saved to workspace .env.')
+@click.option('--earthdata-token', help='NASA Earthdata Login (EDL) Bearer Token. Auto-saved to workspace .env.')
+@click.option('--neon-key', help='NEON API Token. Auto-saved to workspace .env.')
 @click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats to the local drive natively.')
 @click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull the entirely comprehensive upstream dataset payload natively.')
 @click.option('--standardize', is_flag=True, help='Execute PDAL standardization concurrently after extracting binaries.')
@@ -594,8 +598,14 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--preserve-raw', is_flag=True, help='Preserve the raw .laz binaries after successful standardization. By default, raw files are purged to save space.')
 @click.option('--workers', type=int, help='Override the number of concurrent thread workers. Defaults to dynamic scaling based on os.cpu_count()')
 @click.option('--overwrite', is_flag=True, help='Force overwrite of existing files instead of skipping them.')
-def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, standardize, crs, stac, quicklook, preserve_raw, workers, overwrite):
+def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, earthdata_token, neon_key, execute, full, standardize, crs, stac, quicklook, preserve_raw, workers, overwrite):
     """Generate target fetch arrays or physically download filtered binary segments directly to the Hive local cache."""
+    if ot_key:
+        os.environ['OPENTOPOGRAPHY_API_KEY'] = ot_key
+    if earthdata_token:
+        os.environ['EARTHDATA_BEARER_TOKEN'] = earthdata_token
+    if neon_key:
+        os.environ['NEON_API_KEY'] = neon_key
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
     manifest_path = workspace_path / 'catalog' / 'manifest.json'
