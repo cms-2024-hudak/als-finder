@@ -607,15 +607,27 @@ def stream_single_tile(
         if len(urls) > 1:
             pipeline.append({"type": "filters.merge", "inputs": inputs})
 
+    grid_crs = spec.get("grid_crs", "EPSG:32610")
+    # Default target_crs to grid_crs (projected UTM) for metric accuracy unless explicitly overridden
+    target_crs = crs if (crs and crs != "EPSG:3857") else grid_crs
+
     # 3. Reprojection to target CRS so crop bounds match point cloud coordinate space
-    if crs and crs.lower() != "native":
+    if target_crs and target_crs.lower() != "native":
         pipeline.append({
             "type": "filters.reprojection",
-            "out_srs": crs,
+            "out_srs": target_crs,
         })
 
-    # 4. Crop bounds immediately after reprojection
-    b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
+    # 4. Transform buffered_poly to target_crs so crop bounds match point cloud coordinates exactly
+    from pyproj import Transformer
+    from shapely.ops import transform
+    if target_crs and grid_crs and target_crs != grid_crs:
+        transformer = Transformer.from_crs(grid_crs, target_crs, always_xy=True)
+        crop_poly = transform(transformer.transform, buffered_poly)
+    else:
+        crop_poly = buffered_poly
+
+    b_minx, b_miny, b_maxx, b_maxy = crop_poly.bounds
     pipeline.append({
         "type": "filters.crop",
         "bounds": f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])",
@@ -636,7 +648,7 @@ def stream_single_tile(
         "type": "writers.las",
         "filename": str(target_out.absolute()),
         "compression": "laszip",
-        "a_srs": crs,
+        "a_srs": target_crs,
     })
 
     # 7. Memory-guarded PDAL execution
