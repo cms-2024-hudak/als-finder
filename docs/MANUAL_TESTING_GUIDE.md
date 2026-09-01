@@ -1,29 +1,21 @@
 # ALS-Finder Manual Testing Guide
 
-This guide walks through testing each main feature of `als-finder` step-by-step:
-1. **Searching for LiDAR data** across multiple archives (USGS 3DEP, NASA G-LiHT, NEON AOP, NASA Earthdata)
-2. **Checking API keys and credentials**
-3. **Extracting buffered spatial tiles** on demand
-4. **Reading and inspecting point clouds** in Python (`laspy`) and R (`lidR`)
+This guide walks through testing each main capability of `als-finder`. All test outputs, catalogs, grids, and downloaded `.laz` tiles are placed strictly inside the `scratch/` directory.
 
 ---
 
 ## Step 0: Activate Your Environment
 
-Because this environment uses Conda, activate it with:
-
 ```bash
 cd /mnt/c/Users/gears/git/als-finder
 
-# Activate the project environment:
+# Activate your Conda environment:
 conda activate als-finder-env
 # OR by path:
 conda activate /mnt/c/Users/gears/git/als-finder/.venv
 ```
 
-*(You can also run `.venv/bin/als-finder` directly without activating).*
-
-Check that the command-line tool runs:
+Confirm that the CLI tool runs:
 ```bash
 als-finder --version
 als-finder --help
@@ -33,7 +25,7 @@ als-finder --help
 
 ## Test 1: Search Across Repositories (USGS + NASA G-LiHT + NEON)
 
-Search for available airborne LiDAR over the Lake Tahoe study area across multiple repositories at once:
+Search for available airborne LiDAR datasets intersecting the Lake Tahoe study area:
 
 ```bash
 als-finder search \
@@ -43,15 +35,15 @@ als-finder search \
 ```
 
 ### What to check:
-- [ ] A table appears listing all datasets that intersect the study area.
+- [ ] A formatted table appears listing matching datasets, acquisition dates, estimated payload sizes (GB), pulse densities, and areas.
 - [ ] `scratch/test_workspace/catalog/catalog.gpkg` is created containing the dataset footprint polygons.
-- [ ] `scratch/test_workspace/catalog/manifest.json` is created with the dataset metadata.
+- [ ] `scratch/test_workspace/catalog/manifest.json` is created containing the metadata.
 
 ---
 
 ## Test 2: Search NASA Earthdata (CMS / ORNL DAAC)
 
-Search for NASA Carbon Monitoring System (CMS) LiDAR datasets:
+Search for NASA Carbon Monitoring System (CMS) biomass LiDAR campaigns:
 
 ```bash
 als-finder search \
@@ -61,32 +53,50 @@ als-finder search \
 ```
 
 ### What to check:
-- [ ] The search runs using your saved Earthdata token.
-- [ ] It finds the `CMS_MD_BIOMASS_2021` dataset and saves the catalog.
+- [ ] The search runs instantly without prompts (using your saved Earthdata token).
+- [ ] It finds `NASA CMS Maryland High-Resolution Canopy Biomass 2021` with estimated payload size (~1229.82 GB).
+- [ ] `scratch/test_earthdata/catalog/catalog.gpkg` is created.
 
 ---
 
-## Test 3: Extract a Tile on Demand (`fetch-tile`)
+## Test 3: Generate a Spatial Processing Grid
 
-Extract a single 500m sub-tile (tile ID 0) with a 30m buffer around the edges:
+Generate a regular 500m $\times$ 500m processing grid over your search results (without downloading full raw point clouds):
+
+```bash
+als-finder download \
+  --manifest scratch/test_workspace/catalog/manifest.json \
+  --output scratch/test_tiling_workspace \
+  --tile-size 500 \
+  --dry-run
+```
+
+### What to check:
+- [ ] `scratch/test_tiling_workspace/catalog/grid.gpkg` is created containing the numbered 500m grid tiles.
+
+---
+
+## Test 4: Extract a Single Sub-Tile on Demand (`fetch-tile`)
+
+Extract a single 500m sub-tile (tile ID 0) with a 30m buffer around the perimeter:
 
 ```bash
 als-finder fetch-tile \
-  --manifest tutorials/tiling_workspace/catalog/grid.gpkg \
+  --manifest scratch/test_tiling_workspace/catalog/grid.gpkg \
   --tile-id 0 \
   --output scratch/test_tile_0.laz \
   --overwrite
 ```
 
 ### What to check:
-- [ ] Output prints: `Successfully streamed tile 0 to scratch/test_tile_0.laz`.
+- [ ] Terminal prints: `Successfully streamed tile 0 to scratch/test_tile_0.laz`.
 - [ ] The file `scratch/test_tile_0.laz` is created locally.
 
 ---
 
-## Test 4: Inspect the Extracted Tile in Python
+## Test 5: Inspect the Extracted Point Cloud in Python
 
-Check the point count, elevation range, and point classifications:
+Check point counts, coordinate bounding boxes, elevation (Z) ranges, and point classifications:
 
 ```bash
 python -c "
@@ -95,7 +105,7 @@ import laspy
 with laspy.open('scratch/test_tile_0.laz') as reader:
     header = reader.header
     print('Point Count:', f'{header.point_count:,}')
-    print('Elevation (Z Range):', round(header.z_min, 2), 'to', round(header.z_max, 2), 'meters')
+    print('Elevation Range (Z):', round(header.z_min, 2), 'to', round(header.z_max, 2), 'meters')
 
     las = reader.read()
     classes = sorted(list(set(las.classification)))
@@ -105,9 +115,9 @@ with laspy.open('scratch/test_tile_0.laz') as reader:
 
 ---
 
-## Test 5: Run the Automated Test Suite
+## Test 6: Run the Full Automated Test Suite
 
-Run the full pytest suite:
+Run all automated unit tests:
 
 ```bash
 pytest tests/
@@ -115,5 +125,5 @@ pytest tests/
 
 ### Expected Output:
 ```
-================== 19 passed in 10.12s ==================
+================== 19 passed in 10.41s ==================
 ```

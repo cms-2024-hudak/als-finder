@@ -28,8 +28,8 @@ import pdal
 # Import als_finder as the primary root module
 import als_finder
 
-# Set up isolated workspace and scratch storage
-workspace_dir = Path("./tiling_workspace").resolve()
+# Set up isolated workspace inside scratch/
+workspace_dir = Path("./scratch/tiling_workspace").resolve()
 scratch_dir = workspace_dir / "scratch"
 scratch_dir.mkdir(parents=True, exist_ok=True)
 

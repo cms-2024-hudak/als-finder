@@ -39,8 +39,8 @@ import folium
 # Core als-finder library (auto-configures PROJ_DATA and GDAL_DATA coordinate system paths)
 import als_finder
 
-# Set up dedicated workspace for this tutorial
-workspace_dir = Path("./demo_workspace").resolve()
+# Set up dedicated workspace for this tutorial inside scratch/
+workspace_dir = Path("./scratch/demo_workspace").resolve()
 workspace_dir.mkdir(parents=True, exist_ok=True)
 
 print("=" * 70)
