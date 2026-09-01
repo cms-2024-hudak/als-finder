@@ -15,6 +15,7 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "1.1.0-dev"
 
+from als_finder.core.input_manager import load_roi, ROIError
 from als_finder.providers import get_active_providers, get_provider, list_available_providers, BaseProvider
 from als_finder.download import generate_fetch_array, execute_fetch_array
 
