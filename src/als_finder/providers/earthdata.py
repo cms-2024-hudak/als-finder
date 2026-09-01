@@ -43,13 +43,9 @@ class EarthdataProvider(BaseProvider):
 
     def check_access(self) -> bool:
         """
-        Check if NASA CMR STAC API is accessible.
+        Check if NASA Earthdata provider index is available.
         """
-        try:
-            r = requests.get(f"{self.CMR_STAC_URL}", headers=self._get_headers(), timeout=10)
-            return r.status_code == 200
-        except requests.RequestException:
-            return self.INDEX_PATH.exists()
+        return self.INDEX_PATH.exists()
 
     def _load_cms_gdf(self) -> gpd.GeoDataFrame:
         """

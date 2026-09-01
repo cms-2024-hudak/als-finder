@@ -25,17 +25,9 @@ class GLiHTProvider(BaseProvider):
 
     def check_access(self) -> bool:
         """
-        Check if NASA GSFC G-LiHT web server or local index is accessible.
+        Check if G-LiHT provider index is available.
         """
-        if self.INDEX_PATH.exists():
-            return True
-        if self.CACHE_FILE.exists() and self.CACHE_FILE.stat().st_size > 1000:
-            return True
-        try:
-            r = requests.head("https://glihtdata.gsfc.nasa.gov/", timeout=5)
-            return r.status_code in (200, 301, 302, 403)
-        except requests.RequestException:
-            return False
+        return self.INDEX_PATH.exists() or self.CACHE_FILE.exists()
 
     def _load_index_gdf(self) -> gpd.GeoDataFrame:
         """

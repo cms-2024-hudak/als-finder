@@ -156,9 +156,10 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
             roi_geom = load_roi(roi)
             logger.info(f"ROI Loaded: {roi_geom.geom_type} with bounds {roi_geom.bounds}")
         else:
-            logger.warning("No ROI provided! Querying the global index natively.")
-            if not click.confirm("Are you sure you want to query the entire global index without a spatial boundary?"):
-                raise click.Abort()
+            # Default to global planetary bounding box for backwards compatibility
+            from shapely.geometry import box
+            roi_geom = box(-180.0, -90.0, 180.0, 90.0)
+            logger.info("No ROI provided; using global planetary bounding box (-180, -90, 180, 90).")
         
         # Initialize Providers dynamically from Registry
         active_providers = get_active_providers(provider)
@@ -263,8 +264,14 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
                         logger.warning(f"Invalid regex pattern provided: {pattern[1:]}")
                         continue
                 else:
-                    if not fnmatch.fnmatch(target.lower(), pattern.lower()):
-                        continue
+                    pat_lower = pattern.lower()
+                    tgt_lower = target.lower()
+                    if '*' in pattern or '?' in pattern:
+                        if not fnmatch.fnmatch(tgt_lower, pat_lower):
+                            continue
+                    else:
+                        if pat_lower not in tgt_lower:
+                            continue
 
             # 2. Date filter natively intercepts standard sort_date formatting
             raw_date_test = str(item.get('date') or '').strip()
