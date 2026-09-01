@@ -10,15 +10,12 @@ import time
 import importlib.resources as pkg_resources
 import importlib.metadata
 from dotenv import load_dotenv
-from als_finder.core.input_manager import load_roi, ROIError
-from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvider
-
 try:
     __version__ = importlib.metadata.version("als-finder")
 except importlib.metadata.PackageNotFoundError:
     __version__ = "1.1.0-dev"
 
-from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvider
+from als_finder.providers import get_active_providers, get_provider, list_available_providers, BaseProvider
 from als_finder.download import generate_fetch_array, execute_fetch_array
 
 # Configure logging
@@ -86,7 +83,7 @@ def get_example_roi():
 @click.option('--date', help='Temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
 @click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
 @click.option('--workspace', help='Path to project workspace directory')
-@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
+@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NASA_GLIHT'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
 @click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
 def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
@@ -159,15 +156,8 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
             if not click.confirm("Are you sure you want to query the entire global index without a spatial boundary?"):
                 raise click.Abort()
         
-        # Initialize Providers (case-insensitive with flexible aliases)
-        norm_providers = [str(p).strip().upper() for p in provider]
-        active_providers = []
-        if any(p in norm_providers for p in ['OPENTOPOGRAPHY', 'OPENTOPO', 'OT']):
-            active_providers.append(OpenTopographyProvider())
-        if any(p in norm_providers for p in ['USGS_EPT', 'USGS', 'EPT']):
-            active_providers.append(USGSProvider())
-        if any(p in norm_providers for p in ['NOAA_STAC', 'NOAA', 'STAC']):
-            active_providers.append(NOAAProvider())
+        # Initialize Providers dynamically from Registry
+        active_providers = get_active_providers(provider)
         
         final_results = []
         for p in active_providers:
@@ -591,7 +581,7 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex e.g. ~^USGS)')
 @click.option('--date', help='Date filter YYYY-MM-DD or range YYYY-MM-DD/YYYY-MM-DD')
 @click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
-@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
+@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NASA_GLIHT'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
 @click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
 @click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats to the local drive natively.')

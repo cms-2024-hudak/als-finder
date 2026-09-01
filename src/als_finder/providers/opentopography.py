@@ -17,27 +17,15 @@ class OpenTopographyProvider(BaseProvider):
     BASE_URL = "https://portal.opentopography.org/API"
 
     def __init__(self, ot_key: Optional[str] = None):
-        """Initializes the OpenTopography abstraction natively mapping keys organically."""
-        from dotenv import load_dotenv
-        
-        # Priority 1: Argument passed explicitly
-        # Priority 2: Current shell / workspace .env (loaded by cli.py)
-        self.api_key = ot_key or os.getenv("OPENTOPOGRAPHY_API_KEY")
-        
-        # Priority 3: Global config
-        global_config_dir = Path.home() / ".config" / "als-finder"
-        global_env = global_config_dir / ".env"
-        
-        # Priority 1: Check Explicit Keys natively via user argument constraints
-        if not self.api_key and global_env.exists():
-            load_dotenv(global_env)
-            self.api_key = os.getenv("OPENTOPOGRAPHY_API_KEY")
-            
-        # The native SDSC MinIO extraction architecture drops API key locks organically.
-        # Legacy search parameters still log it strictly for formal request headers.
-        # If still missing, log a warning.
-        if not self.api_key:
-            logger.warning("No OpenTopography API key provided. OT Discovery will bypass or have limited functionality.")
+        """Initializes the OpenTopography abstraction using unified credential resolver."""
+        from als_finder.core.auth_manager import resolve_credential
+        self.api_key = resolve_credential(
+            env_var_name="OPENTOPOGRAPHY_API_KEY",
+            cli_value=ot_key,
+            provider_name="OpenTopography",
+            signup_url="https://portal.opentopography.org/myopentopo",
+            auto_save_workspace_env=True
+        )
 
     def check_access(self) -> bool:
         """Check if API key is present and valid by hitting a lightweight endpoint."""
