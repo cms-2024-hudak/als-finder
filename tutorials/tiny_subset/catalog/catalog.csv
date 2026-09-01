@@ -1,2 +1,0 @@
-Provider,Name,DatasetID,Date,SizeMB,PointCount,PointDensity,AreaSqKm,URL
-USGS_EPT,CA_SierraNevada_5_2022,CA_SierraNevada_5_2022,2022,1413327.6,185247678989,29.18,6347.47,https://s3-us-west-2.amazonaws.com/usgs-lidar-public/CA_SierraNevada_5_2022/ept.json

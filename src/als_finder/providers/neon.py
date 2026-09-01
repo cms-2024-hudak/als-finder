@@ -28,9 +28,10 @@ class NEONProvider(BaseProvider):
             provider_name="NEON AOP",
             signup_url="https://data.neonscience.org/home",
             instructions=[
-                "Create a free user account at: https://data.neonscience.org/home",
-                "Sign in and navigate to 'My Account' -> 'API Tokens'.",
-                "Click 'Generate New Token' and copy the token string.",
+                "Create a free account and sign in at: https://data.neonscience.org/home",
+                "Navigate to 'My Account' (https://data.neonscience.org/myaccount).",
+                "Ensure your account is validated by filling out all required profile information and clicking 'SAVE CHANGES'.",
+                "Scroll down to the 'API Tokens' section, click the 'GET API TOKEN' button, and copy the token string.",
                 "Pass it once via CLI to auto-cache in your workspace: als-finder search --roi <file> --neon-key <YOUR_KEY>"
             ],
             auto_save_workspace_env=True
@@ -174,25 +175,43 @@ class NEONProvider(BaseProvider):
 
         url = kwargs.get("url")
         if not url:
-            url = f"{self.BASE_API_URL}/data/{self.PRODUCT_ID}/{dataset_id.split('_')[1]}/{dataset_id.split('_')[2]}-06"
+            site_code = dataset_id.split("_")[1] if len(dataset_id.split("_")) > 1 else "WREF"
+            year_str = dataset_id.split("_")[2] if len(dataset_id.split("_")) > 2 else "2022"
+            month_to_query = f"{year_str}-06"
+            try:
+                prod_r = requests.get(f"{self.BASE_API_URL}/products/{self.PRODUCT_ID}", headers=self._get_headers(), timeout=15)
+                if prod_r.status_code == 200:
+                    site_entry = next((s for s in prod_r.json().get("data", {}).get("siteCodes", []) if s.get("siteCode") == site_code), None)
+                    if site_entry:
+                        avail_months = [m for m in site_entry.get("availableMonths", []) if m.startswith(year_str)]
+                        if avail_months:
+                            month_to_query = avail_months[-1]
+            except Exception:
+                pass
+            url = f"{self.BASE_API_URL}/data/{self.PRODUCT_ID}/{site_code}/{month_to_query}"
 
         logger.info(f"Fetching NEON dataset metadata from {url}...")
         try:
             r = requests.get(url, headers=self._get_headers(), timeout=30)
             if r.status_code == 200:
                 files = r.json().get("data", {}).get("files", [])
-                laz_files = [f for f in files if f.get("name", "").endswith(".laz")]
-                if laz_files:
-                    first_file = laz_files[0]
-                    file_url = first_file.get("url")
-                    logger.info(f"Downloading NEON tile: {first_file.get('name')}...")
-                    with requests.get(file_url, stream=True, timeout=60, headers=self._get_headers()) as stream_r:
-                        stream_r.raise_for_status()
-                        with open(out_path, "wb") as f:
-                            for chunk in stream_r.iter_content(chunk_size=1024 * 1024):
-                                if chunk:
-                                    f.write(chunk)
-                    return out_path
+                # Prioritize classified / structural point cloud tiles over QA uncertainty tiles
+                point_cloud_files = [f for f in files if f.get("name", "").endswith(".laz") and "uncertainty" not in f.get("name", "").lower()]
+                if not point_cloud_files:
+                    point_cloud_files = [f for f in files if f.get("name", "").endswith(".laz")]
+
+                if point_cloud_files:
+                    sample_file = point_cloud_files[0]
+                    file_url = sample_file.get("url")
+                    if file_url:
+                        logger.info(f"Downloading NEON tile: {sample_file.get('name')}...")
+                        with requests.get(file_url, stream=True, timeout=60, headers=self._get_headers()) as stream_r:
+                            stream_r.raise_for_status()
+                            with open(out_path, "wb") as f_out:
+                                for chunk in stream_r.iter_content(chunk_size=1024 * 1024):
+                                    if chunk:
+                                        f_out.write(chunk)
+                        return out_path
         except Exception as e:
             logger.error(f"Error downloading NEON dataset {dataset_id}: {e}")
 
