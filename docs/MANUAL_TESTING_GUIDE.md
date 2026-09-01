@@ -1,30 +1,29 @@
-# ALS-Finder Manual Verification & Testing Guide
+# ALS-Finder Manual Testing Guide
 
-This guide provides an end-to-end walkthrough for manually testing the core features of `als-finder`:
-1. **Multi-Provider Discovery** (USGS 3DEP, NASA G-LiHT, NEON AOP, NASA Earthdata CMR / ORNL DAAC, OpenTopography)
-2. **Dynamic Credential Resolution & Auto-Caching**
-3. **Lazy On-Demand Tile Streaming** (`als-finder fetch-tile`)
-4. **Cross-Language Point Cloud Ingestion** (Python `laspy` and R `lidR`)
+This guide walks through testing each main feature of `als-finder` step-by-step:
+1. **Searching for LiDAR data** across multiple archives (USGS 3DEP, NASA G-LiHT, NEON AOP, NASA Earthdata)
+2. **Checking API keys and credentials**
+3. **Extracting buffered spatial tiles** on demand
+4. **Reading and inspecting point clouds** in Python (`laspy`) and R (`lidR`)
 
 ---
 
-## 🛠️ Step 0: Environment Setup & Activation
+## Step 0: Activate Your Environment
 
-Because the project environment was created with Conda, activate it using `conda activate`:
+Because this environment uses Conda, activate it with:
 
 ```bash
 cd /mnt/c/Users/gears/git/als-finder
 
-# Option A: Activate by named Conda environment
+# Activate the project environment:
 conda activate als-finder-env
-
-# Option B: Or activate via local prefix directory
+# OR by path:
 conda activate /mnt/c/Users/gears/git/als-finder/.venv
 ```
 
-*(Note: You can also execute `.venv/bin/als-finder` directly without activating).*
+*(You can also run `.venv/bin/als-finder` directly without activating).*
 
-Verify CLI availability:
+Check that the command-line tool runs:
 ```bash
 als-finder --version
 als-finder --help
@@ -32,9 +31,9 @@ als-finder --help
 
 ---
 
-## 🔍 Test 1: Multi-Provider Search (USGS + NASA G-LiHT + NEON)
+## Test 1: Search Across Repositories (USGS + NASA G-LiHT + NEON)
 
-Search across multiple federal archives concurrently for the Lake Tahoe Region of Interest:
+Search for available airborne LiDAR over the Lake Tahoe study area across multiple repositories at once:
 
 ```bash
 als-finder search \
@@ -43,16 +42,16 @@ als-finder search \
   --provider gliht,neon,usgs
 ```
 
-### What to Verify:
-- [ ] Console displays the unified table of discovered datasets across providers.
-- [ ] `scratch/test_workspace/catalog/catalog.gpkg` is created and contains the spatial footprint polygons.
-- [ ] `scratch/test_workspace/catalog/manifest.json` is generated with sanitized metadata.
+### What to check:
+- [ ] A table appears listing all datasets that intersect the study area.
+- [ ] `scratch/test_workspace/catalog/catalog.gpkg` is created containing the dataset footprint polygons.
+- [ ] `scratch/test_workspace/catalog/manifest.json` is created with the dataset metadata.
 
 ---
 
-## 🛰️ Test 2: NASA Earthdata CMR STAC Search (Authenticated)
+## Test 2: Search NASA Earthdata (CMS / ORNL DAAC)
 
-Query the NASA Common Metadata Repository (CMR) for NASA Carbon Monitoring System (CMS) airborne point clouds using your cached Earthdata Login token:
+Search for NASA Carbon Monitoring System (CMS) LiDAR datasets:
 
 ```bash
 als-finder search \
@@ -61,15 +60,15 @@ als-finder search \
   --provider earthdata
 ```
 
-### What to Verify:
-- [ ] Successfully queries ORNL DAAC STAC without credential errors.
-- [ ] Discovers the `CMS_MD_BIOMASS_2021` airborne LiDAR dataset.
+### What to check:
+- [ ] The search runs using your saved Earthdata token.
+- [ ] It finds the `CMS_MD_BIOMASS_2021` dataset and saves the catalog.
 
 ---
 
-## ⚡ Test 3: Lazy On-Demand Tile Streaming (`fetch-tile`)
+## Test 3: Extract a Tile on Demand (`fetch-tile`)
 
-Extract a single 500m spatial sub-tile on demand from remote cloud octrees / swaths into a local `.laz` file:
+Extract a single 500m sub-tile (tile ID 0) with a 30m buffer around the edges:
 
 ```bash
 als-finder fetch-tile \
@@ -79,15 +78,15 @@ als-finder fetch-tile \
   --overwrite
 ```
 
-### What to Verify:
+### What to check:
 - [ ] Output prints: `Successfully streamed tile 0 to scratch/test_tile_0.laz`.
-- [ ] File `scratch/test_tile_0.laz` is created in under 20 seconds without downloading the full multi-GB regional dataset.
+- [ ] The file `scratch/test_tile_0.laz` is created locally.
 
 ---
 
-## 📊 Test 4: Inspect Streamed Tile in Python (`laspy`)
+## Test 4: Inspect the Extracted Tile in Python
 
-Verify the geometry, point count, and attributes of the streamed sub-tile:
+Check the point count, elevation range, and point classifications:
 
 ```bash
 python -c "
@@ -95,21 +94,20 @@ import laspy
 
 with laspy.open('scratch/test_tile_0.laz') as reader:
     header = reader.header
-    print('LAS Version:', header.version)
     print('Point Count:', f'{header.point_count:,}')
-    print('Elevation Range (Z):', round(header.z_min, 2), 'to', round(header.z_max, 2), 'm')
+    print('Elevation (Z Range):', round(header.z_min, 2), 'to', round(header.z_max, 2), 'meters')
 
     las = reader.read()
     classes = sorted(list(set(las.classification)))
-    print('ASPRS Classes Present:', classes)
+    print('Point Classes Present:', classes)
 "
 ```
 
 ---
 
-## 🧪 Test 5: Automated Unit Test Suite
+## Test 5: Run the Automated Test Suite
 
-Run the full pytest suite to verify all 19 provider, CLI, and grid manager tests:
+Run the full pytest suite:
 
 ```bash
 pytest tests/
