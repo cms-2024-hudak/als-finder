@@ -59,43 +59,47 @@ als-finder search \
 
 ---
 
-## Test 3: Extract a Single Sub-Tile on Demand (`fetch-tile`)
+## Test 3: Extract a Single Sub-Tile with Custom Tile Size & Buffer (`fetch-tile`)
 
-Extract a single spatial sub-tile (e.g. tile ID 15) directly from the workspace. By default (without `--output`), `als-finder` automatically saves the tile into the standardized Hive directory partition:
+Extract a single spatial sub-tile specifying custom tile dimensions (e.g. 500m core tile with a 50m overlap buffer).
+
+`als-finder` automatically saves the tile into the standardized Hive directory partition tagged by tile size and buffer:
 
 ```bash
 als-finder fetch-tile \
   --workspace scratch/test_workspace \
   --tile-id 15 \
+  --tile-size 500 \
+  --buffer-size 50 \
   --overwrite
 ```
 
 ### What to check:
-- [ ] Terminal prints the Hive partition path:
-  `Successfully streamed tile 15 to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=1200/buffer=30/CA_SierraNevada_5_2022_tile_0015.laz`
+- [ ] Terminal prints the Hive partition path matching your tile size (500m) and buffer (50m):
+  `Successfully streamed tile 15 to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_0015.laz`
 
 ---
 
-## Test 4: Inspect the Extracted Point Cloud in Python
+## Test 4: Inspect the Extracted Point Cloud & Dimensions in Python
 
-Check point counts, coordinate bounding boxes, elevation (Z) ranges, and point classifications:
+Check point counts, total footprint dimensions (core + buffer), elevation ranges, and point classifications:
 
 ```bash
 .venv/bin/python -c "
 import laspy
 from pathlib import Path
 
-# Find the streamed LAZ file in the Hive structure
-tile_files = list(Path('scratch/test_workspace/data').rglob('*.laz'))
-assert tile_files, 'No LAZ files found in data/'
-
-tile_path = tile_files[0]
-print('Reading Tile:', tile_path)
+tile_path = 'scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_0015.laz'
 
 with laspy.open(tile_path) as reader:
     header = reader.header
+    width_m = round(header.x_max - header.x_min, 1)
+    height_m = round(header.y_max - header.y_min, 1)
+
+    print('Streamed Tile File:', tile_path)
     print('Point Count:', f'{header.point_count:,}')
-    print('Elevation Range (Z):', round(header.z_min, 2), 'to', round(header.z_max, 2), 'meters')
+    print(f'Tile Footprint: {width_m}m x {height_m}m (matches 500m core + 2x50m buffer = 600m)')
+    print(f'Elevation Range (Z): {round(header.z_min, 2)}m to {round(header.z_max, 2)}m')
 
     las = reader.read()
     classes = sorted(list(set(las.classification)))
