@@ -61,19 +61,18 @@ als-finder search \
 
 ## Test 3: Extract a Single Sub-Tile on Demand (`fetch-tile`)
 
-Extract a single 500m sub-tile (e.g. tile ID 15) directly from the workspace with a 30m buffer around the perimeter:
+Extract a single spatial sub-tile (e.g. tile ID 15) directly from the workspace. By default (without `--output`), `als-finder` automatically saves the tile into the standardized Hive directory partition:
 
 ```bash
 als-finder fetch-tile \
   --workspace scratch/test_workspace \
   --tile-id 15 \
-  --output scratch/test_tile_15.laz \
   --overwrite
 ```
 
 ### What to check:
-- [ ] Terminal prints: `Successfully streamed tile 15 to scratch/test_tile_15.laz`.
-- [ ] The file `scratch/test_tile_15.laz` is created locally in `scratch/`.
+- [ ] Terminal prints the Hive partition path:
+  `Successfully streamed tile 15 to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=1200/buffer=30/CA_SierraNevada_5_2022_tile_0015.laz`
 
 ---
 
@@ -82,10 +81,18 @@ als-finder fetch-tile \
 Check point counts, coordinate bounding boxes, elevation (Z) ranges, and point classifications:
 
 ```bash
-python -c "
+.venv/bin/python -c "
 import laspy
+from pathlib import Path
 
-with laspy.open('scratch/test_tile_0.laz') as reader:
+# Find the streamed LAZ file in the Hive structure
+tile_files = list(Path('scratch/test_workspace/data').rglob('*.laz'))
+assert tile_files, 'No LAZ files found in data/'
+
+tile_path = tile_files[0]
+print('Reading Tile:', tile_path)
+
+with laspy.open(tile_path) as reader:
     header = reader.header
     print('Point Count:', f'{header.point_count:,}')
     print('Elevation Range (Z):', round(header.z_min, 2), 'to', round(header.z_max, 2), 'meters')
