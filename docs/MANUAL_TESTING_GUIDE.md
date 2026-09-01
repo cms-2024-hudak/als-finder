@@ -1,6 +1,6 @@
 # ALS-Finder Manual Testing Guide
 
-This guide walks through testing each main capability of `als-finder`. All test outputs, catalogs, grids, and downloaded `.laz` tiles are placed strictly inside the `scratch/` directory.
+This guide walks through testing each main capability of `als-finder`. All test outputs, catalogs, and extracted `.laz` tiles are placed strictly inside the `scratch/` directory.
 
 ---
 
@@ -59,30 +59,13 @@ als-finder search \
 
 ---
 
-## Test 3: Generate a Spatial Processing Grid
+## Test 3: Extract a Single Sub-Tile on Demand (`fetch-tile`)
 
-Generate a regular 500m $\times$ 500m processing grid over your search results (without downloading full raw point clouds):
-
-```bash
-als-finder download \
-  --manifest scratch/test_workspace/catalog/manifest.json \
-  --output scratch/test_tiling_workspace \
-  --tile-size 500 \
-  --dry-run
-```
-
-### What to check:
-- [ ] `scratch/test_tiling_workspace/catalog/grid.gpkg` is created containing the numbered 500m grid tiles.
-
----
-
-## Test 4: Extract a Single Sub-Tile on Demand (`fetch-tile`)
-
-Extract a single 500m sub-tile (tile ID 0) with a 30m buffer around the perimeter:
+Extract a single 500m sub-tile (tile ID 0) directly from the search manifest with a 30m buffer around the perimeter:
 
 ```bash
 als-finder fetch-tile \
-  --manifest scratch/test_tiling_workspace/catalog/grid.gpkg \
+  --manifest scratch/test_workspace/catalog/manifest.json \
   --tile-id 0 \
   --output scratch/test_tile_0.laz \
   --overwrite
@@ -90,11 +73,11 @@ als-finder fetch-tile \
 
 ### What to check:
 - [ ] Terminal prints: `Successfully streamed tile 0 to scratch/test_tile_0.laz`.
-- [ ] The file `scratch/test_tile_0.laz` is created locally.
+- [ ] The file `scratch/test_tile_0.laz` is created locally in `scratch/`.
 
 ---
 
-## Test 5: Inspect the Extracted Point Cloud in Python
+## Test 4: Inspect the Extracted Point Cloud in Python
 
 Check point counts, coordinate bounding boxes, elevation (Z) ranges, and point classifications:
 
@@ -115,7 +98,7 @@ with laspy.open('scratch/test_tile_0.laz') as reader:
 
 ---
 
-## Test 6: Run the Full Automated Test Suite
+## Test 5: Run the Full Automated Test Suite
 
 Run all automated unit tests:
 
