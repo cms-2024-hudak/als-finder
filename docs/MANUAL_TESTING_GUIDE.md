@@ -109,7 +109,45 @@ with laspy.open(tile_path) as reader:
 
 ---
 
-## Test 5: Run the Full Automated Test Suite
+## Test 5: Programmatic Tile Metadata & Core Unbuffering in Python
+
+Inspect tile metadata, Hive paths, and recover the unbuffered central core boundary to crop away boundary edge effects after point cloud metrics or classification:
+
+```bash
+.venv/bin/python -c "
+import als_finder
+
+# 1. Query tile spec for Tile 15
+spec = als_finder.get_tile_spec('scratch/test_workspace', tile_id=15, tile_size=500, buffer_size=50)
+
+print('--- Tile Spec Metadata ---')
+print('Tile ID:', spec['tile_id'])
+print('Standard Basename:', spec['basename'])
+print('Spatial Basename:', spec['spatial_basename'])
+print('Hive Partition Path:', spec['hive_path'])
+print('Grid CRS:', spec['grid_crs'])
+print('Provider:', spec['provider'])
+print('Dataset ID:', spec['dataset_id'])
+
+# 2. Inspect Central Core Area vs Streamed Buffered Area
+core = spec['core_poly']
+buffered = spec['buffered_poly']
+
+print('\n--- Spatial Footprints & Unbuffering ---')
+print(f'Buffered Bounds (Streamed):   X=[{buffered.bounds[0]}, {buffered.bounds[2]}], Y=[{buffered.bounds[1]}, {buffered.bounds[3]}]')
+print(f'Core Bounds (Crop-back area): X=[{core.bounds[0]}, {core.bounds[2]}], Y=[{core.bounds[1]}, {core.bounds[3]}]')
+print(f'Core Tile Dimensions: {round(core.bounds[2] - core.bounds[0])}m x {round(core.bounds[3] - core.bounds[1])}m')
+print(f'Buffer Extension: {round((buffered.bounds[2] - core.bounds[2]))}m on all sides')
+"
+```
+
+### What to check:
+- [ ] Core tile bounds are printed (e.g. `X=[738000.0, 738500.0]`) showing the exact 500m central area.
+- [ ] Buffered bounds are printed (e.g. `X=[737950.0, 738550.0]`) confirming the 50m overlap buffer.
+
+---
+
+## Test 6: Run the Full Automated Test Suite
 
 Run all automated unit tests:
 
