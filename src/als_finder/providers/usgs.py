@@ -31,6 +31,62 @@ class USGSProvider(BaseProvider):
             logger.warning("AWS USGS Entwine boundary registry unreachable.")
             return False
 
+    def _fetch_tnm_metadata(self, roi: Optional[Polygon]) -> Dict[str, Dict[str, Any]]:
+        """
+        Query the official USGS The National Map (TNM) 3DEP Elevation Index service
+        to enrich datasets with exact collect_start, collect_end, QL, project name,
+        and vertical/horizontal reference systems.
+        """
+        if not roi:
+            return {}
+        try:
+            import re
+            minx, miny, maxx, maxy = roi.bounds
+            url = "https://index.nationalmap.gov/arcgis/rest/services/3DEPElevationIndex/MapServer/8/query"
+            params = {
+                "geometry": f"{minx},{miny},{maxx},{maxy}",
+                "geometryType": "esriGeometryEnvelope",
+                "inSR": "4326",
+                "spatialRel": "esriSpatialRelIntersects",
+                "outFields": "workunit,project,collect_start,collect_end,ql,horiz_crs,vert_crs",
+                "returnGeometry": "false",
+                "f": "json"
+            }
+            resp = requests.get(url, params=params, headers={"User-Agent": "als-finder/1.1"}, timeout=8)
+            if resp.status_code != 200:
+                return {}
+            data = resp.json()
+            features = data.get("features", [])
+            lookup = {}
+            from datetime import datetime, timezone
+            for feat in features:
+                attrs = feat.get("attributes", {})
+                w_name = attrs.get("workunit")
+                if not w_name:
+                    continue
+                start_ms = attrs.get("collect_start")
+                end_ms = attrs.get("collect_end")
+                start_date = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d') if start_ms else None
+                end_date = datetime.fromtimestamp(end_ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d') if end_ms else None
+                
+                meta_item = {
+                    "workunit": w_name,
+                    "project": attrs.get("project"),
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "ql": attrs.get("ql"),
+                    "horiz_crs": attrs.get("horiz_crs"),
+                    "vert_crs": attrs.get("vert_crs"),
+                }
+                lookup[w_name.lower()] = meta_item
+                norm_key = re.sub(r'^(usgs_lpc_|usgs_)', '', w_name.lower())
+                norm_key = re.sub(r'(_las_.*|_las)$', '', norm_key)
+                lookup[norm_key] = meta_item
+            return lookup
+        except Exception as e:
+            logger.debug(f"Could not reach USGS TNM 3DEP Index service for date enrichment: {e}")
+            return {}
+
     def search(self, roi: Polygon, **kwargs) -> List[Dict[str, Any]]:
         """
         Search for USGS 3DEP LiDAR Point Cloud products intersecting the ROI.
@@ -63,6 +119,7 @@ class USGSProvider(BaseProvider):
                 intersecting = gdf
             
             import re
+            tnm_lookup = self._fetch_tnm_metadata(roi)
             results = []
             for idx, row in intersecting.iterrows():
                 name = str(row.get('name', 'Unknown'))
@@ -70,9 +127,21 @@ class USGSProvider(BaseProvider):
                 bounds = geom.bounds if geom else None
                 geom_dict = geom.__geo_interface__ if geom else None
                 
-                # Derive year structurally via regex
-                year_match = re.search(r'_?(199\d|20[0-2]\d)_?', name)
-                extracted_date = year_match.group(1) if year_match else None
+                # Match against authoritative USGS National Map work unit metadata
+                norm_name = re.sub(r'^(usgs_lpc_|usgs_)', '', name.lower())
+                norm_name = re.sub(r'(_las_.*|_las)$', '', norm_name)
+                meta = tnm_lookup.get(name.lower()) or tnm_lookup.get(norm_name)
+                if not meta:
+                    for k, v in tnm_lookup.items():
+                        if k in norm_name or norm_name in k:
+                            meta = v
+                            break
+                
+                if meta and meta.get("end_date"):
+                    extracted_date = meta["end_date"]
+                else:
+                    year_match = re.search(r'_?(199\d|20[0-2]\d)_?', name)
+                    extracted_date = year_match.group(1) if year_match else None
                 
                 # Stringify row for raw generic tracking
                 raw_dict = {}
@@ -81,6 +150,20 @@ class USGSProvider(BaseProvider):
                         raw_dict[str(k)] = str(row[k])
                         
                 clean_raw = self.sanitize_metadata(raw_dict)
+                if meta:
+                    if meta.get("project"):
+                        clean_raw["usgs_project"] = meta["project"]
+                    if meta.get("start_date"):
+                        clean_raw["collect_start"] = meta["start_date"]
+                    if meta.get("end_date"):
+                        clean_raw["collect_end"] = meta["end_date"]
+                    if meta.get("ql"):
+                        clean_raw["usgs_ql"] = meta["ql"]
+                    if meta.get("vert_crs"):
+                        clean_raw["vert_crs"] = meta["vert_crs"]
+                    if meta.get("horiz_crs"):
+                        clean_raw["horiz_crs"] = meta["horiz_crs"]
+
                 results.append({
                     "provider": "USGS_EPT",
                     "dataset_id": name,
