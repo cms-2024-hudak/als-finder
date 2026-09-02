@@ -25,6 +25,10 @@ dependencies:
   - folium
   - ipykernel
   - jupyterlab
+  - r-base
+  - r-irkernel
+  - r-lidr
+  - r-sf
+  - r-terra
+  - r-jsonlite
   - pip
-  - pip:
-      - -e .
