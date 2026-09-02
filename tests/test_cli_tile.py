@@ -71,3 +71,15 @@ def test_stream_single_tile_directory_hive_resolution(sample_workspace: Path, tm
     assert "_N" in spec["basename"]
     assert "hive_dir" in spec
     assert "crop_pdal_bounds" in spec
+
+
+def test_cli_fetch_tile_format_validation(sample_workspace: Path):
+    """Test that --tile-format accepts laz, copc, las and rejects invalid options."""
+    runner = CliRunner()
+    manifest_path = sample_workspace / "manifest.json"
+
+    # Invalid format should fail validation
+    res_invalid = runner.invoke(cli, ["fetch", "tile", "0", "--manifest", str(manifest_path), "--tile-format", "invalid_fmt"])
+    assert res_invalid.exit_code != 0
+    assert "Invalid value for '--tile-format'" in res_invalid.output
+

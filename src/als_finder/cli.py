@@ -1170,6 +1170,7 @@ def _execute_fetch_single_tile(
     spatial_name: bool,
     sidecar: bool,
     overwrite: bool,
+    tile_format: str = "laz",
 ) -> Tuple[bool, Union[Dict[str, Any], List[Dict[str, Any]]]]:
     from als_finder.core.grid_manager import get_tile_spec
     from als_finder.core.standardization import stream_single_tile
@@ -1208,6 +1209,7 @@ def _execute_fetch_single_tile(
                 overwrite=overwrite,
                 use_spatial_name=spatial_name,
                 write_sidecar=sidecar,
+                tile_format=tile_format,
             )
             core_b = child_spec["core_poly"].bounds
             buf_b = child_spec["buffered_poly"].bounds
@@ -1251,6 +1253,7 @@ def _execute_fetch_single_tile(
         overwrite=overwrite,
         use_spatial_name=spatial_name,
         write_sidecar=sidecar,
+        tile_format=tile_format,
     )
 
     core_b = spec["core_poly"].bounds
@@ -1316,11 +1319,12 @@ def fetch_group():
 @click.option('--crs', default=None, help='Target CRS (defaults to local UTM)')
 @click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming')
 @click.option('--sidecar/--no-sidecar', default=True, help='Write a companion .json metadata sidecar file alongside the .laz tile (default True)')
+@click.option('--tile-format', type=click.Choice(['laz', 'copc', 'las'], case_sensitive=False), default='laz', help='Point cloud file format: laz (default, LASzip), copc (Cloud Optimized Point Cloud), or las (uncompressed).')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
 @click.option('--field', default=None, help='Extract a specific field from payload (e.g. path, tile_id, crop_pdal_bounds)')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def fetch_tile_subcmd(tile_ids, tile_id, workspace, manifest, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, overwrite, field, output_format, json_output):
+def fetch_tile_subcmd(tile_ids, tile_id, workspace, manifest, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, tile_format, overwrite, field, output_format, json_output):
     """Stream on-demand spatial tiles (e.g. als-finder fetch tile 15 or als-finder fetch tile 14 15 16)."""
     try:
         # Default workspace fallback to '.' if catalog/ exists
@@ -1364,6 +1368,7 @@ def fetch_tile_subcmd(tile_ids, tile_id, workspace, manifest, output, buffer_siz
                 spatial_name=spatial_name,
                 sidecar=sidecar,
                 overwrite=overwrite,
+                tile_format=tile_format,
             )
             results.append((tid, is_subdiv, item_res))
 
@@ -1441,12 +1446,13 @@ def fetch_tile_subcmd(tile_ids, tile_id, workspace, manifest, output, buffer_siz
 @click.option('--crs', default=None, help='Target CRS (defaults to local UTM)')
 @click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming')
 @click.option('--sidecar/--no-sidecar', default=True, help='Write a companion .json metadata sidecar (default True)')
+@click.option('--tile-format', type=click.Choice(['laz', 'copc', 'las'], case_sensitive=False), default='laz', help='Point cloud file format: laz, copc, or las.')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
 @click.option('--field', default=None, help='Extract a specific field from payload')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None)
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON')
 @click.pass_context
-def fetch_tile_cmd(ctx, workspace, manifest, tile_id, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, overwrite, field, output_format, json_output):
+def fetch_tile_cmd(ctx, workspace, manifest, tile_id, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, tile_format, overwrite, field, output_format, json_output):
     """Backward-compatible alias for 'als-finder fetch tile'."""
     ctx.invoke(
         fetch_tile_subcmd,
@@ -1462,6 +1468,7 @@ def fetch_tile_cmd(ctx, workspace, manifest, tile_id, output, buffer_size, tile_
         crs=crs,
         spatial_name=spatial_name,
         sidecar=sidecar,
+        tile_format=tile_format,
         overwrite=overwrite,
         field=field,
         output_format=output_format,

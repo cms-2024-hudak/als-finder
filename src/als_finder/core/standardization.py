@@ -532,9 +532,10 @@ def stream_single_tile(
     overwrite: bool = False,
     use_spatial_name: bool = False,
     write_sidecar: bool = True,
+    tile_format: str = "laz",
 ) -> Path:
     """
-    Directly streams and crops point cloud data for a single spatial tile into a standardized .laz file.
+    Directly streams and crops point cloud data for a single spatial tile into a standardized point cloud file.
     Supports integer base tile IDs (e.g. 15) and hierarchical quadrant string IDs (e.g. '15_NW').
     Automatically nests output within a Hive-partitioned directory layout if out_path is a directory or None.
 
@@ -548,13 +549,22 @@ def stream_single_tile(
         crs (Optional[str]): Target coordinate reference system (defaults to grid's projected UTM CRS).
         overwrite (bool): Force re-creation if output tile already exists.
         use_spatial_name (bool): If True, uses metric coordinate-anchored filename.
-        write_sidecar (bool): If True, writes a companion .json sidecar metadata file alongside the .laz tile.
+        write_sidecar (bool): If True, writes a companion .json sidecar metadata file alongside the tile.
+        tile_format (str): Output format: 'laz' (default, LASzip), 'copc' (Cloud Optimized Point Cloud), or 'las'.
 
     Returns:
-        Path: Path to the generated .laz tile.
+        Path: Path to the generated point cloud tile.
     """
     from als_finder.core.grid_manager import get_tile_spec
     from als_finder.providers import get_provider
+
+    fmt = tile_format.lower() if tile_format else "laz"
+    if fmt == "copc":
+        ext = ".copc.laz"
+    elif fmt == "las":
+        ext = ".las"
+    else:
+        ext = ".laz"
 
     # 1. Retrieve tile spec via zero-copy SQL query (lazy auto-builds grid if missing or overwrite=True!)
     spec = get_tile_spec(
@@ -571,7 +581,11 @@ def stream_single_tile(
         raise ValueError(f"No dataset URLs found in manifest/grid for tile_id {tile_id}")
 
     rel_hive = spec["hive_path"]
-    rel_file = f"{rel_hive}.laz" if not rel_hive.endswith(".laz") else rel_hive
+    for sfx in [".copc.laz", ".laz", ".las"]:
+        if rel_hive.endswith(sfx):
+            rel_hive = rel_hive[:-len(sfx)]
+            break
+    rel_file = f"{rel_hive}{ext}"
 
     # 2. Resolve output path: if directory or None, append Hive partition hierarchy
     if out_path is None:
@@ -580,7 +594,7 @@ def stream_single_tile(
         target_out = ws_dir / "data" / "tiles" / rel_file
     else:
         raw_out = Path(out_path)
-        if raw_out.is_dir() or raw_out.suffix.lower() != ".laz":
+        if raw_out.is_dir() or not (str(raw_out).endswith(".laz") or str(raw_out).endswith(".las")):
             target_out = raw_out / rel_file
         else:
             target_out = raw_out
@@ -624,9 +638,15 @@ def stream_single_tile(
     # 4. Transform buffered_poly to target_crs so crop bounds match point cloud coordinates exactly
     from pyproj import Transformer
     from shapely.ops import transform
-    if target_crs and grid_crs and target_crs != grid_crs:
-        transformer = Transformer.from_crs(grid_crs, target_crs, always_xy=True)
-        crop_poly = transform(transformer.transform, buffered_poly)
+
+    poly_src_crs = spec.get("grid_crs", "EPSG:32610")
+    if target_crs and target_crs != poly_src_crs and target_crs.lower() != "native":
+        try:
+            trans = Transformer.from_crs(poly_src_crs, target_crs, always_xy=True).transform
+            crop_poly = transform(trans, buffered_poly)
+        except Exception as e:
+            logger.warning(f"Could not transform buffered polygon to {target_crs}: {e}. Using raw bounds.")
+            crop_poly = buffered_poly
     else:
         crop_poly = buffered_poly
 
@@ -647,12 +667,25 @@ def stream_single_tile(
     })
 
     # 6. Writer stage
-    pipeline.append({
-        "type": "writers.las",
-        "filename": str(target_out.absolute()),
-        "compression": "laszip",
-        "a_srs": target_crs,
-    })
+    if fmt == "copc":
+        pipeline.append({
+            "type": "writers.copc",
+            "filename": str(target_out.absolute()),
+            "a_srs": target_crs,
+        })
+    elif fmt == "las":
+        pipeline.append({
+            "type": "writers.las",
+            "filename": str(target_out.absolute()),
+            "a_srs": target_crs,
+        })
+    else:
+        pipeline.append({
+            "type": "writers.las",
+            "filename": str(target_out.absolute()),
+            "compression": "laszip",
+            "a_srs": target_crs,
+        })
 
     # 7. Memory-guarded PDAL execution
     pdal_json = json.dumps(pipeline)
