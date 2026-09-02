@@ -2,8 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="als-finder",
-    use_scm_version=True,
-    setup_requires=["setuptools_scm"],
+    use_scm_version={"fallback_version": "1.1.3"},
     description="A high-performance, cloud-native CLI engine for discovering and parsing raw LiDAR point cloud metadata.",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",

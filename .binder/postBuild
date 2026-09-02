@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
-# Install als-finder in editable mode from the repo root
-pip install -e .
+# Install als-finder in editable mode using pre-installed conda packages
+pip install --no-build-isolation --no-deps -e .
 
 # Register the R kernel so Jupyter can execute R notebooks natively
 R -e "IRkernel::installspec(user = FALSE)" || true
-
-# Pre-fetch and cache example ROI so tutorial 01 runs instantly
-als-finder get-example-roi || true
