@@ -71,14 +71,20 @@ als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspac
 ```
 
 ### 3.2 Filter by Point Density (`--density`)
-Filter by USGS 3DEP Topographic Quality Levels (`QL0` through `QL3`) or explicit numeric ranges (`pts/m²`) using colon range syntax (e.g. `2:10`):
+Filter by USGS 3DEP Topographic Quality Levels (`QL0` through `QL3`), closed numeric ranges (`2:10`), or open-ended minimum (`2:`) and maximum (`:10`) density bounds (`pts/m²`):
 
 ```bash
 # Filter for High-Density QL1 data (>= 8.0 pts/m²)
 als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --density QL1
 
-# Filter for explicit density range between 2.0 and 10.0 pts/m²
+# Filter for closed density range between 2.0 and 10.0 pts/m²
 als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --density 2:10
+
+# Filter with minimum density ONLY (>= 2.0 pts/m²)
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --density 2:
+
+# Filter with maximum density ONLY (<= 10.0 pts/m²)
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --density :10
 ```
 
 ### 3.3 Filter by Historical Date Ranges (`--date`)
