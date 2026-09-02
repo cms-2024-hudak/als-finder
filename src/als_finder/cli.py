@@ -132,10 +132,8 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
     
     # Workspace Validation
     if not workspace:
-        cwd = os.getcwd()
-        if not click.confirm(f"WARNING: No --workspace specified. This will build 'catalog/' and 'data/' directories directly into: {cwd}. Proceed?"):
-            raise click.Abort()
-        workspace = cwd
+        workspace = os.getcwd()
+        click.echo(f"Writing catalog to current directory: {workspace}", err=True)
         
     # Secure API Key Isolation: Look for .env physically inside the workspace
     env_path = os.path.join(workspace, '.env')
@@ -1214,7 +1212,7 @@ def _execute_fetch_single_tile(
             core_b = child_spec["core_poly"].bounds
             buf_b = child_spec["buffered_poly"].bounds
             grid_crs = child_spec.get("grid_crs", "EPSG:32610")
-            target_crs = crs if (crs and crs != "EPSG:3857") else grid_crs
+            target_crs = crs if crs else grid_crs
             child_sidecar = child_path.with_suffix(".json") if sidecar else None
 
             subtile_results.append({
@@ -1258,7 +1256,7 @@ def _execute_fetch_single_tile(
     core_b = spec["core_poly"].bounds
     buf_b = spec["buffered_poly"].bounds
     grid_crs = spec.get("grid_crs", "EPSG:32610")
-    target_crs = crs if (crs and crs != "EPSG:3857") else grid_crs
+    target_crs = crs if crs else grid_crs
     sidecar_path = res_path.with_suffix(".json") if sidecar else None
 
     payload = {
@@ -1311,11 +1309,11 @@ def fetch_group():
 @click.option('-w', '--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
 @click.option('-m', '--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
 @click.option('-o', '--output', default=None, type=click.Path(), help='Target output .laz file path or directory (auto-Hive partitioned if directory or omitted)')
-@click.option('-b', '--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
-@click.option('-s', '--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
+@click.option('-b', '--buffer-size', type=int, default=50, help='Spatial overlap buffer in meters (default 50m)')
+@click.option('-s', '--tile-size', type=int, default=500, help='Core tile size in meters (default 500m)')
 @click.option('--max-points', type=int, default=None, help='Point budget threshold. If exceeded, splits tile into 4 quadrants')
 @click.option('--subtiles/--no-subtiles', default=True, help='If tile exceeds max-points, sequentially stream child quadrants (default True)')
-@click.option('--crs', default='EPSG:3857', help='Target CRS (default EPSG:3857)')
+@click.option('--crs', default=None, help='Target CRS (defaults to local UTM)')
 @click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming')
 @click.option('--sidecar/--no-sidecar', default=True, help='Write a companion .json metadata sidecar file alongside the .laz tile (default True)')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
@@ -1436,11 +1434,11 @@ def fetch_tile_subcmd(tile_ids, tile_id, workspace, manifest, output, buffer_siz
 @click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
 @click.option('--tile-id', required=True, type=str, help='Target tile ID (e.g. 15 or 15_NW)')
 @click.option('--output', default=None, type=click.Path(), help='Target output .laz file or directory')
-@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters')
-@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters')
+@click.option('--buffer-size', type=int, default=50, help='Spatial overlap buffer in meters (default 50m)')
+@click.option('--tile-size', type=int, default=500, help='Core tile size in meters (default 500m)')
 @click.option('--max-points', type=int, default=None, help='Point budget threshold for auto-subdivision')
 @click.option('--subtiles/--no-subtiles', default=True, help='If exceeded, stream child quadrants (default True)')
-@click.option('--crs', default='EPSG:3857', help='Target CRS')
+@click.option('--crs', default=None, help='Target CRS (defaults to local UTM)')
 @click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming')
 @click.option('--sidecar/--no-sidecar', default=True, help='Write a companion .json metadata sidecar (default True)')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
@@ -1486,7 +1484,7 @@ def fetch_tile_cmd(ctx, workspace, manifest, tile_id, output, buffer_size, tile_
 @click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats.')
 @click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull entire dataset.')
 @click.option('--standardize', is_flag=True, help='Execute PDAL standardization concurrently.')
-@click.option('--crs', default='EPSG:3857', help='Target output projection')
+@click.option('--crs', default=None, help='Target output projection (defaults to local UTM)')
 @click.option('--stac', is_flag=True, help='Generate PySTAC schema hierarchies.')
 @click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews.')
 @click.option('--preserve-raw', is_flag=True, help='Preserve raw binaries after standardization.')
@@ -1683,8 +1681,8 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
 @click.option('-w', '--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
 @click.option('-m', '--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
 @click.option('--tile-id', default=None, type=str, help='Specific tile ID (e.g. 15 or 15_NW) to inspect. Defaults to tile 0.')
-@click.option('-s', '--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
-@click.option('-b', '--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('-s', '--tile-size', type=int, default=500, help='Core tile size in meters (default 500m)')
+@click.option('-b', '--buffer-size', type=int, default=50, help='Spatial overlap buffer in meters (default 50m)')
 @click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
 @click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays (one per line)')
 @click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
@@ -1700,8 +1698,8 @@ def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, t
 @click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
 @click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
 @click.option('--tile-id', default=None, type=str, help='Specific tile ID (e.g. 15 or 15_NW) to inspect. Defaults to tile 0.')
-@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
-@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('--tile-size', type=int, default=500, help='Core tile size in meters (default 500m)')
+@click.option('--buffer-size', type=int, default=50, help='Spatial overlap buffer in meters (default 50m)')
 @click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
 @click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays')
 @click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')

@@ -101,7 +101,7 @@ def resolve_projected_crs(
 
 def create_tile_grid_index(
     gdf: gpd.GeoDataFrame,
-    tile_size: int = 512,
+    tile_size: int = 500,
     buffer_size: int = 50,
     target_crs: Optional[str] = None
 ) -> Tuple[gpd.GeoDataFrame, str]:
@@ -326,8 +326,8 @@ def export_grid_manifest(
 
 def build_workspace_grid(
     workspace_dir: Union[str, Path],
-    tile_size: int = 1200,
-    buffer_size: int = 30,
+    tile_size: int = 500,
+    buffer_size: int = 50,
     target_crs: Optional[str] = None,
     overwrite: bool = False
 ) -> Tuple[gpd.GeoDataFrame, str]:
@@ -522,8 +522,8 @@ def parse_quadrant_tile_id(tile_id: Union[int, str]) -> Tuple[int, List[str]]:
 def get_tile_spec(
     manifest_or_grid_path: Union[str, Path],
     tile_id: Union[int, str],
-    tile_size: int = 1200,
-    buffer_size: int = 30,
+    tile_size: int = 500,
+    buffer_size: int = 50,
     overwrite: bool = False
 ) -> Dict[str, Any]:
     """
@@ -776,8 +776,8 @@ def get_tile_spec(
 
 def get_grid_path(
     workspace_or_manifest: Union[str, Path],
-    tile_size: int = 1200,
-    buffer_size: int = 30
+    tile_size: int = 500,
+    buffer_size: int = 50
 ) -> Path:
     """
     Returns the filesystem path to the Hive-partitioned grid.gpkg for given tile and buffer size.
@@ -805,8 +805,8 @@ def get_grid_path(
 
 def read_grid(
     workspace_or_manifest: Union[str, Path],
-    tile_size: int = 1200,
-    buffer_size: int = 30,
+    tile_size: int = 500,
+    buffer_size: int = 50,
     overwrite: bool = False
 ) -> gpd.GeoDataFrame:
     """

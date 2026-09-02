@@ -526,12 +526,12 @@ def stream_single_tile(
     manifest_or_grid_path: Union[str, Path],
     tile_id: Union[int, str] = 0,
     out_path: Optional[Union[str, Path]] = None,
-    tile_size: int = 1200,
-    buffer_size: int = 30,
-    crs: str = "EPSG:3857",
+    tile_size: int = 500,
+    buffer_size: int = 50,
+    crs: Optional[str] = None,
     overwrite: bool = False,
     use_spatial_name: bool = False,
-    write_sidecar: bool = False,
+    write_sidecar: bool = True,
 ) -> Path:
     """
     Directly streams and crops point cloud data for a single spatial tile into a standardized .laz file.
@@ -543,9 +543,9 @@ def stream_single_tile(
         tile_id (Union[int, str]): Target tile index or quadrant string (e.g. 15 or '15_NW').
         out_path (Optional[Union[str, Path]]): Destination file or directory path. If a directory
             (e.g. /scratch or workspace/data), automatically nests output within Hive partition hierarchy.
-        tile_size (int): Core metric tile size in meters (default: 1200m).
-        buffer_size (int): Overlap buffer size in meters (default: 30m).
-        crs (str): Target coordinate reference system (default: EPSG:3857).
+        tile_size (int): Core metric tile size in meters (default: 500m).
+        buffer_size (int): Overlap buffer size in meters (default: 50m).
+        crs (Optional[str]): Target coordinate reference system (defaults to grid's projected UTM CRS).
         overwrite (bool): Force re-creation if output tile already exists.
         use_spatial_name (bool): If True, uses metric coordinate-anchored filename.
         write_sidecar (bool): If True, writes a companion .json sidecar metadata file alongside the .laz tile.
@@ -612,7 +612,7 @@ def stream_single_tile(
 
     grid_crs = spec.get("grid_crs", "EPSG:32610")
     # Default target_crs to grid_crs (projected UTM) for metric accuracy unless explicitly overridden
-    target_crs = crs if (crs and crs != "EPSG:3857") else grid_crs
+    target_crs = crs if crs else grid_crs
 
     # 3. Reprojection to target CRS so crop bounds match point cloud coordinate space
     if target_crs and target_crs.lower() != "native":
