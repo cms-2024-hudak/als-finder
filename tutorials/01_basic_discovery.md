@@ -71,7 +71,7 @@ als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspac
 ```
 
 ### 3.2 Filter by Point Density (`--density`)
-Filter by USGS 3DEP Topographic Quality Levels (`QL0` through `QL3`) or explicit numeric ranges (`pts/m²`) using standard range delimiters (`2:10`, `2-10`, or `2..10`):
+Filter by USGS 3DEP Topographic Quality Levels (`QL0` through `QL3`) or explicit numeric ranges (`pts/m²`) using colon range syntax (e.g. `2:10`):
 
 ```bash
 # Filter for High-Density QL1 data (>= 8.0 pts/m²)
