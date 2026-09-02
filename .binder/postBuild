@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -e
+
+# Install als-finder in editable mode so CLI binary is in PATH
+pip install -e .
+
+# Pre-fetch and cache example ROI so tutorial 01 runs instantly
+als-finder get-example-roi || true

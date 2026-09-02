@@ -1,4 +1,4 @@
-name: als-finder
+name: als-finder-binder
 channels:
   - conda-forge
 dependencies:
@@ -24,8 +24,7 @@ dependencies:
   - matplotlib
   - folium
   - ipykernel
-  - pytest
-  - setuptools_scm
+  - jupyterlab
   - pip
   - pip:
       - -e .

@@ -1,5 +1,7 @@
 # Tutorial 01: Complete ALS-Finder Discovery, Inspection & Retrieval Pipeline
 
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/cms-2024-hudak/als-finder/feat%2Flazy-grid-manager?urlpath=lab/tree/tutorials/01_basic_discovery.ipynb)
+
 Welcome to **ALS-Finder**! This tutorial walks you through the core discovery, spatial filtering, and data retrieval workflow:
 1. **Federated Discovery**: Query remote cloud point cloud catalogs across **6 major public registries**: **USGS 3DEP EPT**, **NOAA Coastal STAC**, **OpenTopography**, **NASA G-LiHT**, **NEON AOP**, and **NASA Earthdata (ORNL DAAC)** across flexible spatial, temporal, and point density filters with zero upfront point cloud downloads.
 2. **Command-Line First**: Execute searches, filters, and dry-run previews directly from your shell or terminal.
@@ -179,6 +181,13 @@ catalog_gdf.explore(
 )
 
 folium.LayerControl().add_to(coverage_map)
+
+# Save standalone HTML map (for desktop / external browser inspection)
+html_map_path = workspace_dir / "catalog" / "coverage_map.html"
+coverage_map.save(str(html_map_path))
+print(f"✓ Interactive HTML Map saved to: {html_map_path}")
+
+# Display inline when running inside a Jupyter notebook
 coverage_map
 ```
 
