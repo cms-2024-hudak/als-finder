@@ -145,7 +145,7 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
             for delim in ['..', ':', '/', '-']:
                 if delim in density_str:
                     parts = density_str.split(delim)
-                    if len(parts) == 2 and parts[0] != '':
+                    if len(parts) == 2 and (parts[0] != '' or parts[1] != ''):
                         range_delim = delim
                         break
             if range_delim:

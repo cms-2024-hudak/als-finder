@@ -91,7 +91,7 @@ def test_cli_search_density_delimiters(tmp_path: Path):
     runner = CliRunner()
     
     # We test that all standard range delimiters parse correctly
-    for density_arg in ["2:10", "2-10", "2..10", "2/10", "QL1"]:
+    for density_arg in ["2:10", "2-10", "2..10", "2/10", ":10", "2:", "QL1"]:
         res = runner.invoke(cli, ["search", "--roi", "-120,38,-119,39", "--density", density_arg, "--workspace", str(tmp_path), "--no-overwrite"])
         # Even if search finds 0 records or completes, it should not fail on density parsing
         assert "Invalid density" not in res.output
