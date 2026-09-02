@@ -84,6 +84,34 @@ als-finder grid-info \
     Grid File:      scratch/test_workspace/catalog/grids/tilesize=500/buffer=50/grid.gpkg
   ==================================================
   ```
+- [ ] **Direct Field Extraction (`--field <key>`)**: Query specific scalar properties directly without parsing JSON or tables:
+  ```bash
+  # Returns just the number 5657
+  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --field total_tiles
+
+  # Returns just EPSG:32610
+  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --field grid_crs
+  ```
+- [ ] **Export to Shell Environment (`--format env`)**: Generate key-value pairs ready for `eval`:
+  ```bash
+  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --format env
+  ```
+  *Output:*
+  ```bash
+  STATUS="success"
+  TOTAL_TILES="5657"
+  TILE_ID_MIN="0"
+  TILE_ID_MAX="5656"
+  TILE_SIZE="500"
+  BUFFER_SIZE="50"
+  GRID_CRS="EPSG:32610"
+  SAMPLE_TILE_BOUNDS="([737450.0, 738050.0], [4328950.0, 4329550.0])"
+  GRID_GPKG="scratch/test_workspace/catalog/grids/tilesize=500/buffer=50/grid.gpkg"
+  ```
+- [ ] **Full JSON (`--json`)**:
+  ```bash
+  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --json
+  ```
 
 ---
 
@@ -239,5 +267,5 @@ pytest tests/
 
 ### Expected Output:
 ```
-================== 23 passed in 15.04s ==================
+================== 24 passed in 21.08s ==================
 ```

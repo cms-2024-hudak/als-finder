@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 import time
+from typing import Dict, Any, List, Optional, Callable, Union, Tuple
 import importlib.resources as pkg_resources
 import importlib.metadata
 from dotenv import load_dotenv
@@ -1111,6 +1112,53 @@ def clean_cmd(workspace):
         logger.error(f"Failed to clean workspace: {e}")
         raise click.ClickException(str(e))
 
+def format_cli_output(
+    payload: Dict[str, Any],
+    json_output: bool = False,
+    field: Optional[str] = None,
+    output_format: Optional[str] = None,
+    default_human_printer: Optional[Callable[[], None]] = None,
+) -> None:
+    """
+    Standardized CLI output formatter supporting:
+      1. --field <key>: extracts a specific key or dotted nested path (e.g. total_tiles or audit.subdivided_tiles).
+      2. --format env: outputs key=value pairs for eval $(...) in bash/Slurm.
+      3. --json or --format json: outputs machine-readable JSON.
+      4. Default: calls default_human_printer() or outputs formatted JSON.
+    """
+    if field:
+        curr: Any = payload
+        for part in field.split("."):
+            if isinstance(curr, dict):
+                curr = curr.get(part)
+            else:
+                curr = None
+                break
+        if curr is not None:
+            if isinstance(curr, (dict, list)):
+                click.echo(json.dumps(curr, indent=2))
+            else:
+                click.echo(str(curr))
+        else:
+            click.echo("", err=True)
+        return
+
+    if output_format == "env":
+        for k, v in payload.items():
+            if v is not None and not isinstance(v, (dict, list)):
+                click.echo(f"{k.upper()}={json.dumps(str(v))}")
+        return
+
+    if json_output or output_format == "json":
+        click.echo(json.dumps(payload, indent=2))
+        return
+
+    if default_human_printer:
+        default_human_printer()
+    else:
+        click.echo(json.dumps(payload, indent=2))
+
+
 @cli.command('fetch-tile')
 @click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
 @click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
@@ -1124,8 +1172,10 @@ def clean_cmd(workspace):
 @click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming (e.g. tile_E0759000_N4313000_500m.laz)')
 @click.option('--sidecar', is_flag=True, help='Write a companion .json metadata sidecar file alongside the .laz tile')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
+@click.option('--field', default=None, help='Extract a specific field from payload (e.g. path, tile_id, core_bounds)')
+@click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, overwrite, json_output):
+def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, overwrite, field, output_format, json_output):
     """Stream a single spatial core + buffered tile on demand."""
     try:
         # Resolve manifest or workspace
@@ -1202,13 +1252,19 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
                     "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
                 })
 
-            if json_output:
-                click.echo(json.dumps({"status": "success", "subdivided": True, "tiles": subtile_results}, indent=2))
-            else:
+            def human_subdiv_printer():
                 msg = f"Tile {tile_id} exceeded budget ({spec.get('est_points', 0):,} pts > {max_points:,} max). Subdivided into 4 quadrants:\n"
                 for res in subtile_results:
                     msg += f"  - Streamed {res['tile_id']} to {res['path']}\n"
                 click.echo(msg.rstrip(), err=True)
+
+            format_cli_output(
+                {"status": "success", "subdivided": True, "tiles": subtile_results},
+                json_output=json_output,
+                field=field,
+                output_format=output_format,
+                default_human_printer=human_subdiv_printer
+            )
             return
 
         res_path = stream_single_tile(
@@ -1248,15 +1304,22 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
             "provider": str(spec.get("provider", "")),
             "dataset_id": str(spec.get("dataset_id", "")),
         }
-        if json_output:
-            click.echo(json.dumps(payload, indent=2))
-        else:
+
+        def human_fetch_printer():
             msg = f"Successfully streamed tile {tile_id} to {res_path}"
             if sidecar:
                 msg += f"\nWrote metadata sidecar to {sidecar_path}"
             click.echo(msg, err=True)
+
+        format_cli_output(
+            payload,
+            json_output=json_output,
+            field=field,
+            output_format=output_format,
+            default_human_printer=human_fetch_printer
+        )
     except Exception as e:
-        if json_output:
+        if json_output or output_format == "json":
             click.echo(json.dumps({"status": "error", "error": str(e)}, indent=2))
             sys.exit(1)
         else:
@@ -1270,8 +1333,10 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
 @click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
 @click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
 @click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
+@click.option('--field', default=None, help='Extract a specific field from payload (e.g. total_tiles, grid_crs, audit.subdivided_tiles)')
+@click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def grid_info_cmd(workspace, manifest, tile_size, buffer_size, max_points, overwrite, json_output):
+def grid_info_cmd(workspace, manifest, tile_size, buffer_size, max_points, overwrite, field, output_format, json_output):
     """Retrieve spatial grid metadata, total tile count, and valid tile ID ranges."""
     try:
         # Resolve manifest or workspace
@@ -1335,9 +1400,8 @@ def grid_info_cmd(workspace, manifest, tile_size, buffer_size, max_points, overw
             "grid_gpkg": spec_0.get("grid_gpkg_path"),
             "audit": audit_info
         }
-        if json_output:
-            click.echo(json.dumps(payload, indent=2))
-        else:
+
+        def human_grid_printer():
             click.echo("==================================================", err=True)
             click.echo(" ALS-FINDER SPATIAL GRID INFORMATION", err=True)
             click.echo("==================================================", err=True)
@@ -1361,8 +1425,16 @@ def grid_info_cmd(workspace, manifest, tile_size, buffer_size, max_points, overw
                     click.echo(f"  [WARNING] Hyper-Dense: Buffer alone ({audit_info['buffer_floor_points']:,} pts) exceeds budget!", err=True)
                     click.echo(f"  Recommend Memory:  >= {audit_info['recommended_mem_gb']} GB RAM", err=True)
             click.echo("==================================================", err=True)
+
+        format_cli_output(
+            payload,
+            json_output=json_output,
+            field=field,
+            output_format=output_format,
+            default_human_printer=human_grid_printer
+        )
     except Exception as e:
-        if json_output:
+        if json_output or output_format == "json":
             click.echo(json.dumps({"status": "error", "error": str(e)}, indent=2))
             sys.exit(1)
         else:

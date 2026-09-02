@@ -103,3 +103,47 @@ def test_cli_fetch_tile_quadrant_dry():
     assert spec["quadrant"] == "NW"
     assert spec["level"] == 1
     assert "CA_SierraNevada_5_2022_tile_0015_NW.laz" in spec["basename"]
+
+
+def test_cli_field_and_format_env():
+    """Verify dynamic --field extraction and --format env export."""
+    ws = Path("scratch/test_workspace")
+    if not ws.exists():
+        pytest.skip("scratch/test_workspace not found.")
+
+    runner = CliRunner()
+
+    # 1. Field extraction (scalar)
+    res_field = runner.invoke(cli, [
+        "grid-info",
+        "--workspace", str(ws),
+        "--tile-size", "500",
+        "--buffer-size", "50",
+        "--field", "total_tiles"
+    ])
+    assert res_field.exit_code == 0
+    assert res_field.output.strip() == "5657"
+
+    # 2. Dotted nested field extraction
+    res_nested = runner.invoke(cli, [
+        "grid-info",
+        "--workspace", str(ws),
+        "--tile-size", "500",
+        "--buffer-size", "50",
+        "--max-points", "4000000",
+        "--field", "audit.subdivided_tiles"
+    ])
+    assert res_nested.exit_code == 0
+    assert res_nested.output.strip() == "5657"
+
+    # 3. Environment format
+    res_env = runner.invoke(cli, [
+        "grid-info",
+        "--workspace", str(ws),
+        "--tile-size", "500",
+        "--buffer-size", "50",
+        "--format", "env"
+    ])
+    assert res_env.exit_code == 0
+    assert "TOTAL_TILES=\"5657\"" in res_env.output
+    assert "GRID_CRS=\"EPSG:32610\"" in res_env.output
