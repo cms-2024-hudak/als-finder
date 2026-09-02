@@ -1,6 +1,6 @@
-# Tutorial 02: Point Cloud Normalization & OGC STAC Catalogs
+# Tutorial 03: Point Cloud Normalization & OGC STAC Catalogs
 
-Welcome to **Tutorial 02** of the `als-finder` series! In this module, you will learn how to:
+Welcome to **Tutorial 03** of the `als-finder` series! In this module, you will learn how to:
 1. Understand raw LiDAR format inconsistencies (heterogeneous taxonomy, missing ground classification, variable CRS).
 2. Execute the PDAL normalization engine: apply **SMRF** (Simple Morphological Filter) and **HAG** (Height Above Ground).
 3. Export standardized **Cloud-Optimized Point Clouds** (`.copc.laz`).
@@ -16,10 +16,10 @@ Raw LiDAR point clouds acquired across different federal programs often suffer f
 - **Elevation vs. Height**: Raw data only stores absolute elevation ($Z$), requiring digital terrain subtraction to determine true vegetation height.
 - **Non-cloud-native storage**: Standard `.las`/`.laz` files cannot be dynamically subsetted via HTTP byte-ranges without downloading the entire multi-gigabyte file.
 
-`als-finder standardize` harmonizes these differences into a single, standardized pipeline:
+`als-finder fetch survey` with `--standardize` harmonizes these differences into a single, standardized pipeline:
 
 ```bash
-als-finder standardize --help
+als-finder fetch survey --help
 ```
 
 ---
@@ -31,11 +31,16 @@ To quickly test the normalization pipeline without downloading large volumes, le
 ```python
 import geopandas as gpd
 from shapely.geometry import box
+from pathlib import Path
+
+workspace_dir = Path("./scratch/tahoe_workspace").resolve()
+workspace_dir.mkdir(parents=True, exist_ok=True)
 
 # Create a small micro-bounding box in WGS84
 micro_box = box(-120.02, 38.93, -120.00, 38.95)
 micro_gdf = gpd.GeoDataFrame({"id": [1]}, geometry=[micro_box], crs="EPSG:4326")
-micro_gdf.to_file("micro_roi.geojson", driver="GeoJSON")
+micro_roi = workspace_dir / "micro_roi.geojson"
+micro_gdf.to_file(micro_roi, driver="GeoJSON")
 
 print("Micro ROI created:", micro_box.bounds)
 ```
@@ -47,12 +52,11 @@ print("Micro ROI created:", micro_box.bounds)
 Let's execute the complete discovery, download, SMRF ground classification, and STAC generation pipeline:
 
 ```bash
-als-finder download \
-    --workspace ./tahoe_standardized_demo/ \
-    --roi ./micro_roi.geojson \
+als-finder fetch survey \
+    --workspace ./scratch/tahoe_workspace \
+    --roi ./scratch/tahoe_workspace/micro_roi.geojson \
     --execute \
     --standardize \
-    --crs "EPSG:32610" \
     --stac \
     --quicklook
 ```
@@ -61,13 +65,13 @@ als-finder download \
 
 ## 4. Inspecting the Generated OGC STAC Hierarchy
 
-The standardization engine constructs a self-contained **PySTAC** catalog with normalized relative links and validated OGC metadata schemas.
+The standardization engine constructs a self-contained **PySTAC** catalog with normalized relative links and validated OGC metadata schemas:
 
 ```python
 import pystac
 from pathlib import Path
 
-stac_path = Path("tahoe_standardized_demo/catalog/stac/catalog.json")
+stac_path = Path("scratch/tahoe_workspace/catalog/stac/catalog.json")
 if stac_path.exists():
     cat = pystac.read_file(str(stac_path))
     print(f"Catalog Title: {cat.title}")
@@ -86,7 +90,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
-quicklook_pngs = list(Path("tahoe_standardized_demo/data/quicklooks").rglob("*.png"))
+quicklook_pngs = list(Path("scratch/tahoe_workspace/data/quicklooks").rglob("*.png"))
 print(f"Found {len(quicklook_pngs)} preview renders.")
 
 if quicklook_pngs:
@@ -105,4 +109,4 @@ if quicklook_pngs:
 ---
 
 ### 👉 Next Step
-Open [03_spatial_tiling_and_streaming.md](file:///mnt/c/Users/gears/git/als-finder/tutorials/03_spatial_tiling_and_streaming.md) (or `03_spatial_tiling_and_streaming.ipynb`) to explore metric grid generation and zero-copy on-demand tile streaming!
+Open [04_hpc_and_r_integration.md](./04_hpc_and_r_integration.md) to explore R `lidR` integration, Slurm job arrays with `plan --tasks`, and seamless unbuffered raster mosaicking!

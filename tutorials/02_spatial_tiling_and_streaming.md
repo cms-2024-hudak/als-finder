@@ -8,10 +8,11 @@ In this module, you will learn how to build an **out-of-core, memory-safe, and s
 
 ## Step 1: Environment & Workspace Setup
 
-We import `als_finder` (which automatically bundles and configures `geopandas`, `shapely`, `pdal`, `laspy`, `folium`, and `PROJ_DATA`/`GDAL_DATA` coordinate systems) and initialize an isolated workspace directory.
+We import `als_finder` (which automatically bundles and configures `geopandas`, `shapely`, `pdal`, `laspy`, `folium`, and `PROJ_DATA`/`GDAL_DATA` coordinate systems) and connect to our persistent workspace directory.
 
 ```python
 import json
+import os
 import sys
 from pathlib import Path
 import shutil
@@ -28,8 +29,8 @@ import pdal
 # Import als_finder as the primary root module
 import als_finder
 
-# Set up isolated workspace inside scratch/
-workspace_dir = Path("./scratch/tiling_workspace").resolve()
+# Use the unified tutorial workspace inside scratch/
+workspace_dir = Path("./scratch/tahoe_workspace").resolve()
 scratch_dir = workspace_dir / "scratch"
 scratch_dir.mkdir(parents=True, exist_ok=True)
 
@@ -76,16 +77,16 @@ catalog_path = workspace_dir / "catalog" / "catalog.gpkg"
 ```
 
 ---
-## Step 4: Metric Spatial Grid Generation (Core + Overlap Buffers)
+## Step 4: Metric Spatial Grid Planning (`als-finder plan`)
 
-Decompose the ROI into uniform **500m core tiles** with **20m spatial overlap buffers**.
+Decompose the ROI into uniform **500m core tiles** with **50m spatial overlap buffers**.
 - **Core (500m $\times$ 500m)**: The final non-overlapping tile boundary.
-- **Buffer (+20m margin)**: Extra spatial context streamed during processing to eliminate boundary artifacts in ground filtering and DTM interpolation.
+- **Buffer (+50m margin)**: Extra spatial context streamed during processing to eliminate boundary edge artifacts in ground filtering and DTM interpolation.
 
 ```python
 # Query Tile #0 specification (als-finder automatically creates Hive-partitioned grid under the hood)
 tile_size_m = 500
-buffer_size_m = 20
+buffer_size_m = 50
 
 spec_0 = als_finder.get_tile_spec(workspace_dir, tile_id=0, tile_size=tile_size_m, buffer_size=buffer_size_m, overwrite=True)
 grid_crs = spec_0["grid_crs"]
@@ -101,8 +102,60 @@ print(f"Buffered Bounds:     {spec_0['buffered_bounds_str']}")
 print(f"Additional Metadata: {spec_0['additional_metadata']}")
 ```
 
+You can also plan your grid and inspect summary metrics directly from the command line:
+
+```bash
+# Inspect grid layout, estimated point counts, and bounds
+als-finder plan --workspace ./scratch/tahoe_workspace
+```
+
 ---
-## Step 5: Multi-Layer Leaflet Visualization (ROI + Acquisitions + Tiling Grid)
+## Step 5: Pre-Flight Memory Auditing & Slurm Task Lists
+
+### The Physics of Point Cloud Memory Budgets
+Why do we specify a point budget (e.g. 5,000,000 points)?
+- In compressed LAZ format on disk, points consume only **~2–4 bytes per point**.
+- In raw memory structures (C++ / Python / `laspy`), each point requires **~50 bytes** ($X, Y, Z$, Intensity, Classification, GPS Time, Return Number).
+- During algorithmic processing (k-d trees, Delaunay triangulation, SMRF morphological dilation), intermediate working buffers expand peak RAM consumption to **~200–300 bytes per point**.
+- Therefore, on a standard compute node or container capped at **1 GB to 2 GB RAM per core**, processing **4,000,000 to 5,000,000 points** (~1.0–1.5 GB peak RAM) is the safe upper threshold before the operating system's Out-Of-Memory (OOM) killer triggers.
+
+```python
+# 1. Pre-flight memory audit against standard 5M point workstation budget
+cmd_audit = [
+    sys.executable, "-m", "als_finder.cli", "plan",
+    "--workspace", str(workspace_dir),
+    "--max-points", "5000000",
+    "--format", "table"
+]
+subprocess.run(cmd_audit, check=True)
+
+# 2. Test memory risk detection by setting a constrained 1M point budget
+print("\n--- Auditing with 1M Point Budget (Triggers Subdivision Warning) ---")
+cmd_strict = [
+    sys.executable, "-m", "als_finder.cli", "plan",
+    "--workspace", str(workspace_dir),
+    "--max-points", "1000000",
+    "--json"
+]
+res_strict = subprocess.run(cmd_strict, capture_output=True, text=True)
+audit_json = json.loads(res_strict.stdout)
+print(f"Memory Risk Detected:  {audit_json.get('memory_risk_detected')}")
+print(f"Subdivision Required:  {audit_json.get('subdivision_required')}")
+print(f"Estimated Points (T0): {audit_json.get('sample_tile_est_points'):,}")
+
+# 3. Generate flat leaf task list for Slurm job arrays
+cmd_tasks = [
+    sys.executable, "-m", "als_finder.cli", "plan",
+    "--workspace", str(workspace_dir),
+    "--tasks"
+]
+tasks_res = subprocess.run(cmd_tasks, capture_output=True, text=True)
+print("\n--- Slurm Leaf Task IDs (One per Job Array Element) ---")
+print(tasks_res.stdout.strip())
+```
+
+---
+## Step 6: Multi-Layer Leaflet Visualization (ROI + Acquisitions + Tiling Grid)
 
 Overlay the ROI boundary, remote acquisition footprints, and metric grid tiles with interactive layer toggling.
 
@@ -148,35 +201,97 @@ tiling_map
 ```
 
 ---
-## Step 6: Memory-Safe Single Tile On-Demand Streaming (`als_finder.stream_single_tile`)
+## Step 7: On-Demand Tile Streaming & Format Selection (LAZ vs. COPC)
 
-Stream **Tile #0** directly over HTTP from the remote cloud repository into local scratch storage.
+`als-finder fetch tile` streams points on demand directly from remote cloud storage. You can choose the output format:
+1. **`laz` (Default)**: Standard ASPRS LASzip. Fastest write time, lowest CPU overhead, universal compatibility with `lidR`, `pdal`, `laspy`.
+2. **`copc`**: Cloud-Optimized Point Cloud (`.copc.laz`). Contains an internal octree Level-of-Detail (LOD) structure for cloud hosting and 3D web viewers (`copc.io`).
 
 ```python
-# Stream single buffered tile over HTTP
-streamed_tile = als_finder.stream_single_tile(
+# 1. Stream standard LAZ tile
+streamed_laz = als_finder.stream_single_tile(
     manifest_or_grid_path=manifest_path,
     tile_id=0,
     out_path=scratch_dir,
     tile_size=tile_size_m,
     buffer_size=buffer_size_m,
     crs=grid_crs,
+    tile_format="laz",
     overwrite=True
 )
 
-# Inspect streamed point cloud
-with laspy.open(str(streamed_tile)) as fh:
-    print(f"Streamed Tile: {streamed_tile.name} ({streamed_tile.stat().st_size / 1e6:.2f} MB)")
-    print(f"Points:        {fh.header.point_count:,}")
-    print(f"Elevation [Z]: [{fh.header.z_min:.2f} m, {fh.header.z_max:.2f} m]")
+# 2. Stream Cloud-Optimized Point Cloud (COPC) tile
+streamed_copc = als_finder.stream_single_tile(
+    manifest_or_grid_path=manifest_path,
+    tile_id=0,
+    out_path=scratch_dir,
+    tile_size=tile_size_m,
+    buffer_size=buffer_size_m,
+    crs=grid_crs,
+    tile_format="copc",
+    overwrite=True
+)
+
+# Verify COPC octree VLRs using laspy
+with laspy.open(str(streamed_copc)) as fh:
+    copc_vlrs = [vlr for vlr in fh.header.vlrs if vlr.record_id == 1 and "copc" in vlr.user_id.lower()]
+    print(f"Streamed LAZ:  {streamed_laz.name} ({streamed_laz.stat().st_size / 1e6:.2f} MB)")
+    print(f"Streamed COPC: {streamed_copc.name} ({streamed_copc.stat().st_size / 1e6:.2f} MB)")
+    print(f"Points Count:  {fh.header.point_count:,}")
+    print(f"COPC Octree Header Present: {len(copc_vlrs) > 0}")
+
+# 3. Inspect Companion Metadata Sidecar
+sidecar_file = streamed_laz.with_suffix(".json")
+with open(sidecar_file) as f:
+    sidecar_meta = json.load(f)
+
+print(f"\n--- Companion Sidecar Metadata ({sidecar_file.name}) ---")
+print(f"Parent Tile ID:   {sidecar_meta['tile_id']}")
+print(f"Projected CRS:    {sidecar_meta['crs']}")
+print(f"GDAL Crop Target: {sidecar_meta['crop_gdal_te']}")
+print(f"Buffered Margin:  {sidecar_meta['buffered_bounds']}")
 ```
 
 ---
-## Step 7: Out-of-Core Processing Loop (PDAL SMRF Ground Filtering & Buffer Cropping)
+## Step 8: Hierarchical Adaptive Sub-Tiling & Automatic OOM Prevention
+
+When high-density acquisitions exceed your memory budget, `als-finder` can bisect the tile into 4 spatial quadrants:
+- Addressing: `0_NW`, `0_NE`, `0_SW`, `0_SE`
+- Unbuffering: Each child quadrant retains the exact same buffer width (+50m) and precise unbuffering crop coordinates.
+
+```python
+# 1. Fetch a specific quadrant directly via CLI
+cmd_quad = [
+    sys.executable, "-m", "als_finder.cli", "fetch", "tile", "0_NW",
+    "--workspace", str(workspace_dir),
+    "--output", str(scratch_dir),
+    "--overwrite"
+]
+subprocess.run(cmd_quad, check=True)
+
+# 2. Demonstrate automatic OOM subdivision (enforcing 1M point budget on 1.6M tile)
+print("\n--- Automatic OOM Subdivision (Splits Tile 0 into 4 Quadrants) ---")
+cmd_auto_oom = [
+    sys.executable, "-m", "als_finder.cli", "fetch", "tile", "0",
+    "--workspace", str(workspace_dir),
+    "--max-points", "1000000",
+    "--output", str(scratch_dir),
+    "--overwrite"
+]
+subprocess.run(cmd_auto_oom, check=True)
+
+child_quads = list(scratch_dir.glob("*_0_*.laz"))
+print(f"\n✓ Generated {len(child_quads)} Sub-Quadrant Files:")
+for q in sorted(child_quads):
+    print(f"  {q.name} ({q.stat().st_size / 1e6:.2f} MB)")
+```
+
+---
+## Step 9: Out-of-Core Processing Loop (PDAL SMRF Ground Filtering & Buffer Cropping)
 
 Process multiple tiles sequentially with a constant, minimal memory and disk footprint:
 1. Stream single buffered tile over HTTP into scratch storage.
-2. Run PDAL SMRF ground classification and crop the 20m overlap buffer to the core tile bounds.
+2. Run PDAL SMRF ground classification and crop the 50m overlap buffer to the core tile bounds.
 3. Write standardized output tile and delete scratch storage.
 
 ```python
@@ -192,6 +307,7 @@ print("=========================================================================
 for idx, tid in enumerate(target_tile_ids):
     spec = als_finder.get_tile_spec(workspace_dir, tile_id=tid, tile_size=tile_size_m, buffer_size=buffer_size_m)
     out_tile = out_dir / spec["hive_path"]
+    out_tile = out_tile.with_suffix(".laz")
     out_tile.parent.mkdir(parents=True, exist_ok=True)
     
     print(f"\n--- [Tile {idx + 1}/{len(target_tile_ids)}] Processing Index #{tid}: {spec['spatial_basename']} ---")
@@ -249,121 +365,36 @@ print(pd.DataFrame(results).to_string(index=False))
 ```
 
 ---
-## Step 8: Native R Spatial Processing Pipeline (`tutorials/02_spatial_tiling_and_streaming.R`)
-
-For R researchers (`terra` + `rlas` + `lidR`), ALS-Finder provides a dedicated standalone native script: [`tutorials/02_spatial_tiling_and_streaming.R`](./02_spatial_tiling_and_streaming.R).
-
-### Key Highlights of the R Pipeline:
-1. **Index-Driven Ingestion**: Query the tile directly by integer `tile_id` (no manual file naming).
-2. **Dynamic Output Naming**: Extract `spatial_basename` and `hive_path` directly from `grid.gpkg`.
-3. **Handling ASPRS 'Withheld' Points**: Flags flight line edge turns / scanner blunders and filters them cleanly.
-4. **Raster Generation**: Rasterizes a 2m Canopy Surface Model (DSM) and saves it to structured directories.
-
-```python
-r_companion_script = Path("./tutorials/02_spatial_tiling_and_streaming.R").resolve()
-
-if shutil.which("Rscript") and r_companion_script.exists():
-    print(f"> Executing Native R Tutorial: Rscript {r_companion_script.name}...")
-    subprocess.run(["Rscript", str(r_companion_script)], check=True)
-else:
-    print(f"Native R script ready at: {r_companion_script}")
-```
-
----
-## Step 9: Containerized Deployment & Strict RAM Capping (Docker / Apptainer)
-
-Run point cloud workers inside isolated containers with explicit memory caps:
-
-```bash
-# Execute tile fetch inside Docker with strict 4GB RAM ceiling
-docker run --rm \
-  --memory="4g" \
-  --memory-swap="4g" \
-  -e OMP_NUM_THREADS=1 \
-  -v $(pwd)/tiling_workspace:/workspace \
-  ghcr.io/cms-2024-hudak/als-finder:latest \
-  fetch tile 0 \
-    --manifest /workspace/catalog/manifest.json \
-    --tile-size 500 \
-    --buffer-size 20 \
-    --crs EPSG:32610 \
-    --output /workspace/scratch/docker_tile_0.laz \
-    --overwrite \
-    --json
-```
-
-```python
-# Test Containerized Execution (Docker) if Docker daemon is accessible
-docker_bin = shutil.which("docker")
-docker_output_laz = scratch_dir / "docker_tile_0.laz"
-
-if docker_bin:
-    print("> Executing Containerized Tile Stream inside Docker (4GB RAM Cap)...")
-    docker_cmd = [
-        "docker", "run", "--rm",
-        "--memory=4g", "--memory-swap=4g",
-        "-e", "OMP_NUM_THREADS=1",
-        "-v", f"{Path.cwd() / 'src'}:/app/src",
-        "-v", f"{workspace_dir}:/workspace",
-        "als-finder:latest",
-        "fetch", "tile", "0",
-        "--manifest", "/workspace/catalog/manifest.json",
-        "--tile-size", str(tile_size_m),
-        "--buffer-size", str(buffer_size_m),
-        "--crs", str(grid_crs),
-        "--output", "/workspace/scratch/docker_tile_0.laz",
-        "--overwrite", "--json"
-    ]
-    try:
-        docker_res = subprocess.run(docker_cmd, capture_output=True, text=True)
-        if docker_res.returncode == 0 and docker_output_laz.exists():
-            print(f"✓ Docker Container Stream Success: {docker_output_laz.name} ({docker_output_laz.stat().st_size / 1e6:.2f} MB)")
-            docker_output_laz.unlink(missing_ok=True)
-        else:
-            print(f"Docker run completed with code {docker_res.returncode}")
-    except Exception as e:
-        print(f"Docker execution notice: {e}")
-else:
-    print("Docker is not active in this environment; container recipe is ready for cloud/HPC deployment.")
-```
-
----
 ## Step 10: Slurm HPC Job Array Scaling
 
-On supercomputing clusters, submit a Slurm job array to process hundreds of tiles concurrently in parallel:
+On supercomputing clusters, submit a Slurm job array where each task streams an isolated tile:
 
 ```bash
 #!/bin/bash
 #SBATCH --job-name=als_stream
-#SBATCH --array=0-23
+#SBATCH --array=0-15
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=4G
 #SBATCH --time=00:20:00
 
-als-finder fetch tile $SLURM_ARRAY_TASK_ID \
-  --manifest ./catalog/manifest.json \
-  --tile-size 500 \
-  --buffer-size 20 \
-  --crs EPSG:32610 \
-  --output /scratch/$USER/tile_${SLURM_ARRAY_TASK_ID}.laz \
-  --overwrite \
-  --json
+# Map Slurm array index to tile ID
+TASK_ID=$SLURM_ARRAY_TASK_ID
+
+als-finder fetch tile "${TASK_ID}" \
+  --workspace ./scratch/tahoe_workspace \
+  --output /scratch/$USER/tiles/ \
+  --sidecar \
+  --overwrite
 ```
 
-```python
-# Verify CLI fetch tile parity locally
-test_cli_out = scratch_dir / "cli_test.laz"
-subprocess.run([
-    sys.executable, "-m", "als_finder.cli", "fetch", "tile", "0",
-    "--manifest", str(manifest_path),
-    "--tile-size", str(tile_size_m),
-    "--buffer-size", str(buffer_size_m),
-    "--crs", str(grid_crs),
-    "--output", str(test_cli_out),
-    "--overwrite",
-    "--json"
-], check=True)
+---
+## Summary & Next Steps
 
-test_cli_out.unlink(missing_ok=True)
-print("✓ Verified CLI fetch tile command parity.")
-```
+You have mastered the cloud-native streaming and adaptive tiling architecture:
+1. **Grid Planning**: Built metric 500m tiles with 50m buffers in true ground UTM coordinates.
+2. **Memory Auditing**: Tested point budgets against system RAM to eliminate out-of-memory risks.
+3. **Format Selection**: Streamed both standard compressed LAZ and Cloud-Optimized Point Clouds (COPC).
+4. **Adaptive Sub-Tiling**: Explored hierarchical quadrant addressing (`0_NW`) and automated OOM bisection.
+5. **Zero-Disk Processing**: Built an out-of-core pipeline cleaning temporary raw data after each step.
+
+👉 **Next Step**: Proceed to [Tutorial 03: Point Cloud Normalization & OGC STAC Catalogs](./03_normalization_and_stac.md) to explore full-survey standardization and SpatioTemporal Asset Catalogs!

@@ -40,7 +40,7 @@ import folium
 import als_finder
 
 # Set up dedicated workspace for this tutorial inside scratch/
-workspace_dir = Path("./scratch/demo_workspace").resolve()
+workspace_dir = Path("./scratch/tahoe_workspace").resolve()
 workspace_dir.mkdir(parents=True, exist_ok=True)
 
 print("=" * 70)

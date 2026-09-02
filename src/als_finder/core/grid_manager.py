@@ -347,6 +347,9 @@ def build_workspace_grid(
         Tuple[gpd.GeoDataFrame, str]: (grid_gdf, resolved_crs_string)
     """
     ws = Path(workspace_dir)
+    if ws.name == "manifest.json" or ws.suffix.lower() == ".gpkg":
+        ws = ws.parent.parent if ws.parent.name == "catalog" else ws.parent
+
     hive_grid_dir = ws / "catalog" / "grids" / f"tilesize={tile_size}" / f"buffer={buffer_size}"
     gpkg_path = hive_grid_dir / "grid.gpkg"
     
