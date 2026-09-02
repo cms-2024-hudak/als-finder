@@ -71,25 +71,28 @@ als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspac
 ```
 
 ### 3.2 Filter by Point Density (`--density`)
-Filter by USGS 3DEP Topographic Quality Levels (`QL0` through `QL3`) or explicit numeric ranges (`pts/m²`):
+Filter by USGS 3DEP Topographic Quality Levels (`QL0` through `QL3`) or explicit numeric ranges (`pts/m²`) using standard range delimiters (`2:10`, `2-10`, or `2..10`):
 
 ```bash
 # Filter for High-Density QL1 data (>= 8.0 pts/m²)
 als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --density QL1
 
 # Filter for explicit density range between 2.0 and 10.0 pts/m²
-als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --density 2/10
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --density 2:10
 ```
 
 ### 3.3 Filter by Historical Date Ranges (`--date`)
-Query specific temporal windows:
+Query specific temporal windows using colons (`:`), open-ended bounds (`2020:`), or a single year (`2022`):
 
 ```bash
 # Data collected between 2018 and 2022
-als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --date 2018-01-01/2022-12-31
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --date 2018-01-01:2022-12-31
 
-# All data collected since 2020
-als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --date 2020-01-01/
+# All data collected since 2020 (open-ended)
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --date 2020:
+
+# All data collected within a single calendar year
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --date 2022
 ```
 
 ### 3.4 Filter by Dataset Name Pattern (`--name`)

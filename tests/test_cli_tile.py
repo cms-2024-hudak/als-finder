@@ -83,3 +83,18 @@ def test_cli_fetch_tile_format_validation(sample_workspace: Path):
     assert res_invalid.exit_code != 0
     assert "Invalid value for '--tile-format'" in res_invalid.output
 
+
+def test_cli_search_density_delimiters(tmp_path: Path):
+    """Test that search --density accepts ':', '-', '..', and '/' delimiters."""
+    from click.testing import CliRunner
+    from als_finder.cli import cli
+    runner = CliRunner()
+    
+    # We test that all standard range delimiters parse correctly
+    for density_arg in ["2:10", "2-10", "2..10", "2/10", "QL1"]:
+        res = runner.invoke(cli, ["search", "--roi", "-120,38,-119,39", "--density", density_arg, "--workspace", str(tmp_path), "--no-overwrite"])
+        # Even if search finds 0 records or completes, it should not fail on density parsing
+        assert "Invalid density" not in res.output
+        assert "Invalid QL specification" not in res.output
+
+

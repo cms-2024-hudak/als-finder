@@ -82,8 +82,8 @@ def get_example_roi():
 @cli.command()
 @click.option('--roi', required=False, help='Path to ROI file (GeoJSON/Shapefile) or BBox string')
 @click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex e.g. ~^USGS)')
-@click.option('--date', help='Temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
-@click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
+@click.option('--date', help='Temporal filter: colon range 2018-01-01:2022-12-31, open-ended 2020:, or single year 2020')
+@click.option('--density', help='Point density filter in pts/m2 (e.g. 8.0, 2:10) or QL Level (QL0, QL1, QL2, QL3)')
 @click.option('--workspace', help='Path to project workspace directory')
 @click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NASA_GLIHT'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
@@ -108,25 +108,58 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
 
     start_date, end_date = None, None
     if date:
-        if '/' not in date:
-            raise click.UsageError("Temporal mapping via --date must strictly contain a slash '/' delimiter isolating bounds. Options: '2020-01-01/' (after), '/2020-01-01' (before), or '2015-01-01/2020-01-01' (explicit range).")
+        date_str = str(date).strip()
+        date_delim = None
+        for delim in [':', '..', '/']:
+            if delim in date_str:
+                date_delim = delim
+                break
         
-        start_date, end_date = date.split('/', 1)
-        start_date = start_date.strip() if start_date.strip() else None
-        end_date = end_date.strip() if end_date.strip() else None
+        if date_delim:
+            s_raw, e_raw = date_str.split(date_delim, 1)
+            start_date = s_raw.strip() if s_raw.strip() else None
+            end_date = e_raw.strip() if e_raw.strip() else None
+            if start_date and len(start_date) == 4 and start_date.isdigit():
+                start_date = f"{start_date}-01-01"
+            if end_date and len(end_date) == 4 and end_date.isdigit():
+                end_date = f"{end_date}-12-31"
+        else:
+            if len(date_str) == 4 and date_str.isdigit():
+                start_date = f"{date_str}-01-01"
+                end_date = f"{date_str}-12-31"
+            else:
+                start_date = date_str
+                end_date = date_str
             
     min_density, max_density = None, None
     if density:
-        if density.upper().startswith('QL'):
+        density_str = str(density).strip()
+        if density_str.upper().startswith('QL'):
             ql_map = {'QL0': 8.0, 'QL1': 8.0, 'QL2': 2.0, 'QL3': 0.5}
-            min_density = ql_map.get(density.upper())
+            min_density = ql_map.get(density_str.upper())
             if min_density is None:
                 raise click.ClickException(f"Invalid QL specification: {density}. Use QL0, QL1, QL2, or QL3.")
-        elif '/' in density:
-            mn, mx = density.split('/')
-            min_density, max_density = float(mn), float(mx)
         else:
-            min_density = float(density)
+            # Check for range delimiters: '..', ':', '-', '/'
+            range_delim = None
+            for delim in ['..', ':', '/', '-']:
+                if delim in density_str:
+                    parts = density_str.split(delim)
+                    if len(parts) == 2 and parts[0] != '':
+                        range_delim = delim
+                        break
+            if range_delim:
+                mn, mx = density_str.split(range_delim, 1)
+                try:
+                    min_density = float(mn.strip()) if mn.strip() else None
+                    max_density = float(mx.strip()) if mx.strip() else None
+                except ValueError:
+                    raise click.ClickException(f"Invalid density range: '{density}'. Expected format like '2:10', '2-10', '2..10', or 'QL1'.")
+            else:
+                try:
+                    min_density = float(density_str)
+                except ValueError:
+                    raise click.ClickException(f"Invalid density value: '{density}'. Use a number (e.g. 8.0), a range ('2:10', '2-10', '2..10'), or a QL level ('QL1').")
 
     logger.info(f"Searching for data in ROI: {roi}")
     logger.info(f"Providers: {provider}")
