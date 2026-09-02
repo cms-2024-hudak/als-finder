@@ -46,7 +46,7 @@ Search for all LiDAR surveys overlapping the Lake Tahoe ROI and catalog them int
 als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace
 ```
 
-`als-finder` queries all 6 remote registries in parallel and **deduplicates identical datasets by default** using an authoritative hierarchy (`USGS` > `NOAA` > `NASA_GLIHT` > `NEON` > `Earthdata` > `OpenTopography`).
+`als-finder` queries all 6 remote registries in parallel and deduplicates identical datasets by default using an authoritative hierarchy (`USGS` > `NOAA` > `NASA_GLIHT` > `NEON` > `Earthdata` > `OpenTopography`).
 
 This creates three catalog files inside `./scratch/tahoe_workspace/catalog/`:
 - `manifest.json`: Complete machine-readable metadata and endpoint catalog.
@@ -64,10 +64,10 @@ Isolate a specific archive, or query a subset of providers:
 
 ```bash
 # Search only USGS 3DEP cloud-native EPT repositories
-als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --provider USGS_EPT --overwrite
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --provider USGS_EPT
 
 # Query both USGS and NOAA
-als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --provider USGS_EPT --provider NOAA_STAC --overwrite
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --provider USGS_EPT --provider NOAA_STAC
 ```
 
 ### 3.2 Filter by Point Density (`--density`)
@@ -75,10 +75,10 @@ Filter by USGS 3DEP Topographic Quality Levels (`QL0` through `QL3`) or explicit
 
 ```bash
 # Filter for High-Density QL1 data (>= 8.0 pts/m²)
-als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --density QL1 --overwrite
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --density QL1
 
 # Filter for explicit density range between 2.0 and 10.0 pts/m²
-als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --density 2/10 --overwrite
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --density 2/10
 ```
 
 ### 3.3 Filter by Historical Date Ranges (`--date`)
@@ -86,17 +86,17 @@ Query specific temporal windows:
 
 ```bash
 # Data collected between 2018 and 2022
-als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --date 2018-01-01/2022-12-31 --overwrite
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --date 2018-01-01/2022-12-31
 
 # All data collected since 2020
-als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --date 2020-01-01/ --overwrite
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --date 2020-01-01/
 ```
 
 ### 3.4 Filter by Dataset Name Pattern (`--name`)
 Filter using wildcards or regex substrings:
 
 ```bash
-als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --name "*SierraNevada*" --overwrite
+als-finder search --roi ltbmu_boundary.gpkg --workspace ./scratch/tahoe_workspace --name "*SierraNevada*"
 ```
 
 ---

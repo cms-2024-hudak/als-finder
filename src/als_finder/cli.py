@@ -91,7 +91,7 @@ def get_example_roi():
 @click.option('--earthdata-token', help='NASA Earthdata Login (EDL) Bearer Token. Auto-saved to workspace .env.')
 @click.option('--neon-key', help='NEON API Token. Auto-saved to workspace .env.')
 @click.option('--dedup/--no-dedup', default=True, help='Deduplicate multi-archive surveys, prioritizing open repositories (default True). Pass --no-dedup to disable.')
-@click.option('--overwrite', is_flag=True, help='Force overwrite existing catalog files.')
+@click.option('--overwrite/--no-overwrite', default=True, help='Overwrite existing catalog files in workspace (default True). Use --no-overwrite to prevent replacing an existing catalog.')
 def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, earthdata_token, neon_key, dedup, overwrite):
     """Search for available LiDAR data."""
     start_time_exec = time.time()
@@ -148,6 +148,9 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
     output_manifest = os.path.join(catalog_dir, 'manifest.json')
     output_csv = os.path.join(catalog_dir, 'catalog.csv')
     output_gpkg = os.path.join(catalog_dir, 'catalog.gpkg')
+    
+    if not overwrite and os.path.exists(output_manifest):
+        raise click.ClickException(f"Catalog already exists at {output_manifest}. Pass --overwrite to replace it or choose another workspace.")
     
     try:
         # Parse and validate the ROI
