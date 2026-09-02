@@ -17,7 +17,7 @@ library(jsonlite)
 library(sf)
 
 # 1. Query Grid Info via CLI JSON output
-cmd <- "als-finder grid-info --manifest ./demo_workspace/catalog/manifest.json --json"
+cmd <- "als-finder plan --manifest ./demo_workspace/catalog/manifest.json --json"
 raw_json <- system(cmd, intern = TRUE)
 grid_meta <- fromJSON(paste(raw_json, collapse = ""))
 
@@ -91,9 +91,8 @@ mkdir -p "${OUT_DIR}"
 echo "Simulating Slurm Job Array (Tasks 0 to 3)..."
 for TASK_ID in 0 1 2 3; do
     echo "[Worker ${TASK_ID}] Streaming Tile ${TASK_ID}..."
-    als-finder fetch-tile \
+    als-finder fetch tile "${TASK_ID}" \
         --manifest "${MANIFEST}" \
-        --tile-id "${TASK_ID}" \
         --output "${OUT_DIR}/tile_${TASK_ID}.laz" \
         --buffer-size 30 \
         --crs "EPSG:32610" \

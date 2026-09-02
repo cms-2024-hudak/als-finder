@@ -1159,26 +1159,177 @@ def format_cli_output(
         click.echo(json.dumps(payload, indent=2))
 
 
-@cli.command('fetch-tile')
-@click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
-@click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
-@click.option('--tile-id', required=True, type=str, help='Target tile ID (e.g. 15 or quadrant 15_NW)')
-@click.option('--output', default=None, type=click.Path(), help='Target output .laz file path or directory (auto-Hive partitioned if directory or omitted)')
-@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
-@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
-@click.option('--max-points', type=int, default=None, help='Point budget threshold. If exceeded and --subtiles is set, splits tile')
-@click.option('--subtiles', is_flag=True, help='If tile exceeds max-points, sequentially stream all child quadrants')
+def _execute_fetch_single_tile(
+    target_manifest: Path,
+    tile_id: str,
+    ws_dir: Path,
+    output: Optional[str],
+    buffer_size: int,
+    tile_size: int,
+    max_points: Optional[int],
+    subtiles: bool,
+    crs: str,
+    spatial_name: bool,
+    sidecar: bool,
+    overwrite: bool,
+) -> Tuple[bool, Union[Dict[str, Any], List[Dict[str, Any]]]]:
+    from als_finder.core.grid_manager import get_tile_spec
+    from als_finder.core.standardization import stream_single_tile
+
+    spec = get_tile_spec(
+        target_manifest,
+        tile_id=tile_id,
+        tile_size=tile_size,
+        buffer_size=buffer_size,
+        overwrite=overwrite
+    )
+
+    should_subdivide = (
+        subtiles and max_points is not None and spec.get("est_points", 0) > max_points and not spec.get("quadrant")
+    )
+
+    if should_subdivide:
+        subtile_results = []
+        quads = ["NW", "NE", "SW", "SE"]
+        for q in quads:
+            child_id = f"{tile_id}_{q}"
+            child_spec = get_tile_spec(
+                target_manifest,
+                tile_id=child_id,
+                tile_size=tile_size,
+                buffer_size=buffer_size,
+                overwrite=overwrite
+            )
+            child_path = stream_single_tile(
+                manifest_or_grid_path=target_manifest,
+                tile_id=child_id,
+                out_path=output,
+                tile_size=tile_size,
+                buffer_size=buffer_size,
+                crs=crs,
+                overwrite=overwrite,
+                use_spatial_name=spatial_name,
+                write_sidecar=sidecar,
+            )
+            core_b = child_spec["core_poly"].bounds
+            buf_b = child_spec["buffered_poly"].bounds
+            grid_crs = child_spec.get("grid_crs", "EPSG:32610")
+            target_crs = crs if (crs and crs != "EPSG:3857") else grid_crs
+            child_sidecar = child_path.with_suffix(".json") if sidecar else None
+
+            subtile_results.append({
+                "tile_id": child_id,
+                "parent_tile_id": int(child_spec["parent_tile_id"]),
+                "quadrant": q,
+                "basename": child_spec.get("basename"),
+                "hive_dir": child_spec.get("hive_dir"),
+                "hive_path": child_spec.get("hive_path"),
+                "path": str(child_path.absolute()),
+                "sidecar_path": str(child_sidecar.absolute()) if child_sidecar else None,
+                "grid_crs": str(target_crs),
+                "tile_size": child_spec["tile_size"],
+                "buffer_size": child_spec["buffer_size"],
+                "est_points": child_spec["est_points"],
+                "is_hyperdense": child_spec["is_hyperdense"],
+                "crop_bbox": child_spec.get("crop_bbox"),
+                "crop_pdal_bounds": child_spec.get("crop_pdal_bounds"),
+                "crop_gdal_te": child_spec.get("crop_gdal_te"),
+                "crop_minx": child_spec.get("crop_minx"),
+                "crop_miny": child_spec.get("crop_miny"),
+                "crop_maxx": child_spec.get("crop_maxx"),
+                "crop_maxy": child_spec.get("crop_maxy"),
+                "core_bounds": child_spec.get("crop_bbox"),
+                "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
+            })
+        return True, subtile_results
+
+    res_path = stream_single_tile(
+        manifest_or_grid_path=target_manifest,
+        tile_id=tile_id,
+        out_path=output,
+        tile_size=tile_size,
+        buffer_size=buffer_size,
+        crs=crs,
+        overwrite=overwrite,
+        use_spatial_name=spatial_name,
+        write_sidecar=sidecar,
+    )
+
+    core_b = spec["core_poly"].bounds
+    buf_b = spec["buffered_poly"].bounds
+    grid_crs = spec.get("grid_crs", "EPSG:32610")
+    target_crs = crs if (crs and crs != "EPSG:3857") else grid_crs
+    sidecar_path = res_path.with_suffix(".json") if sidecar else None
+
+    payload = {
+        "status": "success",
+        "tile_id": str(tile_id) if spec.get("quadrant") else int(spec.get("parent_tile_id", tile_id)),
+        "parent_tile_id": spec.get("parent_tile_id"),
+        "quadrant": spec.get("quadrant"),
+        "level": spec.get("level", 0),
+        "basename": spec.get("basename"),
+        "hive_dir": spec.get("hive_dir"),
+        "hive_path": spec.get("hive_path"),
+        "path": str(res_path.absolute()),
+        "sidecar_path": str(sidecar_path.absolute()) if sidecar_path else None,
+        "grid_crs": str(target_crs),
+        "tile_size": spec.get("tile_size", tile_size),
+        "buffer_size": spec.get("buffer_size", buffer_size),
+        "nominal_tile_size": spec.get("nominal_tile_size", tile_size),
+        "nominal_buffer_size": spec.get("nominal_buffer_size", buffer_size),
+        "est_points": spec.get("est_points"),
+        "is_hyperdense": spec.get("is_hyperdense", False),
+        "recommended_mem_gb": spec.get("recommended_mem_gb"),
+        "crop_bbox": spec.get("crop_bbox"),
+        "crop_pdal_bounds": spec.get("crop_pdal_bounds"),
+        "crop_gdal_te": spec.get("crop_gdal_te"),
+        "crop_minx": spec.get("crop_minx"),
+        "crop_miny": spec.get("crop_miny"),
+        "crop_maxx": spec.get("crop_maxx"),
+        "crop_maxy": spec.get("crop_maxy"),
+        "core_bounds": spec.get("crop_bbox"),
+        "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
+        "provider": str(spec.get("provider", "")),
+        "dataset_id": str(spec.get("dataset_id", "")),
+    }
+    return False, payload
+
+
+# ==============================================================================
+# UNIFIED ACQUISITION GROUP (fetch)
+# ==============================================================================
+
+@cli.group('fetch')
+def fetch_group():
+    """Unified point cloud data acquisition (spatial tiles, plots, and surveys)."""
+    pass
+
+
+@fetch_group.command('tile')
+@click.argument('tile_ids', nargs=-1, required=False)
+@click.option('--tile-id', default=None, type=str, help='Target tile ID (flag alternative to positional argument)')
+@click.option('-w', '--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
+@click.option('-m', '--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
+@click.option('-o', '--output', default=None, type=click.Path(), help='Target output .laz file path or directory (auto-Hive partitioned if directory or omitted)')
+@click.option('-b', '--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('-s', '--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
+@click.option('--max-points', type=int, default=None, help='Point budget threshold. If exceeded, splits tile into 4 quadrants')
+@click.option('--subtiles/--no-subtiles', default=True, help='If tile exceeds max-points, sequentially stream child quadrants (default True)')
 @click.option('--crs', default='EPSG:3857', help='Target CRS (default EPSG:3857)')
-@click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming (e.g. tile_E0759000_N4313000_500m.laz)')
+@click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming')
 @click.option('--sidecar', is_flag=True, help='Write a companion .json metadata sidecar file alongside the .laz tile')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
-@click.option('--field', default=None, help='Extract a specific field from payload (e.g. path, tile_id, core_bounds)')
+@click.option('--field', default=None, help='Extract a specific field from payload (e.g. path, tile_id, crop_pdal_bounds)')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, overwrite, field, output_format, json_output):
-    """Stream a single spatial core + buffered tile on demand."""
+def fetch_tile_subcmd(tile_ids, tile_id, workspace, manifest, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, overwrite, field, output_format, json_output):
+    """Stream on-demand spatial tiles (e.g. als-finder fetch tile 15 or als-finder fetch tile 14 15 16)."""
     try:
-        # Resolve manifest or workspace
+        # Default workspace fallback to '.' if catalog/ exists
+        if workspace is None and manifest is None:
+            if (Path(".") / "catalog" / "grid.gpkg").exists() or (Path(".") / "catalog" / "manifest.json").exists():
+                workspace = "."
+
         if workspace:
             ws_path = Path(workspace)
             manifest_candidate = ws_path / "catalog" / "grid.gpkg"
@@ -1189,145 +1340,88 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
             target_manifest = manifest_candidate
         elif manifest:
             target_manifest = Path(manifest)
+            ws_path = target_manifest.parent.parent if target_manifest.parent.name == "catalog" else target_manifest.parent
         else:
-            raise click.UsageError("Either --workspace or --manifest must be provided.")
+            raise click.UsageError("Either --workspace or --manifest must be provided (or run from inside a workspace).")
 
-        from als_finder.core.grid_manager import get_tile_spec
-        from als_finder.core.standardization import stream_single_tile
+        # Resolve target tile IDs: positional takes precedence, then flag
+        targets: List[str] = list(tile_ids) if tile_ids else []
+        if not targets and tile_id:
+            targets = [tile_id]
+        if not targets:
+            raise click.UsageError("A target tile ID must be specified (e.g. 'als-finder fetch tile 15' or '--tile-id 15').")
 
-        spec = get_tile_spec(
-            target_manifest,
-            tile_id=tile_id,
-            tile_size=tile_size,
-            buffer_size=buffer_size,
-            overwrite=overwrite
-        )
+        results = []
+        for tid in targets:
+            is_subdiv, item_res = _execute_fetch_single_tile(
+                target_manifest=target_manifest,
+                tile_id=tid,
+                ws_dir=ws_path,
+                output=output,
+                buffer_size=buffer_size,
+                tile_size=tile_size,
+                max_points=max_points,
+                subtiles=subtiles,
+                crs=crs,
+                spatial_name=spatial_name,
+                sidecar=sidecar,
+                overwrite=overwrite,
+            )
+            results.append((tid, is_subdiv, item_res))
 
-        should_subdivide = (
-            subtiles and max_points is not None and spec.get("est_points", 0) > max_points and not spec.get("quadrant")
-        )
+        # Output formatting
+        if len(results) == 1:
+            tid, is_subdiv, res = results[0]
+            if is_subdiv:
+                def human_subdiv_printer():
+                    msg = f"Tile {tid} exceeded budget. Subdivided into 4 quadrants:\n"
+                    for r in res:
+                        msg += f"  - Streamed {r['tile_id']} to {r['path']}\n"
+                    click.echo(msg.rstrip(), err=True)
 
-        if should_subdivide:
-            # Sequentially stream the 4 child quadrants: NW, NE, SW, SE
-            subtile_results = []
-            quads = ["NW", "NE", "SW", "SE"]
-            for q in quads:
-                child_id = f"{tile_id}_{q}"
-                child_spec = get_tile_spec(
-                    target_manifest,
-                    tile_id=child_id,
-                    tile_size=tile_size,
-                    buffer_size=buffer_size,
-                    overwrite=overwrite
+                format_cli_output(
+                    {"status": "success", "subdivided": True, "tiles": res},
+                    json_output=json_output,
+                    field=field,
+                    output_format=output_format,
+                    default_human_printer=human_subdiv_printer
                 )
-                child_path = stream_single_tile(
-                    manifest_or_grid_path=target_manifest,
-                    tile_id=child_id,
-                    out_path=output,
-                    tile_size=tile_size,
-                    buffer_size=buffer_size,
-                    crs=crs,
-                    overwrite=overwrite,
-                    use_spatial_name=spatial_name,
-                    write_sidecar=sidecar,
+            else:
+                def human_fetch_printer():
+                    msg = f"Successfully streamed tile {tid} to {res['path']}"
+                    if sidecar and res.get("sidecar_path"):
+                        msg += f"\nWrote metadata sidecar to {res['sidecar_path']}"
+                    click.echo(msg, err=True)
+
+                format_cli_output(
+                    res,
+                    json_output=json_output,
+                    field=field,
+                    output_format=output_format,
+                    default_human_printer=human_fetch_printer
                 )
-                core_b = child_spec["core_poly"].bounds
-                buf_b = child_spec["buffered_poly"].bounds
-                grid_crs = child_spec.get("grid_crs", "EPSG:32610")
-                target_crs = crs if (crs and crs != "EPSG:3857") else grid_crs
-                child_sidecar = child_path.with_suffix(".json") if sidecar else None
+        else:
+            # Multi-tile batch output
+            flat_items = []
+            for tid, is_subdiv, res in results:
+                if is_subdiv:
+                    flat_items.extend(res)
+                else:
+                    flat_items.append(res)
 
-                subtile_results.append({
-                    "tile_id": child_id,
-                    "parent_tile_id": int(child_spec["parent_tile_id"]),
-                    "quadrant": q,
-                    "path": str(child_path.absolute()),
-                    "sidecar_path": str(child_sidecar.absolute()) if child_sidecar else None,
-                    "grid_crs": str(target_crs),
-                    "tile_size": child_spec["tile_size"],
-                    "buffer_size": child_spec["buffer_size"],
-                    "est_points": child_spec["est_points"],
-                    "is_hyperdense": child_spec["is_hyperdense"],
-                    "core_bounds": [round(core_b[0], 2), round(core_b[1], 2), round(core_b[2], 2), round(core_b[3], 2)],
-                    "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
-                })
-
-            def human_subdiv_printer():
-                msg = f"Tile {tile_id} exceeded budget ({spec.get('est_points', 0):,} pts > {max_points:,} max). Subdivided into 4 quadrants:\n"
-                for res in subtile_results:
-                    msg += f"  - Streamed {res['tile_id']} to {res['path']}\n"
-                click.echo(msg.rstrip(), err=True)
+            def human_multi_printer():
+                click.echo(f"Successfully processed {len(results)} target tile(s) ({len(flat_items)} file(s) generated):", err=True)
+                for item in flat_items:
+                    click.echo(f"  - Tile {item['tile_id']} -> {item['path']}", err=True)
 
             format_cli_output(
-                {"status": "success", "subdivided": True, "tiles": subtile_results},
+                {"status": "success", "total_tiles": len(flat_items), "tiles": flat_items},
                 json_output=json_output,
                 field=field,
                 output_format=output_format,
-                default_human_printer=human_subdiv_printer
+                default_human_printer=human_multi_printer
             )
-            return
 
-        res_path = stream_single_tile(
-            manifest_or_grid_path=target_manifest,
-            tile_id=tile_id,
-            out_path=output,
-            tile_size=tile_size,
-            buffer_size=buffer_size,
-            crs=crs,
-            overwrite=overwrite,
-            use_spatial_name=spatial_name,
-            write_sidecar=sidecar,
-        )
-
-        core_b = spec["core_poly"].bounds
-        buf_b = spec["buffered_poly"].bounds
-        grid_crs = spec.get("grid_crs", "EPSG:32610")
-        target_crs = crs if (crs and crs != "EPSG:3857") else grid_crs
-        sidecar_path = res_path.with_suffix(".json") if sidecar else None
-
-        payload = {
-            "status": "success",
-            "tile_id": str(tile_id) if spec.get("quadrant") else int(spec.get("parent_tile_id", tile_id)),
-            "parent_tile_id": spec.get("parent_tile_id"),
-            "quadrant": spec.get("quadrant"),
-            "level": spec.get("level", 0),
-            "basename": spec.get("basename"),
-            "hive_dir": spec.get("hive_dir"),
-            "hive_path": spec.get("hive_path"),
-            "path": str(res_path.absolute()),
-            "sidecar_path": str(sidecar_path.absolute()) if sidecar_path else None,
-            "grid_crs": str(target_crs),
-            "tile_size": spec.get("tile_size", tile_size),
-            "buffer_size": spec.get("buffer_size", buffer_size),
-            "est_points": spec.get("est_points"),
-            "is_hyperdense": spec.get("is_hyperdense", False),
-            "recommended_mem_gb": spec.get("recommended_mem_gb"),
-            "crop_bbox": spec.get("crop_bbox"),
-            "crop_pdal_bounds": spec.get("crop_pdal_bounds"),
-            "crop_gdal_te": spec.get("crop_gdal_te"),
-            "crop_minx": spec.get("crop_minx"),
-            "crop_miny": spec.get("crop_miny"),
-            "crop_maxx": spec.get("crop_maxx"),
-            "crop_maxy": spec.get("crop_maxy"),
-            "core_bounds": spec.get("crop_bbox"),
-            "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
-            "provider": str(spec.get("provider", "")),
-            "dataset_id": str(spec.get("dataset_id", "")),
-        }
-
-        def human_fetch_printer():
-            msg = f"Successfully streamed tile {tile_id} to {res_path}"
-            if sidecar:
-                msg += f"\nWrote metadata sidecar to {sidecar_path}"
-            click.echo(msg, err=True)
-
-        format_cli_output(
-            payload,
-            json_output=json_output,
-            field=field,
-            output_format=output_format,
-            default_human_printer=human_fetch_printer
-        )
     except Exception as e:
         if json_output or output_format == "json":
             click.echo(json.dumps({"status": "error", "error": str(e)}, indent=2))
@@ -1336,21 +1430,105 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
             click.echo(f"Error fetching tile: {e}", err=True)
             sys.exit(1)
 
-@cli.command('grid-info')
-@click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
+
+@cli.command('fetch-tile')
+@click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory')
 @click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
-@click.option('--tile-id', default=None, type=str, help='Specific tile ID (e.g. 15 or 15_NW) to inspect. Defaults to tile 0.')
-@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
-@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
-@click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
-@click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
-@click.option('--field', default=None, help='Extract a specific field from payload (e.g. total_tiles, grid_crs, basename, crop_pdal_bounds)')
-@click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
-@click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, overwrite, field, output_format, json_output):
-    """Retrieve spatial grid metadata, total tile count, and valid tile ID ranges."""
+@click.option('--tile-id', required=True, type=str, help='Target tile ID (e.g. 15 or 15_NW)')
+@click.option('--output', default=None, type=click.Path(), help='Target output .laz file or directory')
+@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters')
+@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters')
+@click.option('--max-points', type=int, default=None, help='Point budget threshold for auto-subdivision')
+@click.option('--subtiles/--no-subtiles', default=True, help='If exceeded, stream child quadrants (default True)')
+@click.option('--crs', default='EPSG:3857', help='Target CRS')
+@click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming')
+@click.option('--sidecar', is_flag=True, help='Write a companion .json metadata sidecar')
+@click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
+@click.option('--field', default=None, help='Extract a specific field from payload')
+@click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None)
+@click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON')
+@click.pass_context
+def fetch_tile_cmd(ctx, workspace, manifest, tile_id, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, overwrite, field, output_format, json_output):
+    """Backward-compatible alias for 'als-finder fetch tile'."""
+    ctx.invoke(
+        fetch_tile_subcmd,
+        tile_ids=(),
+        tile_id=tile_id,
+        workspace=workspace,
+        manifest=manifest,
+        output=output,
+        buffer_size=buffer_size,
+        tile_size=tile_size,
+        max_points=max_points,
+        subtiles=subtiles,
+        crs=crs,
+        spatial_name=spatial_name,
+        sidecar=sidecar,
+        overwrite=overwrite,
+        field=field,
+        output_format=output_format,
+        json_output=json_output
+    )
+
+
+@fetch_group.command('survey')
+@click.pass_context
+@click.option('--workspace', required=True, help='Path to target workspace directory containing manifest.json')
+@click.option('--roi', help='Path to spatial boundary file to dynamically mask downloads.')
+@click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex)')
+@click.option('--date', help='Date filter YYYY-MM-DD or range YYYY-MM-DD/YYYY-MM-DD')
+@click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. QL1)')
+@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NASA_GLIHT'], callback=parse_comma_separated, help='Provider(s) to search')
+@click.option('--cloud-native', is_flag=True, help='Filter exclusively for streaming formats (EPT or COPC)')
+@click.option('--ot-key', help='OpenTopography API Key')
+@click.option('--earthdata-token', help='NASA Earthdata Login Bearer Token')
+@click.option('--neon-key', help='NEON API Token')
+@click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats.')
+@click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull entire dataset.')
+@click.option('--standardize', is_flag=True, help='Execute PDAL standardization concurrently.')
+@click.option('--crs', default='EPSG:3857', help='Target output projection')
+@click.option('--stac', is_flag=True, help='Generate PySTAC schema hierarchies.')
+@click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews.')
+@click.option('--preserve-raw', is_flag=True, help='Preserve raw binaries after standardization.')
+@click.option('--workers', type=int, help='Override concurrent thread workers.')
+@click.option('--overwrite', is_flag=True, help='Force overwrite of existing files.')
+def fetch_survey_subcmd(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, earthdata_token, neon_key, execute, full, standardize, crs, stac, quicklook, preserve_raw, workers, overwrite):
+    """Bulk download full raw survey archives for offline staging."""
+    ctx.invoke(
+        download,
+        workspace=workspace,
+        roi=roi,
+        name=name,
+        date=date,
+        density=density,
+        provider=provider,
+        cloud_native=cloud_native,
+        ot_key=ot_key,
+        earthdata_token=earthdata_token,
+        neon_key=neon_key,
+        execute=execute,
+        full=full,
+        standardize=standardize,
+        crs=crs,
+        stac=stac,
+        quicklook=quicklook,
+        preserve_raw=preserve_raw,
+        workers=workers,
+        overwrite=overwrite
+    )
+
+
+# ==============================================================================
+# PLANNING & PRE-FLIGHT AUDIT COMMAND (plan & grid-info alias)
+# ==============================================================================
+
+def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output):
     try:
-        # Resolve manifest or workspace
+        # Default workspace fallback to '.' if catalog/ exists
+        if workspace is None and manifest is None:
+            if (Path(".") / "catalog" / "grid.gpkg").exists() or (Path(".") / "catalog" / "manifest.json").exists():
+                workspace = "."
+
         if workspace:
             ws_path = Path(workspace)
             manifest_candidate = ws_path / "catalog" / "grid.gpkg"
@@ -1361,8 +1539,9 @@ def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
             target_manifest = manifest_candidate
         elif manifest:
             target_manifest = Path(manifest)
+            ws_path = target_manifest.parent.parent if target_manifest.parent.name == "catalog" else target_manifest.parent
         else:
-            raise click.UsageError("Either --workspace or --manifest must be provided.")
+            raise click.UsageError("Either --workspace or --manifest must be provided (or run from inside a workspace).")
 
         from als_finder.core.grid_manager import read_grid, get_tile_spec
 
@@ -1380,10 +1559,11 @@ def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
         abs_laz_path = ws_dir / "data" / "tiles" / f"{spec_0['hive_path']}.laz"
 
         audit_info = None
+        leaf_ids = []
         if max_points is not None:
             density = float(spec_0.get("point_density") or 10.0)
-            cur_t = float(spec_0.get("tile_size", tile_size))
-            cur_b = float(spec_0.get("buffer_size", buffer_size))
+            cur_t = float(spec_0.get("nominal_tile_size", spec_0.get("tile_size", tile_size)))
+            cur_b = float(spec_0.get("nominal_buffer_size", spec_0.get("buffer_size", buffer_size)))
             tile_pts = int(density * ((cur_t + 2 * cur_b) ** 2))
             floor_pts = int(density * (4.0 * (cur_b ** 2)))
             is_hyperdense = (floor_pts >= max_points)
@@ -1403,14 +1583,34 @@ def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
                 "recommended_mem_gb": round((max(tile_pts, floor_pts) * 250) / 1e9 * 1.5, 1) if is_hyperdense else 4.0
             }
 
+            for i in range(total_tiles):
+                if needs_subdiv:
+                    leaf_ids.extend([f"{i}_NW", f"{i}_NE", f"{i}_SW", f"{i}_SE"])
+                else:
+                    leaf_ids.append(str(i))
+        else:
+            leaf_ids = [str(i) for i in range(total_tiles)]
+
+        # If --tasks flag is requested, output flat list of leaf tasks for Slurm
+        if tasks:
+            try:
+                for tid in leaf_ids:
+                    click.echo(tid)
+            except BrokenPipeError:
+                pass
+            return
+
         payload = {
             "status": "success",
             "tile_id": str(target_tile_id) if spec_0.get("quadrant") else int(spec_0.get("parent_tile_id", target_tile_id)),
             "total_tiles": total_tiles,
+            "total_leaf_tasks": len(leaf_ids),
             "tile_id_min": 0,
             "tile_id_max": total_tiles - 1 if total_tiles > 0 else 0,
             "tile_size": spec_0.get("tile_size", tile_size),
             "buffer_size": spec_0.get("buffer_size", buffer_size),
+            "nominal_tile_size": spec_0.get("nominal_tile_size", tile_size),
+            "nominal_buffer_size": spec_0.get("nominal_buffer_size", buffer_size),
             "grid_crs": spec_0["grid_crs"],
             "ul_easting": spec_0["ul_easting"],
             "ul_northing": spec_0["ul_northing"],
@@ -1427,14 +1627,16 @@ def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
             "crop_maxy": spec_0["crop_maxy"],
             "sample_tile_bounds": spec_0["bbox_str"],
             "grid_gpkg": spec_0.get("grid_gpkg_path"),
+            "leaf_tile_ids": leaf_ids,
             "audit": audit_info
         }
 
         def human_grid_printer():
             click.echo("==================================================", err=True)
-            click.echo(" ALS-FINDER SPATIAL GRID INFORMATION", err=True)
+            click.echo(" ALS-FINDER SPATIAL PLANNING & GRID METRICS", err=True)
             click.echo("==================================================", err=True)
-            click.echo(f"  Total Tiles:       {total_tiles:,}", err=True)
+            click.echo(f"  Master Tiles:      {total_tiles:,}", err=True)
+            click.echo(f"  Total Leaf Tasks:  {len(leaf_ids):,}", err=True)
             click.echo(f"  Tile ID Range:     0 to {max(0, total_tiles - 1)}", err=True)
             click.echo(f"  Tile Size:         {spec_0['tile_size']}m (core)", err=True)
             click.echo(f"  Buffer Size:       {spec_0['buffer_size']}m (overlap)", err=True)
@@ -1453,6 +1655,7 @@ def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
                 click.echo(f"  Est Points/Tile:   {audit_info['estimated_points_per_tile']:,}", err=True)
                 if audit_info['subdivided_tiles'] > 0:
                     click.echo(f"  Subdivision:       {audit_info['subdivided_tiles']} tiles exceed budget (split into 4 quadrants each)", err=True)
+                    click.echo(f"  Slurm Array Size:  --array=1-{len(leaf_ids)}", err=True)
                 else:
                     click.echo(f"  Standard Status:   All {total_tiles:,} tiles fit within memory budget", err=True)
                 if audit_info['is_hyperdense']:
@@ -1472,8 +1675,73 @@ def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
             click.echo(json.dumps({"status": "error", "error": str(e)}, indent=2))
             sys.exit(1)
         else:
-            click.echo(f"Error reading grid info: {e}", err=True)
+            click.echo(f"Error reading grid plan: {e}", err=True)
             sys.exit(1)
+
+
+@cli.command('plan')
+@click.option('-w', '--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
+@click.option('-m', '--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
+@click.option('--tile-id', default=None, type=str, help='Specific tile ID (e.g. 15 or 15_NW) to inspect. Defaults to tile 0.')
+@click.option('-s', '--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
+@click.option('-b', '--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
+@click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays (one per line)')
+@click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
+@click.option('--field', default=None, help='Extract a specific field from payload (e.g. total_tiles, grid_crs, basename, crop_pdal_bounds)')
+@click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
+@click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
+def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output):
+    """Plan spatial grid partitioning, pre-flight memory audits, and Slurm task lists."""
+    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output)
+
+
+@cli.command('grid-info')
+@click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
+@click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
+@click.option('--tile-id', default=None, type=str, help='Specific tile ID (e.g. 15 or 15_NW) to inspect. Defaults to tile 0.')
+@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
+@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
+@click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays')
+@click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
+@click.option('--field', default=None, help='Extract a specific field from payload')
+@click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None)
+@click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
+def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output):
+    """Backward-compatible alias for 'als-finder plan'."""
+    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output)
+
+
+# ==============================================================================
+# WORKSPACE MANAGEMENT GROUP (workspace)
+# ==============================================================================
+
+@cli.group('workspace')
+def workspace_group():
+    """Workspace catalog, configuration, and cache management."""
+    pass
+
+
+@workspace_group.command('update')
+@click.pass_context
+@click.option('--workspace', required=True, help='Path to existing als-finder workspace')
+@click.option('--name', help='Override dataset name filter')
+@click.option('--date', help='Override temporal filter')
+@click.option('--density', help='Override point density filter')
+@click.option('--provider', help='Override provider(s)')
+@click.option('--ot-key', help='OpenTopography API Key')
+def workspace_update_cmd(ctx, workspace, name, date, density, provider, ot_key):
+    """Update an existing workspace catalog with new filters."""
+    ctx.invoke(update, workspace=workspace, name=name, date=date, density=density, provider=provider, ot_key=ot_key)
+
+
+@workspace_group.command('clean')
+@click.option('--workspace', required=True, type=click.Path(exists=True), help='Path to target workspace directory to clean.')
+def workspace_clean_cmd(workspace):
+    """Clean the specified workspace by removing scratch and interim data."""
+    clean_cmd(workspace)
+
 
 if __name__ == '__main__':
     cli()

@@ -44,11 +44,19 @@ def test_cli_grid_info(sample_workspace: Path):
 
 
 def test_cli_fetch_tile_help():
-    """Test als-finder fetch-tile --help CLI output."""
+    """Test als-finder fetch tile, fetch-tile alias, and plan --help CLI outputs."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["fetch-tile", "--help"])
-    assert result.exit_code == 0
-    assert "Stream a single spatial core + buffered tile" in result.output
+    result_alias = runner.invoke(cli, ["fetch-tile", "--help"])
+    assert result_alias.exit_code == 0
+    assert "als-finder fetch tile" in result_alias.output
+
+    result_fetch_tile = runner.invoke(cli, ["fetch", "tile", "--help"])
+    assert result_fetch_tile.exit_code == 0
+    assert "Stream on-demand spatial tiles" in result_fetch_tile.output
+
+    result_plan = runner.invoke(cli, ["plan", "--help"])
+    assert result_plan.exit_code == 0
+    assert "Plan spatial grid partitioning" in result_plan.output
 
 
 def test_stream_single_tile_directory_hive_resolution(sample_workspace: Path, tmp_path: Path):

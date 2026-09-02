@@ -282,9 +282,8 @@ docker run --rm \
   -e OMP_NUM_THREADS=1 \
   -v $(pwd)/tiling_workspace:/workspace \
   ghcr.io/cms-2024-hudak/als-finder:latest \
-  fetch-tile \
+  fetch tile 0 \
     --manifest /workspace/catalog/manifest.json \
-    --tile-id 0 \
     --tile-size 500 \
     --buffer-size 20 \
     --crs EPSG:32610 \
@@ -307,9 +306,8 @@ if docker_bin:
         "-v", f"{Path.cwd() / 'src'}:/app/src",
         "-v", f"{workspace_dir}:/workspace",
         "als-finder:latest",
-        "fetch-tile",
+        "fetch", "tile", "0",
         "--manifest", "/workspace/catalog/manifest.json",
-        "--tile-id", "0",
         "--tile-size", str(tile_size_m),
         "--buffer-size", str(buffer_size_m),
         "--crs", str(grid_crs),
@@ -342,9 +340,8 @@ On supercomputing clusters, submit a Slurm job array to process hundreds of tile
 #SBATCH --mem=4G
 #SBATCH --time=00:20:00
 
-als-finder fetch-tile \
+als-finder fetch tile $SLURM_ARRAY_TASK_ID \
   --manifest ./catalog/manifest.json \
-  --tile-id $SLURM_ARRAY_TASK_ID \
   --tile-size 500 \
   --buffer-size 20 \
   --crs EPSG:32610 \
@@ -354,12 +351,11 @@ als-finder fetch-tile \
 ```
 
 ```python
-# Verify CLI fetch-tile parity locally
+# Verify CLI fetch tile parity locally
 test_cli_out = scratch_dir / "cli_test.laz"
 subprocess.run([
-    sys.executable, "-m", "als_finder.cli", "fetch-tile",
+    sys.executable, "-m", "als_finder.cli", "fetch", "tile", "0",
     "--manifest", str(manifest_path),
-    "--tile-id", "0",
     "--tile-size", str(tile_size_m),
     "--buffer-size", str(buffer_size_m),
     "--crs", str(grid_crs),
@@ -369,5 +365,5 @@ subprocess.run([
 ], check=True)
 
 test_cli_out.unlink(missing_ok=True)
-print("✓ Verified CLI fetch-tile command parity.")
+print("✓ Verified CLI fetch tile command parity.")
 ```

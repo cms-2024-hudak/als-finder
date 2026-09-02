@@ -59,12 +59,12 @@ als-finder search \
 
 ---
 
-## Test 3: Query Spatial Grid Information & Specific Tile Metadata (`grid-info`)
+## Test 3: Query Spatial Grid Planning & Specific Tile Metadata (`als-finder plan`)
 
-Before streaming or looping through tiles, inspect grid specs, total tile count, and query any tile's exact suffix-free basename and unbuffering crop box:
+Before streaming or looping through tiles, inspect grid specs, total tile count, and query any tile's exact suffix-free basename and unbuffering crop box using the unified `plan` command (or backward-compatible alias `grid-info`):
 
 ```bash
-als-finder grid-info \
+als-finder plan \
   --workspace scratch/test_workspace \
   --tile-id 15 \
   --tile-size 500 \
@@ -75,9 +75,10 @@ als-finder grid-info \
 - [ ] Terminal prints formatted grid and tile information:
   ```
   ==================================================
-   ALS-FINDER SPATIAL GRID INFORMATION
+   ALS-FINDER SPATIAL PLANNING & GRID METRICS
   ==================================================
-    Total Tiles:       5,657
+    Master Tiles:      5,657
+    Total Leaf Tasks:  5,657
     Tile ID Range:     0 to 5656
     Tile Size:         500m (core)
     Buffer Size:       50m (overlap)
@@ -93,23 +94,24 @@ als-finder grid-info \
 - [ ] **Direct Field Extraction (`--field <key>`)**: Query specific properties directly without parsing JSON:
   ```bash
   # Returns suffix-free basename: CA_SierraNevada_5_2022_tile_E0738000_N4331000
-  als-finder grid-info --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --field basename
+  als-finder plan --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --field basename
 
   # Returns relative Hive directory: provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50
-  als-finder grid-info --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --field hive_dir
+  als-finder plan --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --field hive_dir
 
   # Returns crop bounds for PDAL: ([738000.0, 738500.0], [4330500.0, 4331000.0])
-  als-finder grid-info --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --field crop_pdal_bounds
+  als-finder plan --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --field crop_pdal_bounds
   ```
 - [ ] **Export to Shell Environment (`--format env`)**: Generate key-value pairs ready for `eval`:
   ```bash
-  als-finder grid-info --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --format env
+  als-finder plan --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --format env
   ```
   *Output:*
   ```bash
   STATUS="success"
   TILE_ID="15"
   TOTAL_TILES="5657"
+  TOTAL_LEAF_TASKS="5657"
   TILE_ID_MIN="0"
   TILE_ID_MAX="5656"
   TILE_SIZE="500"
@@ -133,16 +135,25 @@ als-finder grid-info \
 
 ---
 
-## Test 4: Pre-Flight Memory & Point Budget Risk Audit (`grid-info --max-points`)
+## Test 4: Pre-Flight Memory Risk Audit & Slurm Task List (`als-finder plan --max-points --tasks`)
 
-Audit your study area against a target point budget (e.g. 4,000,000 points $\approx$ 4 GB RAM) before streaming any data:
+Audit your study area against a target point budget (e.g. 4,000,000 points $\approx$ 4 GB RAM) and generate a flat leaf task list:
 
 ```bash
-als-finder grid-info \
+# 1. Run memory risk audit
+als-finder plan \
   --workspace scratch/test_workspace \
   --tile-size 500 \
   --buffer-size 50 \
   --max-points 4000000
+
+# 2. Generate flat leaf task list for Slurm job array
+als-finder plan \
+  --workspace scratch/test_workspace \
+  --tile-size 500 \
+  --buffer-size 50 \
+  --max-points 4000000 \
+  --tasks | head -n 12
 ```
 
 ### What to check:
@@ -153,19 +164,28 @@ als-finder grid-info \
     Max Points Budget: 4,000,000
     Est Points/Tile:   10,504,800
     Subdivision:       5657 tiles exceed budget (split into 4 quadrants each)
+    Slurm Array Size:  --array=1-22628
   ==================================================
+  ```
+- [ ] `--tasks` outputs leaf tile IDs sequentially:
+  ```
+  0_NW
+  0_NE
+  0_SW
+  0_SE
+  1_NW
+  ...
   ```
 
 ---
 
-## Test 5: Extract a Base Tile with Geographic Naming & Sidecar (`fetch-tile`)
+## Test 5: Extract a Base Tile with Positional Syntax & Sidecar (`als-finder fetch tile 15`)
 
-Extract standard tile 15 with a 50m overlap buffer and export a companion JSON metadata sidecar:
+Extract standard tile 15 with a 50m overlap buffer using clean positional argument syntax:
 
 ```bash
-als-finder fetch-tile \
+als-finder fetch tile 15 \
   --workspace scratch/test_workspace \
-  --tile-id 15 \
   --tile-size 500 \
   --buffer-size 50 \
   --sidecar \
@@ -181,14 +201,13 @@ als-finder fetch-tile \
 
 ---
 
-## Test 6: Extract a Quadrant Sub-Tile on Demand (`fetch-tile --tile-id 15_NW`)
+## Test 6: Extract Quadrant Sub-Tile on Demand (`als-finder fetch tile 15_NW`)
 
 Stream only the northwest 250m quadrant of Tile 15:
 
 ```bash
-als-finder fetch-tile \
+als-finder fetch tile 15_NW \
   --workspace scratch/test_workspace \
-  --tile-id 15_NW \
   --tile-size 500 \
   --buffer-size 50 \
   --sidecar \
@@ -200,6 +219,29 @@ als-finder fetch-tile \
   ```
   Successfully streamed tile 15_NW to scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW.laz
   Wrote metadata sidecar to scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW.json
+  ```
+
+---
+
+## Test 6b: Multi-Tile Positional Streaming (`als-finder fetch tile 14 16`)
+
+Stream multiple tiles in a single concise command:
+
+```bash
+als-finder fetch tile 14 16 \
+  --workspace scratch/test_workspace \
+  --tile-size 500 \
+  --buffer-size 50 \
+  --sidecar \
+  --overwrite
+```
+
+### What to check:
+- [ ] Terminal streams both tiles sequentially into the same Hive directory:
+  ```
+  Successfully processed 2 target tile(s) (2 file(s) generated):
+    - Tile 14 -> .../CA_SierraNevada_5_2022_tile_E0738000_N4330500.laz
+    - Tile 16 -> .../CA_SierraNevada_5_2022_tile_E0738000_N4331500.laz
   ```
 
 ---
