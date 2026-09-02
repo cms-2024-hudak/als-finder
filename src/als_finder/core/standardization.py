@@ -570,17 +570,18 @@ def stream_single_tile(
     if not urls:
         raise ValueError(f"No dataset URLs found in manifest/grid for tile_id {tile_id}")
 
-    rel_hive = spec["spatial_hive_path"] if use_spatial_name else spec["hive_path"]
+    rel_hive = spec["hive_path"]
+    rel_file = f"{rel_hive}.laz" if not rel_hive.endswith(".laz") else rel_hive
 
     # 2. Resolve output path: if directory or None, append Hive partition hierarchy
     if out_path is None:
         p = Path(manifest_or_grid_path)
         ws_dir = p.parent.parent if p.parent.name == "catalog" else (p if p.is_dir() else p.parent)
-        target_out = ws_dir / "data" / rel_hive
+        target_out = ws_dir / "data" / "tiles" / rel_file
     else:
         raw_out = Path(out_path)
         if raw_out.is_dir() or raw_out.suffix.lower() != ".laz":
-            target_out = raw_out / rel_hive
+            target_out = raw_out / rel_file
         else:
             target_out = raw_out
 
@@ -674,7 +675,9 @@ def stream_single_tile(
             "parent_tile_id": spec.get("parent_tile_id"),
             "quadrant": spec.get("quadrant"),
             "level": spec.get("level", 0),
-            "basename": target_out.name,
+            "basename": spec.get("basename", target_out.stem),
+            "hive_dir": spec.get("hive_dir"),
+            "hive_path": spec.get("hive_path"),
             "path": str(target_out.absolute()),
             "dataset_id": str(spec.get("dataset_id", "")),
             "provider": str(spec.get("provider", "")),
@@ -684,7 +687,9 @@ def stream_single_tile(
             "est_points": spec.get("est_points"),
             "is_hyperdense": spec.get("is_hyperdense", False),
             "recommended_mem_gb": spec.get("recommended_mem_gb"),
-            "core_bounds": [round(core_b[0], 2), round(core_b[1], 2), round(core_b[2], 2), round(core_b[3], 2)],
+            "core_bounds": spec.get("crop_bbox", [round(core_b[0], 2), round(core_b[1], 2), round(core_b[2], 2), round(core_b[3], 2)]),
+            "crop_pdal_bounds": spec.get("crop_pdal_bounds"),
+            "crop_gdal_te": spec.get("crop_gdal_te"),
             "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
             "source_urls": spec.get("urls", []),
         }

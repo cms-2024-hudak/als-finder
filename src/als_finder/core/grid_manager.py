@@ -26,6 +26,15 @@ class GridError(Exception):
     pass
 
 
+def format_coord(val: float) -> str:
+    """Format geographic coordinate with zero-padding and 'p' for fractional decimals."""
+    f_val = float(val)
+    if f_val < 0:
+        return f"-{abs(int(f_val)):07d}" if f_val.is_integer() else f"-{abs(f_val):07.1f}".replace(".", "p")
+    else:
+        return f"{int(f_val):07d}" if f_val.is_integer() else f"{f_val:07.1f}".replace(".", "p")
+
+
 def resolve_projected_crs(
     gdf: gpd.GeoDataFrame,
     target_crs: Optional[str] = None
@@ -249,24 +258,23 @@ def export_grid_manifest(
     export_df["buffered_bounds_str"] = export_df["buffered_geometry"].apply(
         lambda g: f"([{g.bounds[0]}, {g.bounds[2]}], [{g.bounds[1]}, {g.bounds[3]}])"
     )
+
     t_size = int(tile_size) if tile_size is not None else 1200
     b_size = int(buffer_size) if buffer_size is not None else 30
     export_df["tile_size"] = t_size
     export_df["buffer_size"] = b_size
     export_df["grid_crs"] = grid_gdf.crs.to_string()
     
-    hive_prefix = f"provider={provider}/dataset={dataset_id}"
-    export_df["basename"] = export_df["tile_id"].apply(lambda tid: f"{dataset_id}_tile_{int(tid):04d}.laz")
-    export_df["spatial_basename"] = export_df.apply(
-        lambda r: f"{dataset_id}_tile_E{int(r.geometry.bounds[0]):07d}_N{int(r.geometry.bounds[1]):07d}_{t_size}m.laz",
+    # Pure Hive partition hierarchy (without 'tiles/')
+    hive_prefix = f"provider={provider}/dataset={dataset_id}/tilesize={t_size}/buffer={b_size}"
+    export_df["basename"] = export_df.apply(
+        lambda r: f"{dataset_id}_tile_E{format_coord(r.geometry.bounds[0])}_N{format_coord(r.geometry.bounds[3])}",
         axis=1
     )
-    export_df["hive_path"] = export_df["basename"].apply(
-        lambda bn: f"{hive_prefix}/tiles/tilesize={t_size}/buffer={b_size}/{bn}"
-    )
-    export_df["spatial_hive_path"] = export_df["spatial_basename"].apply(
-        lambda sbn: f"{hive_prefix}/tiles/tilesize={t_size}/buffer={b_size}/{sbn}"
-    )
+    export_df["hive_dir"] = hive_prefix
+    export_df["hive_path"] = export_df["basename"].apply(lambda bn: f"{hive_prefix}/{bn}")
+    export_df["spatial_basename"] = export_df["basename"]
+    export_df["spatial_hive_path"] = export_df["hive_path"]
     export_df["provider"] = provider
     export_df["dataset_id"] = dataset_id
     export_df["name"] = name_str
@@ -430,19 +438,16 @@ def build_workspace_grid(
     export_df["buffer_size"] = int(buffer_size)
     export_df["grid_crs"] = str(crs_str)
     
-    # File and Hive hierarchy names
-    hive_prefix = f"provider={provider}/dataset={dataset_id}"
-    export_df["basename"] = export_df["tile_id"].apply(lambda tid: f"{dataset_id}_tile_{int(tid):04d}.laz")
-    export_df["spatial_basename"] = export_df.apply(
-        lambda r: f"{dataset_id}_tile_E{int(r.geometry.bounds[0]):07d}_N{int(r.geometry.bounds[1]):07d}_{tile_size}m.laz",
+    # File and Hive hierarchy names (pure Hive, without 'tiles/')
+    hive_prefix = f"provider={provider}/dataset={dataset_id}/tilesize={tile_size}/buffer={buffer_size}"
+    export_df["basename"] = export_df.apply(
+        lambda r: f"{dataset_id}_tile_E{format_coord(r.geometry.bounds[0])}_N{format_coord(r.geometry.bounds[3])}",
         axis=1
     )
-    export_df["hive_path"] = export_df["basename"].apply(
-        lambda bn: f"{hive_prefix}/tiles/tilesize={tile_size}/buffer={buffer_size}/{bn}"
-    )
-    export_df["spatial_hive_path"] = export_df["spatial_basename"].apply(
-        lambda sbn: f"{hive_prefix}/tiles/tilesize={tile_size}/buffer={buffer_size}/{sbn}"
-    )
+    export_df["hive_dir"] = hive_prefix
+    export_df["hive_path"] = export_df["basename"].apply(lambda bn: f"{hive_prefix}/{bn}")
+    export_df["spatial_basename"] = export_df["basename"]
+    export_df["spatial_hive_path"] = export_df["hive_path"]
     
     # Dataset provenance
     export_df["provider"] = str(provider)
@@ -687,10 +692,25 @@ def get_tile_spec(
     t_size = int(cur_tile_size)
     b_size = int(cur_buffer_size)
 
-    tile_basename = f"{dataset_id}_tile_{base_id:04d}{quadrant_suffix}.laz"
-    spatial_basename = f"{dataset_id}_tile_E{int(c_minx):07d}_N{int(c_miny):07d}_{t_size}m{quadrant_suffix}.laz"
-    hive_path = f"provider={provider}/dataset={dataset_id}/tiles/tilesize={t_size}/buffer={b_size}/{tile_basename}"
-    spatial_hive_path = f"provider={provider}/dataset={dataset_id}/tiles/tilesize={t_size}/buffer={b_size}/{spatial_basename}"
+    # Upper-Left coordinates: West (minx), North (maxy) of the parent cell
+    parent_geom = row.geometry
+    ul_e_str = format_coord(parent_geom.bounds[0])
+    ul_n_str = format_coord(parent_geom.bounds[3])
+
+    tile_basename = f"{dataset_id}_tile_E{ul_e_str}_N{ul_n_str}{quadrant_suffix}"
+    hive_dir = f"provider={provider}/dataset={dataset_id}/tilesize={t_size}/buffer={b_size}"
+    hive_path = f"{hive_dir}/{tile_basename}"
+
+    # Unbuffered Core Bounds for direct cropping (PDAL, GDAL, Python, R)
+    c_b = core_poly.bounds
+    core_minx = round(float(c_b[0]), 2)
+    core_miny = round(float(c_b[1]), 2)
+    core_maxx = round(float(c_b[2]), 2)
+    core_maxy = round(float(c_b[3]), 2)
+
+    crop_bbox = [core_minx, core_miny, core_maxx, core_maxy]
+    crop_pdal_bounds = f"([{core_minx}, {core_maxx}], [{core_miny}, {core_maxy}])"
+    crop_gdal_te = f"{core_minx} {core_miny} {core_maxx} {core_maxy}"
 
     # Density & Hyper-Dense Memory Risk Calculation
     density = float(row.get("point_density") or 10.0)
@@ -711,9 +731,19 @@ def get_tile_spec(
         "is_hyperdense": is_hyperdense,
         "recommended_mem_gb": rec_mem,
         "basename": tile_basename,
-        "spatial_basename": spatial_basename,
+        "hive_dir": hive_dir,
         "hive_path": hive_path,
-        "spatial_hive_path": spatial_hive_path,
+        "spatial_basename": tile_basename,
+        "spatial_hive_path": hive_path,
+        "ul_easting": core_minx,
+        "ul_northing": core_maxy,
+        "crop_bbox": crop_bbox,
+        "crop_pdal_bounds": crop_pdal_bounds,
+        "crop_gdal_te": crop_gdal_te,
+        "crop_minx": core_minx,
+        "crop_miny": core_miny,
+        "crop_maxx": core_maxx,
+        "crop_maxy": core_maxy,
         "grid_gpkg_path": str(gpkg_path),
         "provider": provider,
         "year": year,

@@ -59,7 +59,7 @@ def test_stream_single_tile_directory_hive_resolution(sample_workspace: Path, tm
     spec = get_tile_spec(manifest_path, tile_id=0, tile_size=500, buffer_size=30)
     assert "provider=" in spec["hive_path"]
     assert "dataset=" in spec["hive_path"]
-    assert spec["basename"] == "test_dataset_tile_0000.laz"
-    assert "test_dataset_tile_0000.laz" in spec["hive_path"]
-    assert "spatial_basename" in spec
-    assert "spatial_hive_path" in spec
+    assert spec["basename"].startswith("test_dataset_tile_E")
+    assert "_N" in spec["basename"]
+    assert "hive_dir" in spec
+    assert "crop_pdal_bounds" in spec

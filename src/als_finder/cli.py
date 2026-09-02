@@ -1291,6 +1291,9 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
             "parent_tile_id": spec.get("parent_tile_id"),
             "quadrant": spec.get("quadrant"),
             "level": spec.get("level", 0),
+            "basename": spec.get("basename"),
+            "hive_dir": spec.get("hive_dir"),
+            "hive_path": spec.get("hive_path"),
             "path": str(res_path.absolute()),
             "sidecar_path": str(sidecar_path.absolute()) if sidecar_path else None,
             "grid_crs": str(target_crs),
@@ -1299,7 +1302,14 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
             "est_points": spec.get("est_points"),
             "is_hyperdense": spec.get("is_hyperdense", False),
             "recommended_mem_gb": spec.get("recommended_mem_gb"),
-            "core_bounds": [round(core_b[0], 2), round(core_b[1], 2), round(core_b[2], 2), round(core_b[3], 2)],
+            "crop_bbox": spec.get("crop_bbox"),
+            "crop_pdal_bounds": spec.get("crop_pdal_bounds"),
+            "crop_gdal_te": spec.get("crop_gdal_te"),
+            "crop_minx": spec.get("crop_minx"),
+            "crop_miny": spec.get("crop_miny"),
+            "crop_maxx": spec.get("crop_maxx"),
+            "crop_maxy": spec.get("crop_maxy"),
+            "core_bounds": spec.get("crop_bbox"),
             "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
             "provider": str(spec.get("provider", "")),
             "dataset_id": str(spec.get("dataset_id", "")),
@@ -1329,14 +1339,15 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
 @cli.command('grid-info')
 @click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
 @click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
+@click.option('--tile-id', default=None, type=str, help='Specific tile ID (e.g. 15 or 15_NW) to inspect. Defaults to tile 0.')
 @click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
 @click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
 @click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
 @click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
-@click.option('--field', default=None, help='Extract a specific field from payload (e.g. total_tiles, grid_crs, audit.subdivided_tiles)')
+@click.option('--field', default=None, help='Extract a specific field from payload (e.g. total_tiles, grid_crs, basename, crop_pdal_bounds)')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def grid_info_cmd(workspace, manifest, tile_size, buffer_size, max_points, overwrite, field, output_format, json_output):
+def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, overwrite, field, output_format, json_output):
     """Retrieve spatial grid metadata, total tile count, and valid tile ID ranges."""
     try:
         # Resolve manifest or workspace
@@ -1362,13 +1373,17 @@ def grid_info_cmd(workspace, manifest, tile_size, buffer_size, max_points, overw
             overwrite=overwrite
         )
         total_tiles = len(grid_gdf)
-        spec_0 = get_tile_spec(target_manifest, tile_id=0, tile_size=tile_size, buffer_size=buffer_size)
+        target_tile_id = tile_id if tile_id is not None else 0
+        spec_0 = get_tile_spec(target_manifest, tile_id=target_tile_id, tile_size=tile_size, buffer_size=buffer_size)
+
+        ws_dir = ws_path if workspace else Path(manifest).parent.parent
+        abs_laz_path = ws_dir / "data" / "tiles" / f"{spec_0['hive_path']}.laz"
 
         audit_info = None
         if max_points is not None:
             density = float(spec_0.get("point_density") or 10.0)
-            cur_t = float(tile_size)
-            cur_b = float(buffer_size)
+            cur_t = float(spec_0.get("tile_size", tile_size))
+            cur_b = float(spec_0.get("buffer_size", buffer_size))
             tile_pts = int(density * ((cur_t + 2 * cur_b) ** 2))
             floor_pts = int(density * (4.0 * (cur_b ** 2)))
             is_hyperdense = (floor_pts >= max_points)
@@ -1390,12 +1405,26 @@ def grid_info_cmd(workspace, manifest, tile_size, buffer_size, max_points, overw
 
         payload = {
             "status": "success",
+            "tile_id": str(target_tile_id) if spec_0.get("quadrant") else int(spec_0.get("parent_tile_id", target_tile_id)),
             "total_tiles": total_tiles,
             "tile_id_min": 0,
             "tile_id_max": total_tiles - 1 if total_tiles > 0 else 0,
-            "tile_size": tile_size,
-            "buffer_size": buffer_size,
+            "tile_size": spec_0.get("tile_size", tile_size),
+            "buffer_size": spec_0.get("buffer_size", buffer_size),
             "grid_crs": spec_0["grid_crs"],
+            "ul_easting": spec_0["ul_easting"],
+            "ul_northing": spec_0["ul_northing"],
+            "basename": spec_0["basename"],
+            "hive_dir": spec_0["hive_dir"],
+            "hive_path": spec_0["hive_path"],
+            "path": str(abs_laz_path.absolute()),
+            "crop_bbox": spec_0["crop_bbox"],
+            "crop_pdal_bounds": spec_0["crop_pdal_bounds"],
+            "crop_gdal_te": spec_0["crop_gdal_te"],
+            "crop_minx": spec_0["crop_minx"],
+            "crop_miny": spec_0["crop_miny"],
+            "crop_maxx": spec_0["crop_maxx"],
+            "crop_maxy": spec_0["crop_maxy"],
             "sample_tile_bounds": spec_0["bbox_str"],
             "grid_gpkg": spec_0.get("grid_gpkg_path"),
             "audit": audit_info
@@ -1405,13 +1434,18 @@ def grid_info_cmd(workspace, manifest, tile_size, buffer_size, max_points, overw
             click.echo("==================================================", err=True)
             click.echo(" ALS-FINDER SPATIAL GRID INFORMATION", err=True)
             click.echo("==================================================", err=True)
-            click.echo(f"  Total Tiles:    {total_tiles:,}", err=True)
-            click.echo(f"  Tile ID Range:  0 to {max(0, total_tiles - 1)}", err=True)
-            click.echo(f"  Tile Size:      {tile_size}m (core)", err=True)
-            click.echo(f"  Buffer Size:    {buffer_size}m (overlap)", err=True)
-            click.echo(f"  Grid CRS:       {spec_0['grid_crs']}", err=True)
+            click.echo(f"  Total Tiles:       {total_tiles:,}", err=True)
+            click.echo(f"  Tile ID Range:     0 to {max(0, total_tiles - 1)}", err=True)
+            click.echo(f"  Tile Size:         {spec_0['tile_size']}m (core)", err=True)
+            click.echo(f"  Buffer Size:       {spec_0['buffer_size']}m (overlap)", err=True)
+            click.echo(f"  Grid CRS:          {spec_0['grid_crs']}", err=True)
+            click.echo(f"  Target Tile ID:    {target_tile_id}", err=True)
+            click.echo(f"  Basename:          {spec_0['basename']}", err=True)
+            click.echo(f"  Hive Directory:    {spec_0['hive_dir']}", err=True)
+            click.echo(f"  Crop PDAL Bounds:  {spec_0['crop_pdal_bounds']}", err=True)
+            click.echo(f"  Crop GDAL -te:     {spec_0['crop_gdal_te']}", err=True)
             if spec_0.get("grid_gpkg_path"):
-                click.echo(f"  Grid File:      {spec_0['grid_gpkg_path']}", err=True)
+                click.echo(f"  Grid File:         {spec_0['grid_gpkg_path']}", err=True)
             if audit_info:
                 click.echo("--------------------------------------------------", err=True)
                 click.echo(" MEMORY RISK AUDIT (PRE-FLIGHT):", err=True)

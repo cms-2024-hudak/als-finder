@@ -102,7 +102,11 @@ def test_cli_fetch_tile_quadrant_dry():
     assert spec["tile_id"] == "15_NW"
     assert spec["quadrant"] == "NW"
     assert spec["level"] == 1
-    assert "CA_SierraNevada_5_2022_tile_0015_NW.laz" in spec["basename"]
+    assert spec["basename"] == "CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW"
+    assert spec["hive_dir"] == "provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=250/buffer=25"
+    assert "CROP_PDAL_BOUNDS" not in spec # in dict it's crop_pdal_bounds
+    assert spec["crop_pdal_bounds"] == "([738000.0, 738250.0], [4330750.0, 4331000.0])"
+    assert spec["crop_gdal_te"] == "738000.0 4330750.0 738250.0 4331000.0"
 
 
 def test_cli_field_and_format_env():
@@ -117,12 +121,13 @@ def test_cli_field_and_format_env():
     res_field = runner.invoke(cli, [
         "grid-info",
         "--workspace", str(ws),
+        "--tile-id", "15",
         "--tile-size", "500",
         "--buffer-size", "50",
-        "--field", "total_tiles"
+        "--field", "basename"
     ])
     assert res_field.exit_code == 0
-    assert res_field.output.strip() == "5657"
+    assert res_field.output.strip() == "CA_SierraNevada_5_2022_tile_E0738000_N4331000"
 
     # 2. Dotted nested field extraction
     res_nested = runner.invoke(cli, [
@@ -136,14 +141,17 @@ def test_cli_field_and_format_env():
     assert res_nested.exit_code == 0
     assert res_nested.output.strip() == "5657"
 
-    # 3. Environment format
+    # 3. Environment format with crop bounds
     res_env = runner.invoke(cli, [
         "grid-info",
         "--workspace", str(ws),
+        "--tile-id", "15_NW",
         "--tile-size", "500",
         "--buffer-size", "50",
         "--format", "env"
     ])
     assert res_env.exit_code == 0
-    assert "TOTAL_TILES=\"5657\"" in res_env.output
-    assert "GRID_CRS=\"EPSG:32610\"" in res_env.output
+    assert 'BASENAME="CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW"' in res_env.output
+    assert 'HIVE_DIR="provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=250/buffer=25"' in res_env.output
+    assert 'CROP_PDAL_BOUNDS="([738000.0, 738250.0], [4330750.0, 4331000.0])"' in res_env.output
+    assert 'CROP_GDAL_TE="738000.0 4330750.0 738250.0 4331000.0"' in res_env.output

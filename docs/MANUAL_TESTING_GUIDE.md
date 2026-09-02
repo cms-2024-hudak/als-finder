@@ -59,58 +59,76 @@ als-finder search \
 
 ---
 
-## Test 3: Query Spatial Grid Information & Total Tile Count (`grid-info`)
+## Test 3: Query Spatial Grid Information & Specific Tile Metadata (`grid-info`)
 
-Before streaming or looping through tiles, inspect how many tiles exist for any tile size and buffer configuration:
+Before streaming or looping through tiles, inspect grid specs, total tile count, and query any tile's exact suffix-free basename and unbuffering crop box:
 
 ```bash
 als-finder grid-info \
   --workspace scratch/test_workspace \
+  --tile-id 15 \
   --tile-size 500 \
   --buffer-size 50
 ```
 
 ### What to check:
-- [ ] Terminal prints formatted grid information:
+- [ ] Terminal prints formatted grid and tile information:
   ```
   ==================================================
    ALS-FINDER SPATIAL GRID INFORMATION
   ==================================================
-    Total Tiles:    5,657
-    Tile ID Range:  0 to 5656
-    Tile Size:      500m (core)
-    Buffer Size:    50m (overlap)
-    Grid CRS:       EPSG:32610
-    Grid File:      scratch/test_workspace/catalog/grids/tilesize=500/buffer=50/grid.gpkg
+    Total Tiles:       5,657
+    Tile ID Range:     0 to 5656
+    Tile Size:         500m (core)
+    Buffer Size:       50m (overlap)
+    Grid CRS:          EPSG:32610
+    Target Tile ID:    15
+    Basename:          CA_SierraNevada_5_2022_tile_E0738000_N4331000
+    Hive Directory:    provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50
+    Crop PDAL Bounds:  ([738000.0, 738500.0], [4330500.0, 4331000.0])
+    Crop GDAL -te:     738000.0 4330500.0 738500.0 4331000.0
+    Grid File:         scratch/test_workspace/catalog/grids/tilesize=500/buffer=50/grid.gpkg
   ==================================================
   ```
-- [ ] **Direct Field Extraction (`--field <key>`)**: Query specific scalar properties directly without parsing JSON or tables:
+- [ ] **Direct Field Extraction (`--field <key>`)**: Query specific properties directly without parsing JSON:
   ```bash
-  # Returns just the number 5657
-  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --field total_tiles
+  # Returns suffix-free basename: CA_SierraNevada_5_2022_tile_E0738000_N4331000
+  als-finder grid-info --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --field basename
 
-  # Returns just EPSG:32610
-  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --field grid_crs
+  # Returns relative Hive directory: provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50
+  als-finder grid-info --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --field hive_dir
+
+  # Returns crop bounds for PDAL: ([738000.0, 738500.0], [4330500.0, 4331000.0])
+  als-finder grid-info --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --field crop_pdal_bounds
   ```
 - [ ] **Export to Shell Environment (`--format env`)**: Generate key-value pairs ready for `eval`:
   ```bash
-  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --format env
+  als-finder grid-info --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --format env
   ```
   *Output:*
   ```bash
   STATUS="success"
+  TILE_ID="15"
   TOTAL_TILES="5657"
   TILE_ID_MIN="0"
   TILE_ID_MAX="5656"
   TILE_SIZE="500"
   BUFFER_SIZE="50"
   GRID_CRS="EPSG:32610"
-  SAMPLE_TILE_BOUNDS="([737450.0, 738050.0], [4328950.0, 4329550.0])"
+  UL_EASTING="738000.0"
+  UL_NORTHING="4331000.0"
+  BASENAME="CA_SierraNevada_5_2022_tile_E0738000_N4331000"
+  HIVE_DIR="provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50"
+  HIVE_PATH="provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_E0738000_N4331000"
+  PATH="/mnt/c/Users/gears/git/als-finder/scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_E0738000_N4331000.laz"
+  CROP_PDAL_BOUNDS="([738000.0, 738500.0], [4330500.0, 4331000.0])"
+  CROP_GDAL_TE="738000.0 4330500.0 738500.0 4331000.0"
+  CROP_MINX="738000.0"
+  CROP_MINY="4330500.0"
+  CROP_MAXX="738500.0"
+  CROP_MAXY="4331000.0"
+  SAMPLE_TILE_BOUNDS="([737950.0, 738550.0], [4330450.0, 4331050.0])"
   GRID_GPKG="scratch/test_workspace/catalog/grids/tilesize=500/buffer=50/grid.gpkg"
-  ```
-- [ ] **Full JSON (`--json`)**:
-  ```bash
-  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --json
   ```
 
 ---
@@ -137,16 +155,12 @@ als-finder grid-info \
     Subdivision:       5657 tiles exceed budget (split into 4 quadrants each)
   ==================================================
   ```
-- [ ] You can also run with `--json` for automated cluster deployment:
-  ```bash
-  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --max-points 4000000 --json
-  ```
 
 ---
 
-## Test 5: Extract a Base Tile with Custom Size, Buffer & Sidecar (`fetch-tile`)
+## Test 5: Extract a Base Tile with Geographic Naming & Sidecar (`fetch-tile`)
 
-Extract a standard 500m base tile with a 50m overlap buffer and export a companion JSON metadata sidecar:
+Extract standard tile 15 with a 50m overlap buffer and export a companion JSON metadata sidecar:
 
 ```bash
 als-finder fetch-tile \
@@ -161,15 +175,15 @@ als-finder fetch-tile \
 ### What to check:
 - [ ] Terminal prints the Hive partition path and sidecar confirmation:
   ```
-  Successfully streamed tile 15 to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_0015.laz
-  Wrote metadata sidecar to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_0015.json
+  Successfully streamed tile 15 to scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_E0738000_N4331000.laz
+  Wrote metadata sidecar to scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_E0738000_N4331000.json
   ```
 
 ---
 
 ## Test 6: Extract a Quadrant Sub-Tile on Demand (`fetch-tile --tile-id 15_NW`)
 
-Stream only the northwest 250m quadrant of Tile 15 to prevent memory overload:
+Stream only the northwest 250m quadrant of Tile 15:
 
 ```bash
 als-finder fetch-tile \
@@ -184,8 +198,8 @@ als-finder fetch-tile \
 ### What to check:
 - [ ] Terminal confirms streaming directly to the scaled Hive hierarchy (`tilesize=250/buffer=25`):
   ```
-  Successfully streamed tile 15_NW to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=250/buffer=25/CA_SierraNevada_5_2022_tile_0015_NW.laz
-  Wrote metadata sidecar to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=250/buffer=25/CA_SierraNevada_5_2022_tile_0015_NW.json
+  Successfully streamed tile 15_NW to scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=250/buffer=25/CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW.laz
+  Wrote metadata sidecar to scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=250/buffer=25/CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW.json
   ```
 
 ---
@@ -199,7 +213,7 @@ Check point counts, total footprint dimensions (core + buffer), elevation ranges
 import laspy
 from pathlib import Path
 
-tile_path = 'scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_0015.laz'
+tile_path = 'scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_E0738000_N4331000.laz'
 
 with laspy.open(tile_path) as reader:
     header = reader.header
@@ -232,12 +246,12 @@ spec = als_finder.get_tile_spec('scratch/test_workspace', tile_id=15, tile_size=
 
 print('--- Tile Spec Metadata ---')
 print('Tile ID:', spec['tile_id'])
-print('Standard Basename:', spec['basename'])
-print('Spatial Basename:', spec['spatial_basename'])
-print('Hive Partition Path:', spec['hive_path'])
+print('Basename (Suffix-Free):', spec['basename'])
+print('Hive Dir:', spec['hive_dir'])
+print('Hive Path:', spec['hive_path'])
 print('Grid CRS:', spec['grid_crs'])
-print('Provider:', spec['provider'])
-print('Dataset ID:', spec['dataset_id'])
+print('Crop PDAL Bounds:', spec['crop_pdal_bounds'])
+print('Crop GDAL -te:', spec['crop_gdal_te'])
 
 # 2. Inspect Central Core Area vs Streamed Buffered Area
 core = spec['core_poly']
