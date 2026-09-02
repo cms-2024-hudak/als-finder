@@ -26,8 +26,25 @@ class GLiHTProvider(BaseProvider):
     def check_access(self) -> bool:
         """
         Check if G-LiHT provider index is available.
+        G-LiHT flight lines are publicly accessible NASA GSFC data (no API key required).
         """
-        return self.INDEX_PATH.exists() or self.CACHE_FILE.exists()
+        if self.INDEX_PATH.exists() or (self.CACHE_FILE.exists() and self.CACHE_FILE.stat().st_size > 1000):
+            return True
+
+        # If local bundled index is missing, attempt to download remote footprints
+        try:
+            logger.info("Local G-LiHT index missing; attempting to fetch remote footprints from NASA GSFC...")
+            self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            r = requests.get(self.REMOTE_INDEX_URL, headers={"User-Agent": "als-finder/1.1"}, timeout=10)
+            if r.status_code == 200 and len(r.content) > 1000:
+                with open(self.CACHE_FILE, "wb") as f:
+                    f.write(r.content)
+                return True
+        except Exception as e:
+            logger.warning(f"Could not reach remote G-LiHT index at {self.REMOTE_INDEX_URL}: {e}")
+
+        logger.warning("NASA G-LiHT flight line index (gliht_index.geojson) is not available locally or remotely.")
+        return False
 
     def _load_index_gdf(self) -> gpd.GeoDataFrame:
         """

@@ -29,12 +29,13 @@ Welcome to **ALS-Finder**! This tutorial walks you through the core discovery, s
 > 
 > * **Option A: Real Linux Terminal (Recommended for CLI Muscle Memory)**:
 >   1. Click **`File`** $\rightarrow$ **`New`** $\rightarrow$ **`Terminal`** in the top menu bar (or click the blue **`+`** icon above the file list and select the black **`Terminal`** tile).
->   2. *Tip:* Click and drag the new **Terminal tab** to the right side of your screen. JupyterLab will dock it side-by-side, so you have this tutorial on the left and a live terminal on the right!
->   3. Type the commands from Part 1 directly at the `$` prompt (e.g. `als-finder get-example-roi`).
+>   2. *Pro Tip:* Click and drag the new **Terminal tab** to the **bottom edge** of your screen. JupyterLab will dock it horizontally, so you have the tutorial guide on top and a live terminal window on the bottom!
+>   3. Type commands directly at the `$` prompt (e.g. `als-finder get-example-roi`).
+>   4. *Note on `!` prefix:* If you copy commands from notebook cells below, **do not include the exclamation mark (`!`)**. In Jupyter notebooks, `!` tells Jupyter to execute the line in bash; in a real terminal, you run `als-finder ...` directly.
 > 
 > * **Option B: Run Directly Inside This Notebook**:
 >   1. Click on any code cell below and press **`Shift + Enter`** (or click the **▶ Play** button in the toolbar above).
->   2. Shell commands will run via the `!` prefix (e.g. `!als-finder search ...`) and print results below the cell.
+>   2. Notebook cells use the `!` prefix to execute shell commands in the background and print tables directly below the cell.
 >   3. In Part 2, Python cells will render the interactive Leaflet map directly in this document.
 
 ---

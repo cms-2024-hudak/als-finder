@@ -12,7 +12,7 @@ setup(
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     package_data={
-        "als_finder": ["data/*.gpkg"]
+        "als_finder": ["data/*.gpkg", "data/*.geojson"]
     },
     include_package_data=True,
     install_requires=[
