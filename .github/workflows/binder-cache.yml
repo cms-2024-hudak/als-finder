@@ -1,0 +1,25 @@
+name: Pre-Warm MyBinder Cache
+
+on:
+  push:
+    branches: [ "main", "dev", "feat/**" ]
+    paths:
+      - ".binder/**"
+      - "src/**"
+      - "tutorials/**"
+      - "setup.py"
+      - "environment.yml"
+  workflow_dispatch:
+
+jobs:
+  cache-binder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Pre-build and cache container image on mybinder.org
+        uses: jupyterhub/repo2docker-action@master
+        with:
+          NO_PUSH: true
+          MYBINDERORG_TAG: ${{ github.ref_name }}
