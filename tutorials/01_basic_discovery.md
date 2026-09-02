@@ -24,6 +24,21 @@ Welcome to **ALS-Finder**! This tutorial walks you through the core discovery, s
 
 ---
 
+> [!TIP]
+> ### 🚀 Running in MyBinder? Here is how to follow along:
+> 
+> * **Option A: Real Linux Terminal (Recommended for CLI Muscle Memory)**:
+>   1. Click **`File`** $\rightarrow$ **`New`** $\rightarrow$ **`Terminal`** in the top menu bar (or click the blue **`+`** icon above the file list and select the black **`Terminal`** tile).
+>   2. *Tip:* Click and drag the new **Terminal tab** to the right side of your screen. JupyterLab will dock it side-by-side, so you have this tutorial on the left and a live terminal on the right!
+>   3. Type the commands from Part 1 directly at the `$` prompt (e.g. `als-finder get-example-roi`).
+> 
+> * **Option B: Run Directly Inside This Notebook**:
+>   1. Click on any code cell below and press **`Shift + Enter`** (or click the **▶ Play** button in the toolbar above).
+>   2. Shell commands will run via the `!` prefix (e.g. `!als-finder search ...`) and print results below the cell.
+>   3. In Part 2, Python cells will render the interactive Leaflet map directly in this document.
+
+---
+
 # Part 1: Command-Line Interface (CLI) Quickstart
 
 The fastest way to use `als-finder` is directly from your terminal.
