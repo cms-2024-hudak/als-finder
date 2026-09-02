@@ -44,9 +44,9 @@ def test_quadrant_geometry_bisection(tmp_path):
     sw_spec = als_finder.get_tile_spec(ws, tile_id="15_SW", tile_size=500, buffer_size=50)
     se_spec = als_finder.get_tile_spec(ws, tile_id="15_SE", tile_size=500, buffer_size=50)
 
-    # Core sizes must be halved (250m)
+    # Core sizes must be halved (250m), while buffer size remains constant (50m)
     assert nw_spec["tile_size"] == 250
-    assert nw_spec["buffer_size"] == 25
+    assert nw_spec["buffer_size"] == 50
     assert nw_spec["parent_tile_id"] == 15
     assert nw_spec["quadrant"] == "NW"
 
@@ -103,7 +103,11 @@ def test_cli_fetch_tile_quadrant_dry():
     assert spec["quadrant"] == "NW"
     assert spec["level"] == 1
     assert spec["basename"] == "CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW"
-    assert spec["hive_dir"] == "provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=250/buffer=25"
+    assert spec["hive_dir"] == "provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50"
+    assert spec["nominal_tile_size"] == 500
+    assert spec["nominal_buffer_size"] == 50
+    assert spec["tile_size"] == 250
+    assert spec["buffer_size"] == 50
     assert "CROP_PDAL_BOUNDS" not in spec # in dict it's crop_pdal_bounds
     assert spec["crop_pdal_bounds"] == "([738000.0, 738250.0], [4330750.0, 4331000.0])"
     assert spec["crop_gdal_te"] == "738000.0 4330750.0 738250.0 4331000.0"
@@ -152,6 +156,7 @@ def test_cli_field_and_format_env():
     ])
     assert res_env.exit_code == 0
     assert 'BASENAME="CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW"' in res_env.output
-    assert 'HIVE_DIR="provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=250/buffer=25"' in res_env.output
+    assert 'HIVE_DIR="provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50"' in res_env.output
+    assert 'TILE_SIZE="250"' in res_env.output
     assert 'CROP_PDAL_BOUNDS="([738000.0, 738250.0], [4330750.0, 4331000.0])"' in res_env.output
     assert 'CROP_GDAL_TE="738000.0 4330750.0 738250.0 4331000.0"' in res_env.output

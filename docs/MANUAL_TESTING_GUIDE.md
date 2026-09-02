@@ -196,10 +196,10 @@ als-finder fetch-tile \
 ```
 
 ### What to check:
-- [ ] Terminal confirms streaming directly to the scaled Hive hierarchy (`tilesize=250/buffer=25`):
+- [ ] Terminal confirms streaming directly alongside base tiles in the nominal grid hierarchy (`tilesize=500/buffer=50`), with the buffer remaining constant at 50m:
   ```
-  Successfully streamed tile 15_NW to scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=250/buffer=25/CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW.laz
-  Wrote metadata sidecar to scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=250/buffer=25/CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW.json
+  Successfully streamed tile 15_NW to scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW.laz
+  Wrote metadata sidecar to scratch/test_workspace/data/tiles/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_E0738000_N4331000_NW.json
   ```
 
 ---

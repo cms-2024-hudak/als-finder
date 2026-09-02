@@ -618,7 +618,7 @@ def get_tile_spec(
                 cur_core_poly = box(x_mid, cur_miny, cur_maxx, y_mid)
 
             cur_tile_size = cur_tile_size / 2.0
-            cur_buffer_size = max(10.0, cur_buffer_size / 2.0)
+            # Buffer remains fixed across subdivisions to preserve edge effect mitigation
 
         core_poly = cur_core_poly
         c_minx, c_miny, c_maxx, c_maxy = core_poly.bounds
@@ -692,13 +692,17 @@ def get_tile_spec(
     t_size = int(cur_tile_size)
     b_size = int(cur_buffer_size)
 
+    # Master nominal grid sizes (to keep all tiles and subtiles in a single directory)
+    nom_tile_size = int(row.get("tile_size") or tile_size or cur_tile_size)
+    nom_buffer_size = int(row.get("buffer_size") or buffer_size or cur_buffer_size)
+
     # Upper-Left coordinates: West (minx), North (maxy) of the parent cell
     parent_geom = row.geometry
     ul_e_str = format_coord(parent_geom.bounds[0])
     ul_n_str = format_coord(parent_geom.bounds[3])
 
     tile_basename = f"{dataset_id}_tile_E{ul_e_str}_N{ul_n_str}{quadrant_suffix}"
-    hive_dir = f"provider={provider}/dataset={dataset_id}/tilesize={t_size}/buffer={b_size}"
+    hive_dir = f"provider={provider}/dataset={dataset_id}/tilesize={nom_tile_size}/buffer={nom_buffer_size}"
     hive_path = f"{hive_dir}/{tile_basename}"
 
     # Unbuffered Core Bounds for direct cropping (PDAL, GDAL, Python, R)
@@ -727,6 +731,8 @@ def get_tile_spec(
         "level": len(quadrants),
         "tile_size": t_size,
         "buffer_size": b_size,
+        "nominal_tile_size": nom_tile_size,
+        "nominal_buffer_size": nom_buffer_size,
         "est_points": est_points,
         "is_hyperdense": is_hyperdense,
         "recommended_mem_gb": rec_mem,
