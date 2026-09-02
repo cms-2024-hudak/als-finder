@@ -21,24 +21,25 @@ pip install git+https://github.com/cms-2024-hudak/als-finder.git
 
 ---
 
-## 2. API Keys & Account Setup
+## 2. Supported Archives & Authentication
 
-Most archives (USGS 3DEP, NASA G-LiHT, NOAA) require no credentials. A few archives require free accounts:
+`als-finder` federates search and retrieval across **6 major public LiDAR repositories**:
 
-### OpenTopography (Optional)
-1. Register for a free account at [OpenTopography.org](https://opentopography.org).
-2. Go to **My Account** -> **Request an API Key**.
-3. Pass it once via CLI: `als-finder search --roi study_area.geojson --ot-key YOUR_KEY`
+| Provider Registry | Flag | Coverage / Focus | Primary Format | Auth Required? |
+| :--- | :--- | :--- | :--- | :--- |
+| **USGS 3DEP** | `USGS_EPT` | Continental US & Alaska | Cloud-Native EPT / COPC | **No** (Open Access) |
+| **NOAA Digital Coast** | `NOAA_STAC` | US Coastal Zones & Great Lakes | Cloud STAC / LAZ | **No** (Open Access) |
+| **NASA G-LiHT** | `NASA_GLIHT` | NASA Ecosystem & Forestry Transects | Standard LAS / LAZ | **No** (Open Access) |
+| **OpenTopography** | `OpenTopography`| Academic, State & High-Res Surveys | LAZ / Point Cloud Archives | **Free API Key** |
+| **NEON AOP** | `NEON` | Ecological Observatory Core Sites | Discrete Return LAZ | **Optional Token** (Higher rate limits) |
+| **NASA Earthdata** | `Earthdata` | NASA Carbon Monitoring System (CMS) | Standard LAZ / NetCDF | **Free Earthdata Token** |
 
-### NASA Earthdata (Optional for NASA CMS datasets)
-1. Register at [urs.earthdata.nasa.gov](https://urs.earthdata.nasa.gov).
-2. Generate a token under the **Generate Token** tab.
-3. Pass it once via CLI: `als-finder search --roi study_area.geojson --earthdata-token YOUR_TOKEN`
+### API Keys & Credentials (Optional)
+For the archives requiring free registration, you can supply your keys via flags or store them in a local `.env` file:
 
-### NEON AOP (Optional for higher download limits)
-1. Register at [data.neonscience.org](https://data.neonscience.org).
-2. Generate an API token under **My Account**.
-3. Pass it once via CLI: `als-finder search --roi study_area.geojson --neon-key YOUR_KEY`
+- **OpenTopography**: Register at [OpenTopography.org](https://opentopography.org) -> *My Account* -> *Request an API Key*. Pass via `--ot-key KEY` or `OPENTOPOGRAPHY_API_KEY=KEY` in `.env`.
+- **NASA Earthdata**: Register at [urs.earthdata.nasa.gov](https://urs.earthdata.nasa.gov) -> *Generate Token*. Pass via `--earthdata-token TOKEN` or `EARTHDATA_TOKEN=TOKEN` in `.env`.
+- **NEON AOP**: Register at [data.neonscience.org](https://data.neonscience.org) -> *My Account* -> *API Tokens*. Pass via `--neon-key KEY` or `NEON_API_KEY=KEY` in `.env`.
 
 ---
 
