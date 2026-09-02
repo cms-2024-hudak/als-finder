@@ -1198,26 +1198,65 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
             sys.exit(1)
 
 @cli.command('grid-info')
-@click.option('--manifest', required=True, type=click.Path(exists=True), help='Path to catalog manifest.json or grid.gpkg')
+@click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
+@click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
 @click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
 @click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
 @click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def grid_info_cmd(manifest, tile_size, buffer_size, overwrite, json_output):
-    """Retrieve spatial grid metadata for R / sf ingestion."""
+def grid_info_cmd(workspace, manifest, tile_size, buffer_size, overwrite, json_output):
+    """Retrieve spatial grid metadata, total tile count, and valid tile ID ranges."""
     try:
-        from als_finder.core.grid_manager import get_tile_spec
-        spec = get_tile_spec(manifest, tile_id=0, tile_size=tile_size, buffer_size=buffer_size, overwrite=overwrite)
+        # Resolve manifest or workspace
+        if workspace:
+            ws_path = Path(workspace)
+            manifest_candidate = ws_path / "catalog" / "grid.gpkg"
+            if not manifest_candidate.exists():
+                manifest_candidate = ws_path / "catalog" / "manifest.json"
+            if not manifest_candidate.exists():
+                raise click.UsageError(f"Neither grid.gpkg nor manifest.json found in workspace '{workspace}/catalog/'. Run 'search' first.")
+            target_manifest = manifest_candidate
+        elif manifest:
+            target_manifest = Path(manifest)
+        else:
+            raise click.UsageError("Either --workspace or --manifest must be provided.")
+
+        from als_finder.core.grid_manager import read_grid, get_tile_spec
+
+        grid_gdf = read_grid(
+            target_manifest,
+            tile_size=tile_size,
+            buffer_size=buffer_size,
+            overwrite=overwrite
+        )
+        total_tiles = len(grid_gdf)
+        spec_0 = get_tile_spec(target_manifest, tile_id=0, tile_size=tile_size, buffer_size=buffer_size)
+
         payload = {
             "status": "success",
-            "grid_crs": spec["grid_crs"],
-            "sample_tile_bounds": spec["bbox_str"],
+            "total_tiles": total_tiles,
+            "tile_id_min": 0,
+            "tile_id_max": total_tiles - 1 if total_tiles > 0 else 0,
+            "tile_size": tile_size,
+            "buffer_size": buffer_size,
+            "grid_crs": spec_0["grid_crs"],
+            "sample_tile_bounds": spec_0["bbox_str"],
+            "grid_gpkg": spec_0.get("grid_gpkg_path"),
         }
         if json_output:
             click.echo(json.dumps(payload, indent=2))
         else:
-            click.echo(f"Grid CRS: {spec['grid_crs']}", err=True)
-            click.echo(f"Sample BBox: {spec['bbox_str']}", err=True)
+            click.echo("==================================================", err=True)
+            click.echo(" ALS-FINDER SPATIAL GRID INFORMATION", err=True)
+            click.echo("==================================================", err=True)
+            click.echo(f"  Total Tiles:    {total_tiles:,}", err=True)
+            click.echo(f"  Tile ID Range:  0 to {max(0, total_tiles - 1)}", err=True)
+            click.echo(f"  Tile Size:      {tile_size}m (core)", err=True)
+            click.echo(f"  Buffer Size:    {buffer_size}m (overlap)", err=True)
+            click.echo(f"  Grid CRS:       {spec_0['grid_crs']}", err=True)
+            if spec_0.get("grid_gpkg_path"):
+                click.echo(f"  Grid File:      {spec_0['grid_gpkg_path']}", err=True)
+            click.echo("==================================================", err=True)
     except Exception as e:
         if json_output:
             click.echo(json.dumps({"status": "error", "error": str(e)}, indent=2))

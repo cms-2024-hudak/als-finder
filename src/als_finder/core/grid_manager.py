@@ -672,23 +672,25 @@ def get_grid_path(
 def read_grid(
     workspace_or_manifest: Union[str, Path],
     tile_size: int = 1200,
-    buffer_size: int = 30
+    buffer_size: int = 30,
+    overwrite: bool = False
 ) -> gpd.GeoDataFrame:
     """
     Reads and returns the spatial grid as a GeoDataFrame for the requested tile and buffer configuration.
-    Lazily generates the grid if not already present on disk.
+    Lazily generates the grid if not already present on disk or if overwrite=True.
 
     Args:
         workspace_or_manifest (Union[str, Path]): Workspace root or manifest.json path.
         tile_size (int): Core metric tile size in meters.
         buffer_size (int): Overlap buffer size in meters.
+        overwrite (bool): If True, forces regeneration of the grid.
 
     Returns:
         gpd.GeoDataFrame: The grid vector layer.
     """
     grid_path = get_grid_path(workspace_or_manifest, tile_size=tile_size, buffer_size=buffer_size)
-    if not grid_path.exists():
-        build_workspace_grid(workspace_or_manifest, tile_size=tile_size, buffer_size=buffer_size)
+    if not grid_path.exists() or overwrite:
+        build_workspace_grid(workspace_or_manifest, tile_size=tile_size, buffer_size=buffer_size, overwrite=overwrite)
         grid_path = get_grid_path(workspace_or_manifest, tile_size=tile_size, buffer_size=buffer_size)
     return gpd.read_file(grid_path)
 

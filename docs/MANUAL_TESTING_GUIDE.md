@@ -59,7 +59,39 @@ als-finder search \
 
 ---
 
-## Test 3: Extract a Single Sub-Tile with Custom Tile Size, Buffer & Sidecar (`fetch-tile`)
+## Test 3: Query Spatial Grid Information & Total Tile Count (`grid-info`)
+
+Before streaming or looping through tiles, inspect how many tiles exist for any tile size and buffer configuration:
+
+```bash
+als-finder grid-info \
+  --workspace scratch/test_workspace \
+  --tile-size 500 \
+  --buffer-size 50
+```
+
+### What to check:
+- [ ] Terminal prints formatted grid information:
+  ```
+  ==================================================
+   ALS-FINDER SPATIAL GRID INFORMATION
+  ==================================================
+    Total Tiles:    5,657
+    Tile ID Range:  0 to 5656
+    Tile Size:      500m (core)
+    Buffer Size:    50m (overlap)
+    Grid CRS:       EPSG:32610
+    Grid File:      scratch/test_workspace/catalog/grids/tilesize=500/buffer=50/grid.gpkg
+  ==================================================
+  ```
+- [ ] You can also run with `--json` for shell scripting or Slurm job arrays (`#SBATCH --array=0-5656`):
+  ```bash
+  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --json
+  ```
+
+---
+
+## Test 4: Extract a Single Sub-Tile with Custom Tile Size, Buffer & Sidecar (`fetch-tile`)
 
 Extract a single spatial sub-tile specifying custom tile dimensions (e.g. 500m core tile with a 50m overlap buffer) and export a companion JSON metadata sidecar:
 
@@ -86,7 +118,7 @@ als-finder fetch-tile \
 
 ---
 
-## Test 4: Inspect the Extracted Point Cloud & Dimensions in Python
+## Test 5: Inspect the Extracted Point Cloud & Dimensions in Python
 
 Check point counts, total footprint dimensions (core + buffer), elevation ranges, and point classifications:
 
@@ -115,7 +147,7 @@ with laspy.open(tile_path) as reader:
 
 ---
 
-## Test 5: Programmatic Tile Metadata & Core Unbuffering in Python
+## Test 6: Programmatic Tile Metadata & Core Unbuffering in Python
 
 Inspect tile metadata, Hive paths, and recover the unbuffered central core boundary to crop away boundary edge effects after point cloud metrics or classification:
 
@@ -153,7 +185,7 @@ print(f'Buffer Extension: {round((buffered.bounds[2] - core.bounds[2]))}m on all
 
 ---
 
-## Test 6: Run the Full Automated Test Suite
+## Test 7: Run the Full Automated Test Suite
 
 Run all automated unit tests:
 
@@ -163,5 +195,5 @@ pytest tests/
 
 ### Expected Output:
 ```
-================== 19 passed in 10.41s ==================
+================== 19 passed in 10.63s ==================
 ```
