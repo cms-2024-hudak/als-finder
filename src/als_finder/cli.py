@@ -90,7 +90,7 @@ def get_example_roi():
 @click.option('--ot-key', help='OpenTopography API Key. Auto-saved to workspace .env.')
 @click.option('--earthdata-token', help='NASA Earthdata Login (EDL) Bearer Token. Auto-saved to workspace .env.')
 @click.option('--neon-key', help='NEON API Token. Auto-saved to workspace .env.')
-@click.option('--dedup', is_flag=True, help='Deduplicate multi-archive surveys, prioritizing open repositories (USGS > NOAA > GLiHT > NEON > Earthdata > OpenTopography).')
+@click.option('--dedup/--no-dedup', default=True, help='Deduplicate multi-archive surveys, prioritizing open repositories (default True). Pass --no-dedup to disable.')
 def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, earthdata_token, neon_key, dedup):
     """Search for available LiDAR data."""
     start_time_exec = time.time()
@@ -1317,7 +1317,7 @@ def fetch_group():
 @click.option('--subtiles/--no-subtiles', default=True, help='If tile exceeds max-points, sequentially stream child quadrants (default True)')
 @click.option('--crs', default='EPSG:3857', help='Target CRS (default EPSG:3857)')
 @click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming')
-@click.option('--sidecar', is_flag=True, help='Write a companion .json metadata sidecar file alongside the .laz tile')
+@click.option('--sidecar/--no-sidecar', default=True, help='Write a companion .json metadata sidecar file alongside the .laz tile (default True)')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
 @click.option('--field', default=None, help='Extract a specific field from payload (e.g. path, tile_id, crop_pdal_bounds)')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
@@ -1442,7 +1442,7 @@ def fetch_tile_subcmd(tile_ids, tile_id, workspace, manifest, output, buffer_siz
 @click.option('--subtiles/--no-subtiles', default=True, help='If exceeded, stream child quadrants (default True)')
 @click.option('--crs', default='EPSG:3857', help='Target CRS')
 @click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming')
-@click.option('--sidecar', is_flag=True, help='Write a companion .json metadata sidecar')
+@click.option('--sidecar/--no-sidecar', default=True, help='Write a companion .json metadata sidecar (default True)')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
 @click.option('--field', default=None, help='Extract a specific field from payload')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None)
