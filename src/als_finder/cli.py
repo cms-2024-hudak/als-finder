@@ -1114,16 +1114,18 @@ def clean_cmd(workspace):
 @cli.command('fetch-tile')
 @click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
 @click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
-@click.option('--tile-id', required=True, type=int, help='Zero-based tile ID to stream')
+@click.option('--tile-id', required=True, type=str, help='Target tile ID (e.g. 15 or quadrant 15_NW)')
 @click.option('--output', default=None, type=click.Path(), help='Target output .laz file path or directory (auto-Hive partitioned if directory or omitted)')
 @click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
 @click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
+@click.option('--max-points', type=int, default=None, help='Point budget threshold. If exceeded and --subtiles is set, splits tile')
+@click.option('--subtiles', is_flag=True, help='If tile exceeds max-points, sequentially stream all child quadrants')
 @click.option('--crs', default='EPSG:3857', help='Target CRS (default EPSG:3857)')
 @click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming (e.g. tile_E0759000_N4313000_500m.laz)')
 @click.option('--sidecar', is_flag=True, help='Write a companion .json metadata sidecar file alongside the .laz tile')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size, crs, spatial_name, sidecar, overwrite, json_output):
+def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, overwrite, json_output):
     """Stream a single spatial core + buffered tile on demand."""
     try:
         # Resolve manifest or workspace
@@ -1151,6 +1153,64 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
             overwrite=overwrite
         )
 
+        should_subdivide = (
+            subtiles and max_points is not None and spec.get("est_points", 0) > max_points and not spec.get("quadrant")
+        )
+
+        if should_subdivide:
+            # Sequentially stream the 4 child quadrants: NW, NE, SW, SE
+            subtile_results = []
+            quads = ["NW", "NE", "SW", "SE"]
+            for q in quads:
+                child_id = f"{tile_id}_{q}"
+                child_spec = get_tile_spec(
+                    target_manifest,
+                    tile_id=child_id,
+                    tile_size=tile_size,
+                    buffer_size=buffer_size,
+                    overwrite=overwrite
+                )
+                child_path = stream_single_tile(
+                    manifest_or_grid_path=target_manifest,
+                    tile_id=child_id,
+                    out_path=output,
+                    tile_size=tile_size,
+                    buffer_size=buffer_size,
+                    crs=crs,
+                    overwrite=overwrite,
+                    use_spatial_name=spatial_name,
+                    write_sidecar=sidecar,
+                )
+                core_b = child_spec["core_poly"].bounds
+                buf_b = child_spec["buffered_poly"].bounds
+                grid_crs = child_spec.get("grid_crs", "EPSG:32610")
+                target_crs = crs if (crs and crs != "EPSG:3857") else grid_crs
+                child_sidecar = child_path.with_suffix(".json") if sidecar else None
+
+                subtile_results.append({
+                    "tile_id": child_id,
+                    "parent_tile_id": int(child_spec["parent_tile_id"]),
+                    "quadrant": q,
+                    "path": str(child_path.absolute()),
+                    "sidecar_path": str(child_sidecar.absolute()) if child_sidecar else None,
+                    "grid_crs": str(target_crs),
+                    "tile_size": child_spec["tile_size"],
+                    "buffer_size": child_spec["buffer_size"],
+                    "est_points": child_spec["est_points"],
+                    "is_hyperdense": child_spec["is_hyperdense"],
+                    "core_bounds": [round(core_b[0], 2), round(core_b[1], 2), round(core_b[2], 2), round(core_b[3], 2)],
+                    "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
+                })
+
+            if json_output:
+                click.echo(json.dumps({"status": "success", "subdivided": True, "tiles": subtile_results}, indent=2))
+            else:
+                msg = f"Tile {tile_id} exceeded budget ({spec.get('est_points', 0):,} pts > {max_points:,} max). Subdivided into 4 quadrants:\n"
+                for res in subtile_results:
+                    msg += f"  - Streamed {res['tile_id']} to {res['path']}\n"
+                click.echo(msg.rstrip(), err=True)
+            return
+
         res_path = stream_single_tile(
             manifest_or_grid_path=target_manifest,
             tile_id=tile_id,
@@ -1171,14 +1231,20 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
 
         payload = {
             "status": "success",
-            "tile_id": tile_id,
+            "tile_id": str(tile_id) if spec.get("quadrant") else int(spec.get("parent_tile_id", tile_id)),
+            "parent_tile_id": spec.get("parent_tile_id"),
+            "quadrant": spec.get("quadrant"),
+            "level": spec.get("level", 0),
             "path": str(res_path.absolute()),
             "sidecar_path": str(sidecar_path.absolute()) if sidecar_path else None,
             "grid_crs": str(target_crs),
-            "tile_size": tile_size,
-            "buffer_size": buffer_size,
-            "core_bounds": [round(core_b[0], 3), round(core_b[1], 3), round(core_b[2], 3), round(core_b[3], 3)],
-            "buffered_bounds": [round(buf_b[0], 3), round(buf_b[1], 3), round(buf_b[2], 3), round(buf_b[3], 3)],
+            "tile_size": spec.get("tile_size", tile_size),
+            "buffer_size": spec.get("buffer_size", buffer_size),
+            "est_points": spec.get("est_points"),
+            "is_hyperdense": spec.get("is_hyperdense", False),
+            "recommended_mem_gb": spec.get("recommended_mem_gb"),
+            "core_bounds": [round(core_b[0], 2), round(core_b[1], 2), round(core_b[2], 2), round(core_b[3], 2)],
+            "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
             "provider": str(spec.get("provider", "")),
             "dataset_id": str(spec.get("dataset_id", "")),
         }
@@ -1202,9 +1268,10 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
 @click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
 @click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
 @click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
 @click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def grid_info_cmd(workspace, manifest, tile_size, buffer_size, overwrite, json_output):
+def grid_info_cmd(workspace, manifest, tile_size, buffer_size, max_points, overwrite, json_output):
     """Retrieve spatial grid metadata, total tile count, and valid tile ID ranges."""
     try:
         # Resolve manifest or workspace
@@ -1232,6 +1299,30 @@ def grid_info_cmd(workspace, manifest, tile_size, buffer_size, overwrite, json_o
         total_tiles = len(grid_gdf)
         spec_0 = get_tile_spec(target_manifest, tile_id=0, tile_size=tile_size, buffer_size=buffer_size)
 
+        audit_info = None
+        if max_points is not None:
+            density = float(spec_0.get("point_density") or 10.0)
+            cur_t = float(tile_size)
+            cur_b = float(buffer_size)
+            tile_pts = int(density * ((cur_t + 2 * cur_b) ** 2))
+            floor_pts = int(density * (4.0 * (cur_b ** 2)))
+            is_hyperdense = (floor_pts >= max_points)
+            needs_subdiv = (tile_pts > max_points)
+            split_count = total_tiles if needs_subdiv else 0
+            standard_count = 0 if needs_subdiv else total_tiles
+
+            audit_info = {
+                "max_points": max_points,
+                "point_density": density,
+                "estimated_points_per_tile": tile_pts,
+                "buffer_floor_points": floor_pts,
+                "standard_tiles": standard_count,
+                "subdivided_tiles": split_count,
+                "hyperdense_tiles_count": total_tiles if is_hyperdense else 0,
+                "is_hyperdense": is_hyperdense,
+                "recommended_mem_gb": round((max(tile_pts, floor_pts) * 250) / 1e9 * 1.5, 1) if is_hyperdense else 4.0
+            }
+
         payload = {
             "status": "success",
             "total_tiles": total_tiles,
@@ -1242,6 +1333,7 @@ def grid_info_cmd(workspace, manifest, tile_size, buffer_size, overwrite, json_o
             "grid_crs": spec_0["grid_crs"],
             "sample_tile_bounds": spec_0["bbox_str"],
             "grid_gpkg": spec_0.get("grid_gpkg_path"),
+            "audit": audit_info
         }
         if json_output:
             click.echo(json.dumps(payload, indent=2))
@@ -1256,6 +1348,18 @@ def grid_info_cmd(workspace, manifest, tile_size, buffer_size, overwrite, json_o
             click.echo(f"  Grid CRS:       {spec_0['grid_crs']}", err=True)
             if spec_0.get("grid_gpkg_path"):
                 click.echo(f"  Grid File:      {spec_0['grid_gpkg_path']}", err=True)
+            if audit_info:
+                click.echo("--------------------------------------------------", err=True)
+                click.echo(" MEMORY RISK AUDIT (PRE-FLIGHT):", err=True)
+                click.echo(f"  Max Points Budget: {audit_info['max_points']:,}", err=True)
+                click.echo(f"  Est Points/Tile:   {audit_info['estimated_points_per_tile']:,}", err=True)
+                if audit_info['subdivided_tiles'] > 0:
+                    click.echo(f"  Subdivision:       {audit_info['subdivided_tiles']} tiles exceed budget (split into 4 quadrants each)", err=True)
+                else:
+                    click.echo(f"  Standard Status:   All {total_tiles:,} tiles fit within memory budget", err=True)
+                if audit_info['is_hyperdense']:
+                    click.echo(f"  [WARNING] Hyper-Dense: Buffer alone ({audit_info['buffer_floor_points']:,} pts) exceeds budget!", err=True)
+                    click.echo(f"  Recommend Memory:  >= {audit_info['recommended_mem_gb']} GB RAM", err=True)
             click.echo("==================================================", err=True)
     except Exception as e:
         if json_output:

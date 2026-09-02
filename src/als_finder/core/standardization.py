@@ -524,7 +524,7 @@ def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path, crs: s
 
 def stream_single_tile(
     manifest_or_grid_path: Union[str, Path],
-    tile_id: int,
+    tile_id: Union[int, str] = 0,
     out_path: Optional[Union[str, Path]] = None,
     tile_size: int = 1200,
     buffer_size: int = 30,
@@ -534,13 +534,13 @@ def stream_single_tile(
     write_sidecar: bool = False,
 ) -> Path:
     """
-    Streams a single spatial core + buffered tile directly from remote provider endpoints on demand.
-    If the requested tile grid for (tile_size, buffer_size) has not been built yet, automatically
-    builds the workspace grid index first! (Single-command workflow).
+    Directly streams and crops point cloud data for a single spatial tile into a standardized .laz file.
+    Supports integer base tile IDs (e.g. 15) and hierarchical quadrant string IDs (e.g. '15_NW').
+    Automatically nests output within a Hive-partitioned directory layout if out_path is a directory or None.
 
     Args:
         manifest_or_grid_path (Union[str, Path]): Path to catalog manifest.json, workspace dir, or grid.gpkg.
-        tile_id (int): Target zero-based tile index.
+        tile_id (Union[int, str]): Target tile index or quadrant string (e.g. 15 or '15_NW').
         out_path (Optional[Union[str, Path]]): Destination file or directory path. If a directory
             (e.g. /scratch or workspace/data), automatically nests output within Hive partition hierarchy.
         tile_size (int): Core metric tile size in meters (default: 1200m).
@@ -585,7 +585,7 @@ def stream_single_tile(
             target_out = raw_out
 
     if target_out.exists() and not overwrite:
-        logger.info(f"Skipping tile_id {tile_id} - {target_out.name} already exists (Idempotency)")
+        logger.info(f"Tile output {target_out} already exists and overwrite=False. Skipping.")
         return target_out
 
     target_out.parent.mkdir(parents=True, exist_ok=True)
@@ -670,20 +670,26 @@ def stream_single_tile(
         core_b = spec["core_poly"].bounds
         buf_b = spec["buffered_poly"].bounds
         sidecar_meta = {
-            "tile_id": int(tile_id),
+            "tile_id": str(tile_id) if spec.get("quadrant") else int(spec.get("parent_tile_id", tile_id)),
+            "parent_tile_id": spec.get("parent_tile_id"),
+            "quadrant": spec.get("quadrant"),
+            "level": spec.get("level", 0),
             "basename": target_out.name,
             "path": str(target_out.absolute()),
             "dataset_id": str(spec.get("dataset_id", "")),
             "provider": str(spec.get("provider", "")),
             "grid_crs": str(target_crs),
-            "tile_size": int(tile_size),
-            "buffer_size": int(buffer_size),
-            "core_bounds": [round(core_b[0], 3), round(core_b[1], 3), round(core_b[2], 3), round(core_b[3], 3)],
-            "buffered_bounds": [round(buf_b[0], 3), round(buf_b[1], 3), round(buf_b[2], 3), round(buf_b[3], 3)],
+            "tile_size": int(spec.get("tile_size", tile_size)),
+            "buffer_size": int(spec.get("buffer_size", buffer_size)),
+            "est_points": spec.get("est_points"),
+            "is_hyperdense": spec.get("is_hyperdense", False),
+            "recommended_mem_gb": spec.get("recommended_mem_gb"),
+            "core_bounds": [round(core_b[0], 2), round(core_b[1], 2), round(core_b[2], 2), round(core_b[3], 2)],
+            "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
             "source_urls": spec.get("urls", []),
         }
-        with open(sidecar_path, "w", encoding="utf-8") as f:
-            json.dump(sidecar_meta, f, indent=2)
+        with open(sidecar_path, "w", encoding="utf-8") as sf:
+            json.dump(sidecar_meta, sf, indent=2)
         logger.info(f"Wrote metadata sidecar to {sidecar_path}")
 
     return target_out

@@ -63,6 +63,20 @@ def resolve_projected_crs(
         logger.warning("Input GeoDataFrame has no CRS. Assuming EPSG:4326 for UTM estimation.")
         working_gdf.set_crs(epsg=4326, inplace=True)
 
+    # Advisory check: Warn if input extent spans multiple UTM zones (>6 degrees longitude)
+    try:
+        wgs_gdf = working_gdf.to_crs("EPSG:4326") if working_gdf.crs.to_string() != "EPSG:4326" else working_gdf
+        minx_wgs, _, maxx_wgs, _ = wgs_gdf.total_bounds
+        lon_span = abs(maxx_wgs - minx_wgs)
+        if lon_span > 6.0:
+            logger.warning(
+                f"[ADVISORY] Input study area spans {lon_span:.2f}° longitude, crossing multiple UTM zones (>6°). "
+                "Projecting a wide continental extent into a single UTM zone introduces scale and coordinate distortion. "
+                "For multi-state or continental modeling, consider specifying an equal-area projection such as --crs EPSG:5070 (CONUS Albers)."
+            )
+    except Exception as e:
+        logger.debug(f"Could not calculate longitudinal span: {e}")
+
     try:
         # Estimate local UTM zone
         estimated_crs = working_gdf.estimate_utm_crs()
@@ -473,21 +487,49 @@ def build_workspace_grid(
     return export_df, crs_str
 
 
+def parse_quadrant_tile_id(tile_id: Union[int, str]) -> Tuple[int, List[str]]:
+    """
+    Parses a tile ID into a base integer index and optional quadrant tokens.
+    Examples:
+        15 -> (15, [])
+        "15" -> (15, [])
+        "15_NW" -> (15, ["NW"])
+        "15_NW_SE" -> (15, ["NW", "SE"])
+        "0015_NW" -> (15, ["NW"])
+    """
+    s = str(tile_id).strip()
+    parts = s.split("_")
+    try:
+        base_id = int(parts[0])
+    except ValueError:
+        raise GridError(f"Invalid tile ID '{tile_id}': base identifier must be an integer.")
+
+    quadrants = []
+    for p in parts[1:]:
+        up = p.upper()
+        if up in ("NW", "NE", "SW", "SE"):
+            quadrants.append(up)
+        else:
+            raise GridError(f"Invalid quadrant token '{p}' in tile ID '{tile_id}'. Must be one of NW, NE, SW, SE.")
+    return base_id, quadrants
+
+
 def get_tile_spec(
     manifest_or_grid_path: Union[str, Path],
-    tile_id: int,
+    tile_id: Union[int, str],
     tile_size: int = 1200,
     buffer_size: int = 30,
     overwrite: bool = False
 ) -> Dict[str, Any]:
     """
     Retrieves the spatial specification and complete multi-level metadata for a single tile ID.
+    Supports integer base tile IDs (e.g. 15) and hierarchical quadrant string IDs (e.g. '15_NW').
     If the requested grid for (tile_size, buffer_size) does not exist on disk (or if overwrite=True),
     automatically builds the workspace grid first! (Single-command workflow).
 
     Args:
         manifest_or_grid_path (Union[str, Path]): Path to workspace root directory or manifest.json.
-        tile_id (int): Target zero-based tile ID.
+        tile_id (Union[int, str]): Target tile index or quadrant string (e.g. 15 or '15_NW').
         tile_size (int): Core metric tile size in meters (default: 1200m).
         buffer_size (int): Overlap buffer size in meters (default: 30m).
         overwrite (bool): If True, forces grid regeneration.
@@ -496,6 +538,8 @@ def get_tile_spec(
         Dict[str, Any]: Dictionary containing tile_id, core_poly, buffered_poly, grid_crs, urls,
                        dataset provenance, point metrics, and additional_metadata.
     """
+    base_id, quadrants = parse_quadrant_tile_id(tile_id)
+
     path = Path(manifest_or_grid_path)
     if path.is_dir():
         ws_dir = path
@@ -523,14 +567,14 @@ def get_tile_spec(
             gpkg_path = primary_gpkg
 
     # Memory-safe zero-copy single-row SQL query via pyogrio
-    sql_query = f"SELECT * FROM grid WHERE tile_id = {tile_id}"
+    sql_query = f"SELECT * FROM grid WHERE tile_id = {base_id}"
     try:
         single_row_gdf = pyogrio.read_dataframe(gpkg_path, sql=sql_query)
     except Exception as e:
-        raise GridError(f"Failed to query tile_id {tile_id} from {gpkg_path}: {e}")
+        raise GridError(f"Failed to query tile_id {base_id} from {gpkg_path}: {e}")
 
     if single_row_gdf.empty:
-        raise GridError(f"Tile ID {tile_id} not found in {gpkg_path}")
+        raise GridError(f"Tile ID {base_id} not found in {gpkg_path}")
 
     row = single_row_gdf.iloc[0]
     core_poly: Polygon = row.geometry
@@ -548,6 +592,40 @@ def get_tile_spec(
 
     c_minx, c_miny, c_maxx, c_maxy = core_poly.bounds
     core_bounds_str = row.get("core_bounds_str") or f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
+
+    # Handle hierarchical quadrant subdivision if quadrant tokens are present
+    cur_core_poly = core_poly
+    cur_tile_size = float(tile_size)
+    cur_buffer_size = float(buffer_size)
+
+    if quadrants:
+        for q in quadrants:
+            cur_minx, cur_miny, cur_maxx, cur_maxy = cur_core_poly.bounds
+            x_mid = (cur_minx + cur_maxx) / 2.0
+            y_mid = (cur_miny + cur_maxy) / 2.0
+            if q == "NW":
+                cur_core_poly = box(cur_minx, y_mid, x_mid, cur_maxy)
+            elif q == "NE":
+                cur_core_poly = box(x_mid, y_mid, cur_maxx, cur_maxy)
+            elif q == "SW":
+                cur_core_poly = box(cur_minx, cur_miny, x_mid, y_mid)
+            elif q == "SE":
+                cur_core_poly = box(x_mid, cur_miny, cur_maxx, y_mid)
+
+            cur_tile_size = cur_tile_size / 2.0
+            cur_buffer_size = max(10.0, cur_buffer_size / 2.0)
+
+        core_poly = cur_core_poly
+        c_minx, c_miny, c_maxx, c_maxy = core_poly.bounds
+        buffered_poly = box(
+            c_minx - cur_buffer_size,
+            c_miny - cur_buffer_size,
+            c_maxx + cur_buffer_size,
+            c_maxy + cur_buffer_size
+        )
+        b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
+        buffered_bounds_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
+        core_bounds_str = f"([{c_minx}, {c_maxx}], [{c_miny}, {c_maxy}])"
 
     # Parse URLs from source_urls column
     urls: List[str] = []
@@ -605,13 +683,33 @@ def get_tile_spec(
     if not name_str:
         name_str = dataset_id
 
-    tile_basename = str(row.get("basename") or f"{dataset_id}_tile_{int(tile_id):04d}.laz")
-    spatial_basename = str(row.get("spatial_basename") or f"{dataset_id}_tile_E{int(c_minx):07d}_N{int(c_miny):07d}_{tile_size}m.laz")
-    hive_path = str(row.get("hive_path") or f"provider={provider}/dataset={dataset_id}/tiles/tilesize={tile_size}/buffer={buffer_size}/{tile_basename}")
-    spatial_hive_path = str(row.get("spatial_hive_path") or f"provider={provider}/dataset={dataset_id}/tiles/tilesize={tile_size}/buffer={buffer_size}/{spatial_basename}")
+    quadrant_suffix = "_" + "_".join(quadrants) if quadrants else ""
+    t_size = int(cur_tile_size)
+    b_size = int(cur_buffer_size)
+
+    tile_basename = f"{dataset_id}_tile_{base_id:04d}{quadrant_suffix}.laz"
+    spatial_basename = f"{dataset_id}_tile_E{int(c_minx):07d}_N{int(c_miny):07d}_{t_size}m{quadrant_suffix}.laz"
+    hive_path = f"provider={provider}/dataset={dataset_id}/tiles/tilesize={t_size}/buffer={b_size}/{tile_basename}"
+    spatial_hive_path = f"provider={provider}/dataset={dataset_id}/tiles/tilesize={t_size}/buffer={b_size}/{spatial_basename}"
+
+    # Density & Hyper-Dense Memory Risk Calculation
+    density = float(row.get("point_density") or 10.0)
+    est_points = int(density * ((t_size + 2 * b_size) ** 2))
+    floor_area = (25.0 + 2 * b_size) ** 2
+    floor_points = int(density * floor_area)
+    is_hyperdense = bool(floor_points >= 4_000_000)
+    rec_mem = round((max(est_points, floor_points) * 250) / 1e9 * 1.5, 1)
 
     return {
-        "tile_id": int(tile_id),
+        "tile_id": str(tile_id) if quadrants else int(base_id),
+        "parent_tile_id": int(base_id),
+        "quadrant": "_".join(quadrants) if quadrants else None,
+        "level": len(quadrants),
+        "tile_size": t_size,
+        "buffer_size": b_size,
+        "est_points": est_points,
+        "is_hyperdense": is_hyperdense,
+        "recommended_mem_gb": rec_mem,
         "basename": tile_basename,
         "spatial_basename": spatial_basename,
         "hive_path": hive_path,

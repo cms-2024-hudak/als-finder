@@ -84,16 +84,41 @@ als-finder grid-info \
     Grid File:      scratch/test_workspace/catalog/grids/tilesize=500/buffer=50/grid.gpkg
   ==================================================
   ```
-- [ ] You can also run with `--json` for shell scripting or Slurm job arrays (`#SBATCH --array=0-5656`):
+
+---
+
+## Test 4: Pre-Flight Memory & Point Budget Risk Audit (`grid-info --max-points`)
+
+Audit your study area against a target point budget (e.g. 4,000,000 points $\approx$ 4 GB RAM) before streaming any data:
+
+```bash
+als-finder grid-info \
+  --workspace scratch/test_workspace \
+  --tile-size 500 \
+  --buffer-size 50 \
+  --max-points 4000000
+```
+
+### What to check:
+- [ ] Terminal outputs the `MEMORY RISK AUDIT (PRE-FLIGHT)` section:
+  ```
+  --------------------------------------------------
+   MEMORY RISK AUDIT (PRE-FLIGHT):
+    Max Points Budget: 4,000,000
+    Est Points/Tile:   10,504,800
+    Subdivision:       5657 tiles exceed budget (split into 4 quadrants each)
+  ==================================================
+  ```
+- [ ] You can also run with `--json` for automated cluster deployment:
   ```bash
-  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --json
+  als-finder grid-info --workspace scratch/test_workspace --tile-size 500 --buffer-size 50 --max-points 4000000 --json
   ```
 
 ---
 
-## Test 4: Extract a Single Sub-Tile with Custom Tile Size, Buffer & Sidecar (`fetch-tile`)
+## Test 5: Extract a Base Tile with Custom Size, Buffer & Sidecar (`fetch-tile`)
 
-Extract a single spatial sub-tile specifying custom tile dimensions (e.g. 500m core tile with a 50m overlap buffer) and export a companion JSON metadata sidecar:
+Extract a standard 500m base tile with a 50m overlap buffer and export a companion JSON metadata sidecar:
 
 ```bash
 als-finder fetch-tile \
@@ -111,14 +136,33 @@ als-finder fetch-tile \
   Successfully streamed tile 15 to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_0015.laz
   Wrote metadata sidecar to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_0015.json
   ```
-- [ ] You can also run with `--json` to capture machine-readable JSON directly to stdout for shell/pipeline scripting:
-  ```bash
-  als-finder fetch-tile --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --json
+
+---
+
+## Test 6: Extract a Quadrant Sub-Tile on Demand (`fetch-tile --tile-id 15_NW`)
+
+Stream only the northwest 250m quadrant of Tile 15 to prevent memory overload:
+
+```bash
+als-finder fetch-tile \
+  --workspace scratch/test_workspace \
+  --tile-id 15_NW \
+  --tile-size 500 \
+  --buffer-size 50 \
+  --sidecar \
+  --overwrite
+```
+
+### What to check:
+- [ ] Terminal confirms streaming directly to the scaled Hive hierarchy (`tilesize=250/buffer=25`):
+  ```
+  Successfully streamed tile 15_NW to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=250/buffer=25/CA_SierraNevada_5_2022_tile_0015_NW.laz
+  Wrote metadata sidecar to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=250/buffer=25/CA_SierraNevada_5_2022_tile_0015_NW.json
   ```
 
 ---
 
-## Test 5: Inspect the Extracted Point Cloud & Dimensions in Python
+## Test 7: Inspect Extracted Point Cloud & Quadrant Dimensions in Python
 
 Check point counts, total footprint dimensions (core + buffer), elevation ranges, and point classifications:
 
@@ -147,7 +191,7 @@ with laspy.open(tile_path) as reader:
 
 ---
 
-## Test 6: Programmatic Tile Metadata & Core Unbuffering in Python
+## Test 8: Programmatic Tile Metadata & Core Unbuffering in Python
 
 Inspect tile metadata, Hive paths, and recover the unbuffered central core boundary to crop away boundary edge effects after point cloud metrics or classification:
 
@@ -185,7 +229,7 @@ print(f'Buffer Extension: {round((buffered.bounds[2] - core.bounds[2]))}m on all
 
 ---
 
-## Test 7: Run the Full Automated Test Suite
+## Test 9: Run the Full Automated Test Suite
 
 Run all automated unit tests:
 
@@ -195,5 +239,5 @@ pytest tests/
 
 ### Expected Output:
 ```
-================== 19 passed in 10.63s ==================
+================== 23 passed in 15.04s ==================
 ```

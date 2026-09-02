@@ -17,7 +17,13 @@ try:
 except importlib.metadata.PackageNotFoundError:
     __version__ = "1.1.1-dev"
 
-from als_finder.core.grid_manager import build_workspace_grid, get_tile_spec, get_grid_path, read_grid
+from als_finder.core.grid_manager import (
+    build_workspace_grid,
+    get_tile_spec,
+    get_grid_path,
+    read_grid,
+    parse_quadrant_tile_id,
+)
 from als_finder.core.standardization import stream_single_tile
 
 __all__ = [
@@ -26,6 +32,7 @@ __all__ = [
     "get_tile_spec",
     "get_grid_path",
     "read_grid",
+    "parse_quadrant_tile_id",
     "stream_single_tile",
 ]
 
