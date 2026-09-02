@@ -15,7 +15,7 @@ if prefix_proj.exists():
 try:
     __version__ = importlib.metadata.version("als-finder")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "1.1.1-dev"
+    __version__ = "1.3.0.dev0"
 
 from als_finder.core.grid_manager import (
     build_workspace_grid,
