@@ -531,6 +531,7 @@ def stream_single_tile(
     crs: str = "EPSG:3857",
     overwrite: bool = False,
     use_spatial_name: bool = False,
+    write_sidecar: bool = False,
 ) -> Path:
     """
     Streams a single spatial core + buffered tile directly from remote provider endpoints on demand.
@@ -547,6 +548,7 @@ def stream_single_tile(
         crs (str): Target coordinate reference system (default: EPSG:3857).
         overwrite (bool): Force re-creation if output tile already exists.
         use_spatial_name (bool): If True, uses metric coordinate-anchored filename.
+        write_sidecar (bool): If True, writes a companion .json sidecar metadata file alongside the .laz tile.
 
     Returns:
         Path: Path to the generated .laz tile.
@@ -661,5 +663,27 @@ def stream_single_tile(
 
     if not success or not target_out.exists():
         raise RuntimeError(f"PDAL stream execution failed for tile_id {tile_id}: {err_msg}")
+
+    # 8. Optional sidecar metadata export
+    if write_sidecar:
+        sidecar_path = target_out.with_suffix(".json")
+        core_b = spec["core_poly"].bounds
+        buf_b = spec["buffered_poly"].bounds
+        sidecar_meta = {
+            "tile_id": int(tile_id),
+            "basename": target_out.name,
+            "path": str(target_out.absolute()),
+            "dataset_id": str(spec.get("dataset_id", "")),
+            "provider": str(spec.get("provider", "")),
+            "grid_crs": str(target_crs),
+            "tile_size": int(tile_size),
+            "buffer_size": int(buffer_size),
+            "core_bounds": [round(core_b[0], 3), round(core_b[1], 3), round(core_b[2], 3), round(core_b[3], 3)],
+            "buffered_bounds": [round(buf_b[0], 3), round(buf_b[1], 3), round(buf_b[2], 3), round(buf_b[3], 3)],
+            "source_urls": spec.get("urls", []),
+        }
+        with open(sidecar_path, "w", encoding="utf-8") as f:
+            json.dump(sidecar_meta, f, indent=2)
+        logger.info(f"Wrote metadata sidecar to {sidecar_path}")
 
     return target_out

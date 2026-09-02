@@ -59,11 +59,9 @@ als-finder search \
 
 ---
 
-## Test 3: Extract a Single Sub-Tile with Custom Tile Size & Buffer (`fetch-tile`)
+## Test 3: Extract a Single Sub-Tile with Custom Tile Size, Buffer & Sidecar (`fetch-tile`)
 
-Extract a single spatial sub-tile specifying custom tile dimensions (e.g. 500m core tile with a 50m overlap buffer).
-
-`als-finder` automatically saves the tile into the standardized Hive directory partition tagged by tile size and buffer:
+Extract a single spatial sub-tile specifying custom tile dimensions (e.g. 500m core tile with a 50m overlap buffer) and export a companion JSON metadata sidecar:
 
 ```bash
 als-finder fetch-tile \
@@ -71,12 +69,20 @@ als-finder fetch-tile \
   --tile-id 15 \
   --tile-size 500 \
   --buffer-size 50 \
+  --sidecar \
   --overwrite
 ```
 
 ### What to check:
-- [ ] Terminal prints the Hive partition path matching your tile size (500m) and buffer (50m):
-  `Successfully streamed tile 15 to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_0015.laz`
+- [ ] Terminal prints the Hive partition path and sidecar confirmation:
+  ```
+  Successfully streamed tile 15 to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_0015.laz
+  Wrote metadata sidecar to scratch/test_workspace/data/provider=USGS_EPT/dataset=CA_SierraNevada_5_2022/tiles/tilesize=500/buffer=50/CA_SierraNevada_5_2022_tile_0015.json
+  ```
+- [ ] You can also run with `--json` to capture machine-readable JSON directly to stdout for shell/pipeline scripting:
+  ```bash
+  als-finder fetch-tile --workspace scratch/test_workspace --tile-id 15 --tile-size 500 --buffer-size 50 --json
+  ```
 
 ---
 

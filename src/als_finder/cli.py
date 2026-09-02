@@ -1120,9 +1120,10 @@ def clean_cmd(workspace):
 @click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
 @click.option('--crs', default='EPSG:3857', help='Target CRS (default EPSG:3857)')
 @click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming (e.g. tile_E0759000_N4313000_500m.laz)')
+@click.option('--sidecar', is_flag=True, help='Write a companion .json metadata sidecar file alongside the .laz tile')
 @click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size, crs, spatial_name, overwrite, json_output):
+def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size, crs, spatial_name, sidecar, overwrite, json_output):
     """Stream a single spatial core + buffered tile on demand."""
     try:
         # Resolve manifest or workspace
@@ -1139,7 +1140,17 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
         else:
             raise click.UsageError("Either --workspace or --manifest must be provided.")
 
+        from als_finder.core.grid_manager import get_tile_spec
         from als_finder.core.standardization import stream_single_tile
+
+        spec = get_tile_spec(
+            target_manifest,
+            tile_id=tile_id,
+            tile_size=tile_size,
+            buffer_size=buffer_size,
+            overwrite=overwrite
+        )
+
         res_path = stream_single_tile(
             manifest_or_grid_path=target_manifest,
             tile_id=tile_id,
@@ -1149,17 +1160,35 @@ def fetch_tile_cmd(workspace, manifest, tile_id, output, buffer_size, tile_size,
             crs=crs,
             overwrite=overwrite,
             use_spatial_name=spatial_name,
+            write_sidecar=sidecar,
         )
+
+        core_b = spec["core_poly"].bounds
+        buf_b = spec["buffered_poly"].bounds
+        grid_crs = spec.get("grid_crs", "EPSG:32610")
+        target_crs = crs if (crs and crs != "EPSG:3857") else grid_crs
+        sidecar_path = res_path.with_suffix(".json") if sidecar else None
+
         payload = {
             "status": "success",
             "tile_id": tile_id,
             "path": str(res_path.absolute()),
-            "crs": crs,
+            "sidecar_path": str(sidecar_path.absolute()) if sidecar_path else None,
+            "grid_crs": str(target_crs),
+            "tile_size": tile_size,
+            "buffer_size": buffer_size,
+            "core_bounds": [round(core_b[0], 3), round(core_b[1], 3), round(core_b[2], 3), round(core_b[3], 3)],
+            "buffered_bounds": [round(buf_b[0], 3), round(buf_b[1], 3), round(buf_b[2], 3), round(buf_b[3], 3)],
+            "provider": str(spec.get("provider", "")),
+            "dataset_id": str(spec.get("dataset_id", "")),
         }
         if json_output:
             click.echo(json.dumps(payload, indent=2))
         else:
-            click.echo(f"Successfully streamed tile {tile_id} to {res_path}", err=True)
+            msg = f"Successfully streamed tile {tile_id} to {res_path}"
+            if sidecar:
+                msg += f"\nWrote metadata sidecar to {sidecar_path}"
+            click.echo(msg, err=True)
     except Exception as e:
         if json_output:
             click.echo(json.dumps({"status": "error", "error": str(e)}, indent=2))
