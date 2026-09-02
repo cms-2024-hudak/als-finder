@@ -91,7 +91,8 @@ def get_example_roi():
 @click.option('--earthdata-token', help='NASA Earthdata Login (EDL) Bearer Token. Auto-saved to workspace .env.')
 @click.option('--neon-key', help='NEON API Token. Auto-saved to workspace .env.')
 @click.option('--dedup/--no-dedup', default=True, help='Deduplicate multi-archive surveys, prioritizing open repositories (default True). Pass --no-dedup to disable.')
-def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, earthdata_token, neon_key, dedup):
+@click.option('--overwrite', is_flag=True, help='Force overwrite existing catalog files.')
+def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, earthdata_token, neon_key, dedup, overwrite):
     """Search for available LiDAR data."""
     start_time_exec = time.time()
     
