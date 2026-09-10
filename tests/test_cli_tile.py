@@ -97,4 +97,55 @@ def test_cli_search_density_delimiters(tmp_path: Path):
         assert "Invalid density" not in res.output
         assert "Invalid QL specification" not in res.output
 
+def test_stream_single_tile_buffer_dimension_tagging(tmp_path: Path):
+    """Test that stream_single_tile generates buffer Extra Bytes dimension (0 for core, 1 for buffer)."""
+    import subprocess
+    from als_finder.core.standardization import stream_single_tile
+    from als_finder.core.grid_manager import create_tile_grid_index, export_grid_manifest
+    from shapely.geometry import box
 
+    # 1. Create synthetic input dataset LAZ with points across 0 to 100
+    raw_laz = tmp_path / "synthetic_raw.las"
+    faux_pipe = [
+        {"type": "readers.faux", "bounds": "([0, 100], [0, 100], [0, 10])", "mode": "ramp", "count": 100},
+        {"type": "writers.las", "filename": str(raw_laz.absolute()), "a_srs": "EPSG:3857"}
+    ]
+    subprocess.run(["pdal", "pipeline", "-s"], input=json.dumps(faux_pipe).encode("utf-8"), check=True)
+
+    # 2. Build minimal catalog covering the synthetic area
+    poly = box(20, 20, 80, 80)
+    roi_gdf = gpd.GeoDataFrame({"id": [1]}, geometry=[poly], crs="EPSG:3857")
+    grid_gdf, crs_str = create_tile_grid_index(roi_gdf, tile_size=60, buffer_size=20, target_crs="EPSG:3857")
+    manifest_data = {
+        "search_parameters": {"roi": "test"},
+        "datasets": [{"name": "synth", "url": str(raw_laz.absolute())}],
+    }
+    cat_dir = tmp_path / "catalog"
+    export_grid_manifest(grid_gdf, manifest_data, cat_dir, tile_size=60, buffer_size=20)
+
+    # 3. Stream tile with buffer
+    out_tile = tmp_path / "streamed_tile.laz"
+    res_path = stream_single_tile(
+        manifest_or_grid_path=cat_dir / "grid.gpkg",
+        tile_id=0,
+        out_path=out_tile,
+        tile_size=60,
+        buffer_size=20,
+        crs="EPSG:3857",
+        overwrite=False
+    )
+    assert res_path.exists()
+
+    # 4. Verify that buffer Extra Bytes dimension is present with 0 (core) and 1 (buffer)
+    info_res = subprocess.run(
+        ["pdal", "info", str(res_path.absolute()), "--readers.las.use_eb_vlr=true", "--dimensions", "buffer"],
+        capture_output=True,
+        text=True,
+        check=True
+    )
+    info_data = json.loads(info_res.stdout)
+    stats = info_data.get("stats", {}).get("statistic", [])
+    buf_stat = next((s for s in stats if s.get("name") == "buffer"), None)
+    assert buf_stat is not None, "buffer dimension not found in Extra Bytes VLR"
+    assert buf_stat["minimum"] == 0, f"Expected minimum buffer value 0, got {buf_stat['minimum']}"
+    assert buf_stat["maximum"] == 1, f"Expected maximum buffer value 1, got {buf_stat['maximum']}"

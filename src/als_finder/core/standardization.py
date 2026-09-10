@@ -639,16 +639,20 @@ def stream_single_tile(
     from pyproj import Transformer
     from shapely.ops import transform
 
+    core_poly = spec["core_poly"]
     poly_src_crs = spec.get("grid_crs", "EPSG:32610")
     if target_crs and target_crs != poly_src_crs and target_crs.lower() != "native":
         try:
             trans = Transformer.from_crs(poly_src_crs, target_crs, always_xy=True).transform
             crop_poly = transform(trans, buffered_poly)
+            core_crop_poly = transform(trans, core_poly)
         except Exception as e:
-            logger.warning(f"Could not transform buffered polygon to {target_crs}: {e}. Using raw bounds.")
+            logger.warning(f"Could not transform polygons to {target_crs}: {e}. Using raw bounds.")
             crop_poly = buffered_poly
+            core_crop_poly = core_poly
     else:
         crop_poly = buffered_poly
+        core_crop_poly = core_poly
 
     b_minx, b_miny, b_maxx, b_maxy = crop_poly.bounds
     pipeline.append({
@@ -666,18 +670,43 @@ def stream_single_tile(
         "expression": "ReturnNumber > 0 && NumberOfReturns > 0",
     })
 
+    # Tag buffer points natively (0 = core tile, 1 = buffer) for lidR and external tools
+    c_minx, c_miny, c_maxx, c_maxy = core_crop_poly.bounds
+    pipeline.append({
+        "type": "filters.ferry",
+        "dimensions": "X => buffer",
+    })
+    if int(buffer_size) > 0:
+        pipeline.append({
+            "type": "filters.assign",
+            "value": [
+                "buffer = 1 WHERE X >= -999999999",
+                f"buffer = 0 WHERE (X >= {c_minx} && X <= {c_maxx} && Y >= {c_miny} && Y <= {c_maxy})",
+            ],
+        })
+    else:
+        pipeline.append({
+            "type": "filters.assign",
+            "value": [
+                "buffer = 0 WHERE X >= -999999999",
+            ],
+        })
+
     # 6. Writer stage
+    extra_dims = "buffer=uint8"
     if fmt == "copc":
         pipeline.append({
             "type": "writers.copc",
             "filename": str(target_out.absolute()),
             "a_srs": target_crs,
+            "extra_dims": extra_dims,
         })
     elif fmt == "las":
         pipeline.append({
             "type": "writers.las",
             "filename": str(target_out.absolute()),
             "a_srs": target_crs,
+            "extra_dims": extra_dims,
         })
     else:
         pipeline.append({
@@ -685,6 +714,7 @@ def stream_single_tile(
             "filename": str(target_out.absolute()),
             "compression": "laszip",
             "a_srs": target_crs,
+            "extra_dims": extra_dims,
         })
 
     # 7. Memory-guarded PDAL execution
