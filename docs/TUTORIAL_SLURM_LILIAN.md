@@ -6,9 +6,11 @@ This tutorial provides a complete, production-grade guide for integrating **`als
 
 ## 1. Architectural Overview & The Master Planning Step
 
-### Am I correct that the first step must be a planning step stored in a shared location?
+### Distributed Architecture Rationale: Shared Pre-Flight Planning
 
-**Yes, absolutely.** In distributed HPC environments, having individual compute worker nodes query remote cloud repositories (such as USGS 3DEP AWS S3 buckets or NOAA) independently is an anti-pattern. If 500 or 1,000 parallel Slurm tasks each try to query the remote API and calculate grid boundaries, several problems occur:
+In distributed HPC environments, having individual compute worker nodes query remote cloud repositories (such as USGS 3DEP AWS S3 buckets or NOAA) independently is an anti-pattern. The workflow requires a single pre-flight master planning step executed once on the head or login node, writing coordination artifacts to a shared cluster filesystem.
+
+Executing planning independently on worker nodes introduces three critical issues:
 1. **API Rate Limiting & Throttling:** Hundreds of workers hammer remote STAC/EPT metadata endpoints with redundant queries.
 2. **Race Conditions & Discrepancies:** Slight floating-point discrepancies or CRS transformation differences could cause neighboring tiles to have mismatched bounding boxes or misaligned rasters.
 3. **Wasted Cluster Core-Hours:** Computing spatial intersections across large areas takes time that compute workers shouldn't waste.
