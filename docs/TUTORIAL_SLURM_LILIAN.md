@@ -8,119 +8,162 @@ This tutorial provides a complete, production-grade guide for integrating **`als
 
 ### Distributed Architecture Rationale: Shared Pre-Flight Planning
 
-In distributed HPC environments, having individual compute worker nodes query remote cloud repositories (such as USGS 3DEP AWS S3 buckets or NOAA) independently is an anti-pattern. The workflow requires a single pre-flight master planning step executed once on the head or login node, writing coordination artifacts to a shared cluster filesystem.
+In distributed HPC environments, having individual compute worker nodes query remote cloud repositories independently is an anti-pattern. `als-finder` supports a broad spectrum of federal, scientific, and community providers:
+- **USGS 3DEP** (USGS 3D Elevation Program AWS EPT & WESM)
+- **NOAA Digital Coast** (Coastal LiDAR PDS)
+- **OpenTopography** (High-resolution community & agency point clouds)
+- **NEON** (National Ecological Observatory Network AOP discrete-return LiDAR)
+- **NASA G-LiHT** (Goddard's LiDAR, Hyperspectral & Thermal airborne acquisitions)
+- **NASA Earthdata** (Airborne & spaceborne missions)
 
-Executing planning independently on worker nodes introduces three critical issues:
-1. **API Rate Limiting & Throttling:** Hundreds of workers hammer remote STAC/EPT metadata endpoints with redundant queries.
-2. **Race Conditions & Discrepancies:** Slight floating-point discrepancies or CRS transformation differences could cause neighboring tiles to have mismatched bounding boxes or misaligned rasters.
-3. **Wasted Cluster Core-Hours:** Computing spatial intersections across large areas takes time that compute workers shouldn't waste.
+Allowing hundreds or thousands of worker nodes to independently search and resolve spatial grids against these remote APIs introduces three critical points of failure:
+1. **API Rate Limiting & Throttling:** Hundreds of workers hammer remote STAC/EPT metadata endpoints with redundant queries, causing HTTP 429/503 connection dropouts.
+2. **Coordinate Discrepancies & Half-Pixel Shifts:** If workers compute their own bounding boxes or projections independently, slight floating-point differences can lead to non-overlapping seams or misaligned raster cells.
+3. **Wasted Cluster Core-Hours:** Having compute nodes repeatedly perform spatial polygon intersections burns allocation hours that should be dedicated to point-cloud processing.
 
-### The Decoupled Architecture:
+### The Decoupled Architecture
 ```text
-  ┌───────────────────────────────────────────────────────────────────┐
-  │ PHASE 1: MASTER PRE-FLIGHT PLANNING (Run ONCE on Head/Login Node) │
-  │   1. Define AOI polygon/shapefile & target year                   │
-  │   2. Search remote USGS 3DEP / NOAA catalogs                      │
-  │   3. Generate uniform 1000m grid with 10m buffer in grid.gpkg     │
-  │   4. Export clean task manifest (tasks.tsv) to shared storage     │
-  └─────────────────────────────────┬─────────────────────────────────┘
-                                    │
-           Stored on Shared Storage │ (/project/lidar_run/)
-                                    ▼
-  ┌───────────────────────────────────────────────────────────────────┐
-  │ PHASE 2: SLURM JOB ARRAY EXECUTION (Run N times across Cluster)   │
-  │   #SBATCH --array=1-N%50                                          │
-  │                                                                   │
-  │   Compute Node 1                Compute Node 2                    │
-  │   (Task 1: Tile 1175)           (Task 2: Tile 1176)               │
-  │   ┌───────────────────────────┐ ┌───────────────────────────┐     │
-  │   │ 1. Read row 1 from tasks  │ │ 1. Read row 2 from tasks  │     │
-  │   │ 2. Stream LAZ to local    │ │ 2. Stream LAZ to local    │     │
-  │   │    $SLURM_SCRATCH (NVMe)  │ │    $SLURM_SCRATCH (NVMe)  │     │
-  │   │ 3. Run extract_lidar_     │ │ 3. Run extract_lidar_     │     │
-  │   │    metrics.R on 1 tile    │ │    metrics.R on 1 tile    │     │
-  │   │ 4. Sync *.tif to shared   │ │ 4. Sync *.tif to shared   │     │
-  │   │    outputs directory      │ │    outputs directory      │     │
-  │   │ 5. Purge local scratch    │ │ 5. Purge local scratch    │     │
-  │   └───────────────────────────┘ └───────────────────────────┘     │
-  └─────────────────────────────────┬─────────────────────────────────┘
-                                    │
-                                    ▼
-  ┌───────────────────────────────────────────────────────────────────┐
-  │ PHASE 3: SEAMLESS MOSAICKING (Run ONCE after Array Completes)     │
-  │   - Build virtual raster (VRT) or merge GeoTIFFs with GDAL        │
-  │   - Exact metric grid alignment guaranteed by als-finder grid     │
-  └───────────────────────────────────────────────────────────────────┘
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │ PHASE 1: MASTER PRE-FLIGHT PLANNING (Run ONCE on Head/Login Node)      │
+  │   1. Define Region of Interest (ROI) polygon/bbox and search filters   │
+  │   2. Search remote catalogs across supported providers into catalog/   │
+  │   3. Build regularized grid (e.g. 1000m tiles + 10m buffer) in grid.gpkg│
+  │   4. Export task manifest and metadata table to shared cluster storage │
+  └───────────────────────────────────┬────────────────────────────────────┘
+                                      │
+           Shared Cluster Storage     │ (/project/my_lab/lidar_project/)
+                                      ▼
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │ PHASE 2: SLURM JOB ARRAY EXECUTION (Run N times across Cluster)        │
+  │   #SBATCH --array=1-N%50                                               │
+  │                                                                        │
+  │   Compute Node 1                       Compute Node 2                  │
+  │   (Task 1: Tile 1175)                  (Task 2: Tile 1176)             │
+  │   ┌────────────────────────────────┐   ┌─────────────────────────────┐ │
+  │   │ 1. Read row 1 from manifest    │   │ 1. Read row 2 from manifest │ │
+  │   │ 2. Stream LAZ to local         │   │ 2. Stream LAZ to local      │ │
+  │   │    $SLURM_SCRATCH (NVMe SSD)   │   │    $SLURM_SCRATCH (NVMe SSD)│ │
+  │   │ 3. Run extract_lidar_metrics.R │   │ 3. Run extract_lidar_       │ │
+  │   │    on 1 tile (1-2 CPUs, 3.5GB) │   │    metrics.R                │ │
+  │   │ 4. Sync *.tif / *.laz to shared│   │ 4. Sync *.tif / *.laz       │ │
+  │   │    outputs directory           │   │    to shared storage        │ │
+  │   │ 5. Purge local scratch         │   │ 5. Purge local scratch      │ │
+  │   └────────────────────────────────┘   └─────────────────────────────┘ │
+  └───────────────────────────────────┬────────────────────────────────────┘
+                                      │
+                                      ▼
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │ PHASE 3: SEAMLESS MOSAICKING (Run ONCE after Array Completes)          │
+  │   - Build virtual raster (VRT) or Cloud-Optimized GeoTIFF with GDAL    │
+  │   - Exact metric grid alignment guaranteed by als-finder tiling grid   │
+  └────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## 2. Phase 1: Shared Pre-Flight Master Planning
 
-Run this phase **once** on the login node or a lightweight 1-core interactive job. All outputs are saved to the cluster's shared filesystem (e.g., Lustre/NFS at `/project/my_lab/lidar_workspace`).
+Execute this phase **once** on the login node or a lightweight 1-core interactive job. All outputs are saved to the cluster's shared filesystem (e.g., Lustre, GPFS, or NFS at `/project/my_lab/lidar_project`).
 
-### Step 1.1: Search Remote Datasets
-Search for available point clouds covering your Area of Interest (AOI):
+### Step 1.1: Search Remote Datasets Across Providers
+Search for point clouds intersecting your Region of Interest (ROI). You can search across all supported archives simultaneously, or filter by specific providers:
+
 ```bash
-# Set your shared workspace path
-export SHARED_DIR="/project/my_lab/sierra_lidar_2022"
+# Set your shared project workspace path
+export SHARED_DIR="/project/my_lab/lidar_project"
 mkdir -p "$SHARED_DIR"
 
-# Search for USGS 3DEP / NOAA ALS data intersecting the AOI
+# Option A: Search across all supported public archives
 als-finder search \
-  --aoi "$SHARED_DIR/aoi_boundary.geojson" \
-  --year-min 2020 \
-  --year-max 2024 \
-  --output "$SHARED_DIR/catalog.gpkg"
+  --roi "$SHARED_DIR/aoi_boundary.geojson" \
+  --date 2018:2024 \
+  --workspace "$SHARED_DIR"
+
+# Option B: Target specific providers (comma-separated: usgs, noaa, opentopography, neon, gliht, earthdata)
+als-finder search \
+  --roi "$SHARED_DIR/aoi_boundary.geojson" \
+  --provider usgs,noaa \
+  --cloud-native \
+  --workspace "$SHARED_DIR"
 ```
+This indexes all intersecting surveys and cloud-native endpoints into `$SHARED_DIR/catalog/manifest.json` and `catalog/catalog.gpkg`.
 
 ### Step 1.2: Generate the Regularized Tiling Grid
-Generate a spatial grid of $1000\,\text{m} \times 1000\,\text{m}$ tiles with an integrated $10\,\text{m}$ spatial buffer. `als-finder` automatically aligns the grid to integer coordinates in the target projection (e.g., UTM Zone 11N or Web Mercator):
+Generate a regularized spatial grid with your chosen core tile size (e.g., $1000\,\text{m}$) and overlap buffer collar (e.g., $10\,\text{m}$):
 ```bash
 als-finder plan \
-  --catalog "$SHARED_DIR/catalog.gpkg" \
+  --workspace "$SHARED_DIR" \
   --tile-size 1000 \
-  --buffer 10 \
-  --crs EPSG:32611 \
-  --output "$SHARED_DIR/grid.gpkg"
+  --buffer-size 10
+```
+*Grid Alignment Guarantee:* `als-finder` automatically snaps tile origins to exact metric multiples in the target projected coordinate system. This guarantees that downstream raster cells across neighboring tiles align with zero sub-pixel shear or offset.
+
+### Step 1.3: Export the Slurm Task Manifest
+Export a task list where each line corresponds directly to a `$SLURM_ARRAY_TASK_ID`:
+```bash
+als-finder plan \
+  --workspace "$SHARED_DIR" \
+  --tasks > "$SHARED_DIR/task_list.tsv"
 ```
 
-### Step 1.3: Export the Task Manifest
-Export a simple tab-delimited or line-delimited task list. Slurm job array workers will look up their task using their `$SLURM_ARRAY_TASK_ID`:
-```bash
-als-finder export-tasks \
-  --grid "$SHARED_DIR/grid.gpkg" \
-  --output "$SHARED_DIR/task_list.tsv"
-```
-Each row in `task_list.tsv` contains:
-```text
-tile_id    dataset_name             min_x    min_y    max_x    max_y    epsg
-1175       CA_SierraNevada_8_2022   764000   4326000  765000   4327000  32611
-1176       CA_SierraNevada_8_2022   764000   4327000  765000   4328000  32611
-```
+### Step 1.4: Metadata Integration (JSON Sidecar vs. Tabular CSV)
+
+#### The JSON Sidecar (`--sidecar`)
+When streaming point clouds, passing `--sidecar` creates an adjacent `tile.json` containing:
+- Exact spatial bounds: `core_bounds` ($1000\,\text{m}$) and `buffered_bounds` ($1020\,\text{m}$).
+- Pre-formatted CLI arguments: `crop_gdal_te` (`"xmin ymin xmax ymax"`).
+- Point density & memory auditing: `est_points`, `is_hyperdense`, and `recommended_mem_gb`.
+- Data provenance: `dataset_id`, `provider`, source URLs, and EPSG coordinate system.
+
+#### Flattening Metadata Directly into CSV
+If you prefer a single tabular metadata file rather than loose JSON files:
+1. **Pre-Flight Manifest (`tasks.csv`):** All sidecar properties already exist inside `$SHARED_DIR/catalog/grid.gpkg`. You can query or export a comprehensive CSV table where each row provides the tile ID, dataset, core bounding coordinates, and point estimates:
+   ```csv
+   tile_id,basename,dataset,provider,core_minx,core_miny,core_maxx,core_maxy,gdal_te,est_points
+   1175,CA_SierraNevada_8_2022_tile_E0764000_N4326000,CA_SierraNevada_8_2022,USGS_EPT,764000,4325000,765000,4326000,"764000 4325000 765000 4326000",26155656
+   1176,CA_SierraNevada_8_2022_tile_E0764000_N4327000,CA_SierraNevada_8_2022,USGS_EPT,764000,4326000,765000,4327000,"764000 4326000 765000 4327000",27812010
+   ```
+2. **Post-Processing Tile Metrics Summary:** If your downstream workflow generates summary metrics per tile (such as mean canopy cover or 95th percentile height), the sidecar metadata can be bound directly into a master `summary_metrics.csv` table using R or Python:
+   ```r
+   # In R: Bind tile metadata with extracted forest statistics
+   sc <- jsonlite::fromJSON(sub("\\.laz$", ".json", laz_path))
+   summary_row <- data.frame(
+     tile_id = sc$tile_id,
+     basename = sc$basename,
+     dataset = sc$dataset_id,
+     provider = sc$provider,
+     core_minx = sc$core_bounds[1],
+     core_miny = sc$core_bounds[2],
+     core_maxx = sc$core_bounds[3],
+     core_maxy = sc$core_bounds[4],
+     mean_canopy_cover = mean(terra::values(r_cover), na.rm=TRUE)
+   )
+   write.table(summary_row, file=file.path(shared_out, "regional_metrics.csv"), 
+               append=TRUE, sep=",", row.names=FALSE, col.names=!file.exists(file.path(shared_out, "regional_metrics.csv")))
+   ```
 
 ---
 
 ## 3. Phase 2: Slurm Job Array Architecture
 
-Here is the complete Slurm batch script (`sbatch_lidar_workflow.slurm`) ready to submit on the cluster.
+Here is the complete Slurm batch submission script (`sbatch_lidar_metrics.slurm`):
 
 ### Key Engineering Practices Implemented:
-1. **Node-Local Scratch (`$SLURM_SCRATCH`):** Remote points are streamed directly into fast node-local NVMe SSDs instead of overloading the shared Lustre/NFS network filesystem with temporary files.
-2. **Deterministic Spatial Basenames (`--spatial-name`):** Files are named `CA_SierraNevada_8_2022_tile_E0764000_N4326000.laz`, enabling instant spatial identification without opening the file.
-3. **Metadata Sidecar (`--sidecar`):** An accompanying `tile.json` file records exact core and buffered coordinates, source CRS, point counts, and acquisition dates.
-4. **Buffer Dimension Tagging (`buffer=uint8`):** Points inside the $10\,\text{m}$ buffer collar are flagged with `buffer=1` (core points `buffer=0`), allowing `extract_lidar_metrics.R`'s `remove_las_buffer()` to cleanly drop them after terrain normalization.
-5. **Memory Safety & lidR Resource Control:** 
+1. **Node-Local Scratch (`$SLURM_SCRATCH`):** Temporary point clouds stream directly into node-local NVMe SSDs instead of overloading the shared Lustre/NFS network filesystem.
+2. **Deterministic Spatial Basenames (`--spatial-name`):** Files are named with their metric coordinates (e.g. `<dataset>_tile_E0764000_N4326000.laz`), enabling instant spatial identification without parsing point headers.
+3. **Buffer Dimension Tagging (`buffer=uint8`):** Points inside the buffer collar are stamped with `buffer=1` (core points `buffer=0`), allowing `extract_lidar_metrics.R`'s `remove_las_buffer()` to purge buffer collar points after ground classification and height normalization.
+4. **Memory Safety & Resource Allocation:**
    - Assign **1 tile per Slurm task**.
    - Allocate 1–2 CPUs (`#SBATCH --cpus-per-task=2`).
-   - Set `CHUNK_BUFFER=0` in the environment so `lidR` does not attempt to add its own internal secondary buffer on top of `als-finder`'s buffer.
+   - Set `CHUNK_BUFFER=0` in the environment to prevent `lidR` from generating a redundant secondary buffer.
+   - Restricts memory to **~3.5 GB peak per worker**, eliminating Slurm Out-Of-Memory (OOM) kills.
 
-### Complete Slurm Script (`sbatch_lidar_workflow.slurm`):
+### Complete Slurm Script (`sbatch_lidar_metrics.slurm`):
 ```bash
 #!/bin/bash
 #SBATCH --job-name=als_metrics
-#SBATCH --output=/project/my_lab/sierra_lidar_2022/logs/tile_%a_%j.out
-#SBATCH --error=/project/my_lab/sierra_lidar_2022/logs/tile_%a_%j.err
+#SBATCH --output=/project/my_lab/lidar_project/logs/tile_%a_%j.out
+#SBATCH --error=/project/my_lab/lidar_project/logs/tile_%a_%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
@@ -131,24 +174,18 @@ Here is the complete Slurm batch script (`sbatch_lidar_workflow.slurm`) ready to
 
 set -euo pipefail
 
-# 1. Environment Setup
-SHARED_DIR="/project/my_lab/sierra_lidar_2022"
-MODULE_ENV="als-finder-env"
-
-# Activate your conda/micromamba environment
+# 1. Environment & Setup
+SHARED_DIR="/project/my_lab/lidar_project"
 source ~/.bashrc
-conda activate "$MODULE_ENV"
+conda activate als-finder-env
 
-# 2. Identify the Tile from the Task Manifest
+# 2. Identify the Assigned Tile from Manifest
 TASK_FILE="$SHARED_DIR/task_list.tsv"
-# Read line corresponding to SLURM_ARRAY_TASK_ID (skipping header)
 LINE_NUM=$((SLURM_ARRAY_TASK_ID + 1))
 TASK_LINE=$(sed -n "${LINE_NUM}p" "$TASK_FILE")
 
 TILE_ID=$(echo "$TASK_LINE" | awk '{print $1}')
-DATASET=$(echo "$TASK_LINE" | awk '{print $2}')
-
-echo "=== Processing Task $SLURM_ARRAY_TASK_ID: Tile $TILE_ID ($DATASET) on $(hostname) ==="
+echo "=== Task $SLURM_ARRAY_TASK_ID: Processing Tile $TILE_ID on $(hostname) ==="
 
 # 3. Setup Node-Local Scratch Directory
 LOCAL_DIR="${SLURM_SCRATCH:-/tmp}/${USER}_job_${SLURM_JOB_ID}_task_${SLURM_ARRAY_TASK_ID}"
@@ -156,24 +193,21 @@ LOCAL_IN="$LOCAL_DIR/data"
 LOCAL_OUT="$LOCAL_DIR/output"
 mkdir -p "$LOCAL_IN" "$LOCAL_OUT"
 
-# Ensure cleanup on exit
 cleanup() {
-    echo "Cleaning up local scratch: $LOCAL_DIR"
     rm -rf "$LOCAL_DIR"
 }
 trap cleanup EXIT
 
-# 4. Stream Tile laz from Remote EPT/COPC into Node-Local Scratch
-als-finder stream \
-  --grid "$SHARED_DIR/grid.gpkg" \
-  --tile-id "$TILE_ID" \
+# 4. Stream Tile On-Demand into Node-Local Scratch
+als-finder fetch tile "$TILE_ID" \
+  --workspace "$SHARED_DIR" \
   --output "$LOCAL_IN" \
+  --tile-size 1000 \
+  --buffer-size 10 \
   --spatial-name \
-  --sidecar \
-  --buffer-tagging
+  --sidecar
 
-# 5. Run Lilian's Metric Extraction Script
-# Notice: No modifications needed to extract_lidar_metrics.R!
+# 5. Run Lilian's Metric Extraction Script (Unmodified)
 export PROJECT_DIR="$LOCAL_DIR"
 export DATA_FOLDER="$LOCAL_IN"
 export OUTPUT_FOLDER="$LOCAL_OUT"
@@ -183,41 +217,38 @@ export SLURM_CPUS_PER_TASK=2
 
 Rscript /project/my_lab/scripts/extract_lidar_metrics.R
 
-# 6. Copy Deliverables to Shared Storage
+# 6. Synchronize Final Products to Shared Storage
 DEST_METRICS="$SHARED_DIR/outputs/metrics"
-DEST_LAZ="$SHARED_DIR/outputs/normalized_laz"
+DEST_LAZ="$SHARED_DIR/outputs/normalized_tiles"
 mkdir -p "$DEST_METRICS" "$DEST_LAZ"
 
-echo "Syncing results to shared storage..."
+echo "Syncing deliverables to shared storage..."
 cp "$LOCAL_OUT"/metrics/*.tif "$DEST_METRICS/" 2>/dev/null || true
 cp "$LOCAL_OUT"/metrics/*.csv "$DEST_METRICS/" 2>/dev/null || true
 cp "$LOCAL_OUT"/normalized_tiles/*.laz "$DEST_LAZ/" 2>/dev/null || true
 cp "$LOCAL_IN"/*.json "$DEST_METRICS/" 2>/dev/null || true
 
-echo "=== Task $SLURM_ARRAY_TASK_ID Complete ==="
+echo "=== Task $SLURM_ARRAY_TASK_ID Finished Successfully ==="
 ```
 
 ---
 
 ## 4. Phase 3: Raster Alignment & Mosaicking
 
-A critical requirement when generating tiled rasters is ensuring they seamlessly stitch together into a seamless regional mosaic without gaps, edge distortion, or sub-pixel shifts.
+A core requirement of regional tiled processing is guaranteeing that output GeoTIFFs align without gaps, distortion, or sub-pixel shear.
 
-### 4.1 Grid Snapping & Origin Alignment
-`als-finder`'s regular grid is mathematically locked:
-- **Tile Dimensions:** Exactly $1000\,\text{m} \times 1000\,\text{m}$.
-- **Resolution:** Exactly $10\,\text{m}$ per pixel.
-- **Snapping:** Tile origins are snapped to exact multiples of $1000\,\text{m}$ (e.g., $E=764000, N=4326000$).
-- **Sub-pixel Alignment:** Because both $1000$ and the tile bounds are divisible by $10$, every raster cell edge aligns with 0 sub-pixel offset across all neighboring tiles.
+### 4.1 Sub-Pixel Alignment Verification
+`als-finder` enforces mathematically locked metric grid origins:
+$$\text{Origin } X \pmod{\text{pixel\_res}} = 0, \quad \text{Origin } Y \pmod{\text{pixel\_res}} = 0$$
+Both $1000\,\text{m}$ tile boundaries and $10\,\text{m}$ raster pixel centers align with 0 sub-pixel offset across all neighboring tiles.
 
-### 4.2 Handling the 10 m Buffer Collar
-Because `als-finder` streams a $10\,\text{m}$ buffer on each side (total bounding box $1020\,\text{m} \times 1020\,\text{m}$), Lilian's script produces a $102 \times 102$ cell raster.
+### 4.2 Handling the Buffer Collar
+Because `als-finder` streams a spatial buffer collar (total bounds $1020\,\text{m} \times 1020\,\text{m}$), Lilian's script generates a $102 \times 102$ cell raster.
 - Neighboring tiles share a 2-pixel ($20\,\text{m}$) overlapping boundary strip.
-- Because ground classification (CSF) and height normalization used the buffer, pixel values in the overlap agree closely.
-- **Method A (Standard GDAL Mosaic):** `gdal_merge.py` or `gdalbuildvrt` can mosaic these tiles directly. GDAL resolves overlapping pixels by taking the first or last tile, or a blend.
-- **Method B (Exact 0-Overlap Core Cropping):** If you prefer strict non-overlapping $100 \times 100$ cell rasters ($1000\,\text{m} \times 1000\,\text{m}$), use the `tile.json` sidecar created by `als-finder`:
+- Because CSF ground classification and height normalization utilized the full buffer collar, pixel values in this overlapping strip are in close agreement.
+- Standard tools (`gdalbuildvrt` or `gdal_merge.py`) merge these overlapping tiles seamlessly.
+- **Optional 0-Overlap Core Cropping:** If strict $100 \times 100$ non-overlapping rasters are preferred, crop each tile in R using `core_bounds` from the `tile.json` sidecar before saving:
   ```r
-  # Optional 2-line crop in R using sidecar bounds
   sidecar <- jsonlite::fromJSON(sub("\\.laz$", ".json", laz_file))
   cb <- sidecar$core_bounds  # [xmin, ymin, xmax, ymax]
   core_ext <- terra::ext(cb[1], cb[3], cb[2], cb[4])
@@ -225,28 +256,29 @@ Because `als-finder` streams a $10\,\text{m}$ buffer on each side (total boundin
   terra::writeRaster(r_cropped, out_tif, overwrite=TRUE)
   ```
 
-### 4.3 Mosaicking All Tiles After Job Completion
-Once the Slurm array completes, stitch the output GeoTIFFs into a single seamless regional layer:
+### 4.3 Regional Mosaicking Command
+Once all Slurm array tasks finish, stitch the output GeoTIFFs into a single seamless regional raster:
 ```bash
-cd /project/my_lab/sierra_lidar_2022/outputs/metrics
+cd /project/my_lab/lidar_project/outputs/metrics
 
-# Option 1: Fast Zero-Disk Virtual Raster (VRT)
-gdalbuildvrt canopy_cover_mosaic.vrt *canopy_cover*.tif
+# Step 1: Build Virtual Raster (instantaneous, zero disk overhead)
+gdalbuildvrt regional_canopy_cover.vrt *canopy_cover*.tif
 
-# Option 2: Cloud-Optimized GeoTIFF (COG)
-gdal_translate -of COG -co COMPRESS=DEFLATE canopy_cover_mosaic.vrt canopy_cover_2022_sierra.tif
+# Step 2: Export Cloud-Optimized GeoTIFF (COG)
+gdal_translate -of COG -co COMPRESS=DEFLATE regional_canopy_cover.vrt regional_canopy_cover_cog.tif
 ```
 
 ---
 
-## 5. Summary of Best Practices for Lilian's Workflow
+## 5. Summary of Best Practices
 
-| Parameter | Recommended Setting | Why? |
+| Workflow Component | Recommended Setting | Engineering Rationale |
 | :--- | :--- | :--- |
-| **Grid Generation** | Pre-flight `als-finder plan` | Single shared master index; no duplicate remote queries or race conditions. |
-| **Storage Strategy** | Stream to `$SLURM_SCRATCH` | Keeps heavy I/O on node NVMe SSD; shared Lustre only stores final light products. |
-| **File Naming** | `--spatial-name` | Produces `..._E0764000_N4326000.laz`, making files self-documenting. |
-| **Metadata** | `--sidecar` | Writes `tile.json` containing core bounds, EPSG, date, and point counts. |
-| **lidR Buffer** | `CHUNK_BUFFER="0"` | `als-finder` provides the 10m buffer; avoids double-buffering. |
-| **Slurm CPUs per Task** | 1 or 2 CPUs | Prevents `future::multisession` memory spikes; ensures predictable ~3.5 GB RAM per job. |
-| **Buffer Stripping** | `remove_las_buffer(las)` | Unmodified R script removes all buffer collar points from normalized LAZ. |
+| **Grid Generation** | Pre-flight `als-finder plan` | Single shared master index; eliminates redundant remote API queries and race conditions. |
+| **Provider Scope** | Multi-Provider (`--provider` or omit) | Unifies USGS 3DEP, NOAA, OpenTopography, NEON, G-LiHT, and Earthdata into a uniform interface. |
+| **I/O Strategy** | Stream to `$SLURM_SCRATCH` | Keeps point-cloud I/O on node NVMe SSD; prevents Lustre/NFS network contention. |
+| **File Naming** | `--spatial-name` | Produces `..._E0764000_N4326000.laz`, enabling self-documenting filenames. |
+| **Metadata** | `--sidecar` or `tasks.csv` | Embeds exact core bounding boxes, projection, and point count estimates. |
+| **lidR Buffer** | `CHUNK_BUFFER="0"` | `als-finder` handles buffering; avoids double-buffering. |
+| **Resource Profile** | 1 Tile per Task / 2 CPUs | Prevents `future::multisession` memory spikes; guarantees bounded ~3.5 GB RAM per task. |
+| **Buffer Stripping** | `remove_las_buffer(las)` | Unmodified R script purges buffer collar points from normalized LAZ outputs. |
