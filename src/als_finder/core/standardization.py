@@ -706,6 +706,7 @@ def stream_single_tile(
             "type": "writers.las",
             "filename": str(target_out.absolute()),
             "a_srs": target_crs,
+            "minor_version": 4,
             "extra_dims": extra_dims,
         })
     else:
@@ -713,6 +714,7 @@ def stream_single_tile(
             "type": "writers.las",
             "filename": str(target_out.absolute()),
             "compression": "laszip",
+            "minor_version": 4,
             "a_srs": target_crs,
             "extra_dims": extra_dims,
         })
