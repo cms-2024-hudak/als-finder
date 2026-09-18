@@ -1645,11 +1645,12 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
         # If --tasks-csv flag is requested, output rich CSV task manifest with all metadata
         if tasks_csv:
             import csv
+            from als_finder.core.grid_manager import format_coord
             fieldnames = [
-                "task_id", "tile_id", "basename", "dataset_id", "provider", "grid_crs",
+                "task_id", "tile_id", "basename", "hive_dir", "hive_path", "dataset_id", "provider", "grid_crs",
                 "tile_size", "buffer_size", "core_minx", "core_miny", "core_maxx", "core_maxy",
                 "buffered_minx", "buffered_miny", "buffered_maxx", "buffered_maxy",
-                "crop_gdal_te", "point_density", "est_points", "recommended_mem_gb", "hive_path"
+                "crop_gdal_te", "point_density", "est_points", "recommended_mem_gb"
             ]
             try:
                 writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
@@ -1667,12 +1668,29 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
                     density = float(row.get("point_density") or 10.0)
                     t_pts = int(density * ((tile_size + 2 * buffer_size) ** 2))
                     rec_mem = round((t_pts * 250) / 1e9 * 1.5, 1)
+
+                    t_id = row.get("tile_id", idx)
+                    ds_id = str(row.get("dataset_id") or "dataset")
+                    prov = str(row.get("provider") or "unknown")
+                    b_name = row.get("basename")
+                    h_dir = row.get("hive_dir")
+                    h_path = row.get("hive_path")
+
+                    if not b_name or not h_path:
+                        ul_e = format_coord(c_minx)
+                        ul_n = format_coord(c_maxy)
+                        b_name = f"{ds_id}_tile_E{ul_e}_N{ul_n}"
+                        h_dir = f"provider={prov}/dataset={ds_id}/tilesize={tile_size}/buffer={buffer_size}"
+                        h_path = f"{h_dir}/{b_name}"
+
                     writer.writerow({
                         "task_id": idx + 1,
-                        "tile_id": row.get("tile_id", idx),
-                        "basename": row.get("basename", f"tile_{idx}"),
-                        "dataset_id": row.get("dataset_id", "dataset"),
-                        "provider": row.get("provider", "unknown"),
+                        "tile_id": t_id,
+                        "basename": b_name,
+                        "hive_dir": h_dir,
+                        "hive_path": h_path,
+                        "dataset_id": ds_id,
+                        "provider": prov,
                         "grid_crs": row.get("grid_crs", str(grid_gdf.crs)),
                         "tile_size": tile_size,
                         "buffer_size": buffer_size,
@@ -1687,8 +1705,7 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
                         "crop_gdal_te": f"{c_minx} {c_miny} {c_maxx} {c_maxy}",
                         "point_density": density,
                         "est_points": t_pts,
-                        "recommended_mem_gb": max(rec_mem, 4.0),
-                        "hive_path": row.get("hive_path", "")
+                        "recommended_mem_gb": max(rec_mem, 4.0)
                     })
             except BrokenPipeError:
                 pass
