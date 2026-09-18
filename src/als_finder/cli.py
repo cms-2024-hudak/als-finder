@@ -1349,8 +1349,8 @@ def fetch_group():
 @click.option('-w', '--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
 @click.option('-m', '--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
 @click.option('-o', '--output', default=None, type=click.Path(), help='Target output .laz file path or directory (auto-Hive partitioned if directory or omitted)')
-@click.option('-b', '--buffer-size', type=int, default=50, help='Spatial overlap buffer in meters (default 50m)')
-@click.option('-s', '--tile-size', type=int, default=500, help='Core tile size in meters (default 500m)')
+@click.option('-b', '--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m for 30m raster compatibility)')
+@click.option('-s', '--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m for 30m/10m/1m divisibility)')
 @click.option('--max-points', type=int, default=None, help='Point budget threshold. If exceeded, splits tile into 4 quadrants')
 @click.option('--subtiles/--no-subtiles', default=True, help='If tile exceeds max-points, sequentially stream child quadrants (default True)')
 @click.option('--crs', default=None, help='Target CRS (defaults to local UTM)')
@@ -1476,8 +1476,8 @@ def fetch_tile_subcmd(tile_ids, tile_id, workspace, manifest, output, buffer_siz
 @click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
 @click.option('--tile-id', required=True, type=str, help='Target tile ID (e.g. 15 or 15_NW)')
 @click.option('--output', default=None, type=click.Path(), help='Target output .laz file or directory')
-@click.option('--buffer-size', type=int, default=50, help='Spatial overlap buffer in meters (default 50m)')
-@click.option('--tile-size', type=int, default=500, help='Core tile size in meters (default 500m)')
+@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
 @click.option('--max-points', type=int, default=None, help='Point budget threshold for auto-subdivision')
 @click.option('--subtiles/--no-subtiles', default=True, help='If exceeded, stream child quadrants (default True)')
 @click.option('--crs', default=None, help='Target CRS (defaults to local UTM)')
@@ -1564,7 +1564,7 @@ def fetch_survey_subcmd(ctx, workspace, roi, name, date, density, provider, clou
 # PLANNING & PRE-FLIGHT AUDIT COMMAND (plan & grid-info alias)
 # ==============================================================================
 
-def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output):
+def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=False):
     try:
         # Default workspace fallback to '.' if catalog/ exists
         if workspace is None and manifest is None:
@@ -1638,6 +1638,58 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
             try:
                 for tid in leaf_ids:
                     click.echo(tid)
+            except BrokenPipeError:
+                pass
+            return
+
+        # If --tasks-csv flag is requested, output rich CSV task manifest with all metadata
+        if tasks_csv:
+            import csv
+            fieldnames = [
+                "task_id", "tile_id", "basename", "dataset_id", "provider", "grid_crs",
+                "tile_size", "buffer_size", "core_minx", "core_miny", "core_maxx", "core_maxy",
+                "buffered_minx", "buffered_miny", "buffered_maxx", "buffered_maxy",
+                "crop_gdal_te", "point_density", "est_points", "recommended_mem_gb", "hive_path"
+            ]
+            try:
+                writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
+                writer.writeheader()
+                for idx, row in grid_gdf.iterrows():
+                    c_minx, c_miny, c_maxx, c_maxy = row.geometry.bounds
+                    b_geom = row.get("buffered_geometry")
+                    if b_geom is not None and hasattr(b_geom, "bounds"):
+                        b_minx, b_miny, b_maxx, b_maxy = b_geom.bounds
+                    else:
+                        b_minx = c_minx - buffer_size
+                        b_miny = c_miny - buffer_size
+                        b_maxx = c_maxx + buffer_size
+                        b_maxy = c_maxy + buffer_size
+                    density = float(row.get("point_density") or 10.0)
+                    t_pts = int(density * ((tile_size + 2 * buffer_size) ** 2))
+                    rec_mem = round((t_pts * 250) / 1e9 * 1.5, 1)
+                    writer.writerow({
+                        "task_id": idx + 1,
+                        "tile_id": row.get("tile_id", idx),
+                        "basename": row.get("basename", f"tile_{idx}"),
+                        "dataset_id": row.get("dataset_id", "dataset"),
+                        "provider": row.get("provider", "unknown"),
+                        "grid_crs": row.get("grid_crs", str(grid_gdf.crs)),
+                        "tile_size": tile_size,
+                        "buffer_size": buffer_size,
+                        "core_minx": c_minx,
+                        "core_miny": c_miny,
+                        "core_maxx": c_maxx,
+                        "core_maxy": c_maxy,
+                        "buffered_minx": b_minx,
+                        "buffered_miny": b_miny,
+                        "buffered_maxx": b_maxx,
+                        "buffered_maxy": b_maxy,
+                        "crop_gdal_te": f"{c_minx} {c_miny} {c_maxx} {c_maxy}",
+                        "point_density": density,
+                        "est_points": t_pts,
+                        "recommended_mem_gb": max(rec_mem, 4.0),
+                        "hive_path": row.get("hive_path", "")
+                    })
             except BrokenPipeError:
                 pass
             return
@@ -1725,34 +1777,36 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
 @click.option('-w', '--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
 @click.option('-m', '--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
 @click.option('--tile-id', default=None, type=str, help='Specific tile ID (e.g. 15 or 15_NW) to inspect. Defaults to tile 0.')
-@click.option('-s', '--tile-size', type=int, default=500, help='Core tile size in meters (default 500m)')
-@click.option('-b', '--buffer-size', type=int, default=50, help='Spatial overlap buffer in meters (default 50m)')
+@click.option('-s', '--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m for 30m/10m/1m divisibility)')
+@click.option('-b', '--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m for 30m raster compatibility)')
 @click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
 @click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays (one per line)')
+@click.option('--tasks-csv', is_flag=True, help='Output rich task manifest CSV with all metadata (basenames, bounds, CRS, memory audits) for Slurm job arrays')
 @click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
 @click.option('--field', default=None, help='Extract a specific field from payload (e.g. total_tiles, grid_crs, basename, crop_pdal_bounds)')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output):
+def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, tasks_csv, overwrite, field, output_format, json_output):
     """Plan spatial grid partitioning, pre-flight memory audits, and Slurm task lists."""
-    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output)
+    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv)
 
 
 @cli.command('grid-info')
 @click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
 @click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
 @click.option('--tile-id', default=None, type=str, help='Specific tile ID (e.g. 15 or 15_NW) to inspect. Defaults to tile 0.')
-@click.option('--tile-size', type=int, default=500, help='Core tile size in meters (default 500m)')
-@click.option('--buffer-size', type=int, default=50, help='Spatial overlap buffer in meters (default 50m)')
+@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
+@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
 @click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
 @click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays')
+@click.option('--tasks-csv', is_flag=True, help='Output rich task manifest CSV with all metadata for Slurm job arrays')
 @click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
 @click.option('--field', default=None, help='Extract a specific field from payload')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None)
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output):
+def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, tasks_csv, overwrite, field, output_format, json_output):
     """Backward-compatible alias for 'als-finder plan'."""
-    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output)
+    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv)
 
 
 # ==============================================================================
