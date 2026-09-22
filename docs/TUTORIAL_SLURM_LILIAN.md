@@ -265,7 +265,77 @@ When the primary objective is generating **30 m ecological or topographic raster
 als-finder plan --workspace . --tile-size 1200 --buffer-size 30
 ```
 
-### Step 1.4: Exporting the All-Inclusive Task Manifest (`tasks.csv`)
+### Step 1.4: Pre-Flight Memory Auditing & High-Density Tile Handling (`--max-points`)
+
+While a $1200\,\text{m}$ tile size ensures perfect raster divisibility ($40 \times 40$ pixels at $30\,\text{m}$), **high-density point cloud surveys** can pose significant memory challenges for HPC workers.
+
+#### The HPC Out-of-Memory (OOM) Challenge:
+- In our Lake Tahoe search, the 2022 Sierra Nevada USGS dataset has a point density of **$29.18\,\text{pts/m}^2$**.
+- A $1200\,\text{m}$ core tile with a $30\,\text{m}$ buffer ($1260\,\text{m} \times 1260\,\text{m}$) contains:
+  $$1260 \times 1260 \times 29.18 \approx \mathbf{46{,}326{,}000\text{ points per tile}}$$
+- Loading 46 million points into R via `lidR::readLAS` requires approximately **$12\text{--}18\,\text{GB}$ of RAM**. On standard compute nodes allocated $8\,\text{GB}$ or $16\,\text{GB}$ of RAM per core, this causes an instant **Out-Of-Memory (OOM) crash** (`slurmstepd: error: Detected 1 oom-kill event`).
+
+#### The Solution: Point Budget Auditing with `--max-points`:
+`als-finder plan` includes a built-in pre-flight memory audit. By supplying a target point budget (e.g. `--max-points 15000000` $\approx 6\,\text{GB}$ RAM in R), `als-finder` automatically flags tiles that exceed worker memory limits and calculates a multi-scale quadtree subdivision:
+
+```bash
+als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 15000000
+```
+
+```text
+==================================================
+ ALS-FINDER SPATIAL PLANNING & GRID METRICS
+==================================================
+  Master Tiles:      1,039
+  Total Leaf Tasks:  4,156
+  Tile ID Range:     0 to 1038
+  Tile Size:         1200m (core)
+  Buffer Size:       30m (overlap)
+  Grid CRS:          EPSG:32610
+--------------------------------------------------
+ MEMORY RISK AUDIT (PRE-FLIGHT):
+  Max Points Budget: 15,000,000
+  Est Points/Tile:   46,326,168
+  Subdivision:       1039 tiles exceed budget (split into 4 quadrants each)
+  Slurm Array Size:  --array=1-4156
+==================================================
+```
+
+#### How Hierarchical Quadrant Sub-Tiles Work:
+1. **Generating Subdivided Task IDs:**
+   Passing `--tasks` with `--max-points` generates the complete list of leaf tasks for your Slurm array:
+   ```bash
+   als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 15000000 --tasks > tasks.txt
+   head -n 8 tasks.txt
+   ```
+   *Output:*
+   ```text
+   0_NW
+   0_NE
+   0_SW
+   0_SE
+   1_NW
+   1_NE
+   1_SW
+   1_SE
+   ```
+2. **On-the-Fly Quadrant Streaming:**
+   When a worker fetches a quadrant sub-tile (e.g., `als-finder fetch tile 0_NW ...`), `als-finder` automatically:
+   - Halves the core tile size from $1200\,\text{m}$ to **$600\,\text{m}$** (which still divides cleanly into $20 \times 20$ pixels at $30\,\text{m}$).
+   - Retains the full **$30\,\text{m}$ buffer collar** to prevent border edge effects.
+   - Streams only **$\sim 11.5\,\text{M points}$** ($\sim 4.5\,\text{GB}$ RAM in R), allowing the task to execute safely within low-memory HPC allocations.
+
+> [!TIP]
+> **Alternative: Sizing the Nominal Grid to $600\,\text{m}$**
+> If an entire study area consists of uniform high-density lidar ($\ge 25\,\text{pts/m}^2$), you can configure the nominal grid directly at $600\,\text{m}$ ($20 \times 20$ pixels at $30\,\text{m}$):
+> ```bash
+> als-finder plan --workspace . --tile-size 600 --buffer-size 30 --overwrite
+> ```
+> Every tile will be naturally sized at $\sim 12.7\,\text{M points}$ ($\sim 4.8\,\text{GB}$ in R) without requiring quadtree splitting.
+
+---
+
+### Step 1.5: Exporting the All-Inclusive Task Manifest (`tasks.csv`)
 
 Rather than having Slurm workers open and parse individual JSON sidecar files during runtime, `als-finder` can export a single, self-contained **rich CSV manifest** containing all spatial bounds, CRS codes, point estimates, and basenames:
 
@@ -273,7 +343,7 @@ Rather than having Slurm workers open and parse individual JSON sidecar files du
 als-finder plan --workspace . --tasks-csv > tasks.csv
 ```
 
-### Step 1.5: Test Single-Tile Streaming Locally (Optional Verification)
+### Step 1.6: Test Single-Tile Streaming Locally (Optional Verification)
 Before submitting a large Slurm array, you can test data streaming on a single tile (e.g. Tile 0) on your local machine:
 
 ```bash
