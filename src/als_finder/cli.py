@@ -1670,7 +1670,8 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
         # If --tasks-csv flag is requested, output rich CSV task manifest with all metadata
         if tasks_csv:
             import csv
-            from als_finder.core.grid_manager import format_coord
+            from shapely.geometry import box
+            from als_finder.core.grid_manager import format_coord, parse_quadrant_tile_id
             fieldnames = [
                 "task_id", "tile_id", "basename", "hive_dir", "hive_path", "dataset_id", "provider", "grid_crs",
                 "tile_size", "buffer_size", "core_minx", "core_miny", "core_maxx", "core_maxy",
@@ -1680,45 +1681,59 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
             try:
                 writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
                 writer.writeheader()
-                for idx, row in grid_gdf.iterrows():
-                    c_minx, c_miny, c_maxx, c_maxy = row.geometry.bounds
-                    b_geom = row.get("buffered_geometry")
-                    if b_geom is not None and hasattr(b_geom, "bounds"):
-                        b_minx, b_miny, b_maxx, b_maxy = b_geom.bounds
-                    else:
-                        b_minx = c_minx - buffer_size
-                        b_miny = c_miny - buffer_size
-                        b_maxx = c_maxx + buffer_size
-                        b_maxy = c_maxy + buffer_size
+                for task_idx, leaf_tid in enumerate(leaf_ids):
+                    base_id, quadrants = parse_quadrant_tile_id(leaf_tid)
+                    row = grid_gdf.iloc[base_id]
+                    cur_c_poly = row.geometry
+                    cur_t = float(spec_0.get("nominal_tile_size", spec_0.get("tile_size", tile_size)))
+                    cur_b = float(spec_0.get("nominal_buffer_size", spec_0.get("buffer_size", buffer_size)))
+
+                    if quadrants:
+                        for q in quadrants:
+                            c_minx_t, c_miny_t, c_maxx_t, c_maxy_t = cur_c_poly.bounds
+                            x_mid = (c_minx_t + c_maxx_t) / 2.0
+                            y_mid = (c_miny_t + c_maxy_t) / 2.0
+                            if q == "NW":
+                                cur_c_poly = box(c_minx_t, y_mid, x_mid, c_maxy_t)
+                            elif q == "NE":
+                                cur_c_poly = box(x_mid, y_mid, c_maxx_t, c_maxy_t)
+                            elif q == "SW":
+                                cur_c_poly = box(c_minx_t, c_miny_t, x_mid, y_mid)
+                            elif q == "SE":
+                                cur_c_poly = box(x_mid, c_miny_t, c_maxx_t, y_mid)
+                            cur_t = cur_t / 2.0
+
+                    c_minx, c_miny, c_maxx, c_maxy = cur_c_poly.bounds
+                    b_minx = c_minx - cur_b
+                    b_miny = c_miny - cur_b
+                    b_maxx = c_maxx + cur_b
+                    b_maxy = c_maxy + cur_b
+
                     density = float(row.get("point_density") or 10.0)
-                    t_pts = int(density * ((tile_size + 2 * buffer_size) ** 2))
+                    t_pts = int(density * ((cur_t + 2 * cur_b) ** 2))
                     rec_mem = round((t_pts * 250) / 1e9 * 1.5, 1)
 
-                    t_id = row.get("tile_id", idx)
                     ds_id = str(row.get("dataset_id") or "dataset")
                     prov = str(row.get("provider") or "unknown")
-                    b_name = row.get("basename")
-                    h_dir = row.get("hive_dir")
-                    h_path = row.get("hive_path")
 
-                    if not b_name or not h_path:
-                        ul_e = format_coord(c_minx)
-                        ul_n = format_coord(c_maxy)
-                        b_name = f"{ds_id}_tile_E{ul_e}_N{ul_n}"
-                        h_dir = f"provider={prov}/dataset={ds_id}/tilesize={tile_size}/buffer={buffer_size}"
-                        h_path = f"{h_dir}/{b_name}"
+                    ul_e = format_coord(c_minx)
+                    ul_n = format_coord(c_maxy)
+                    q_suffix = ("_" + "_".join(quadrants)) if quadrants else ""
+                    b_name = f"{ds_id}_tile_E{ul_e}_N{ul_n}{q_suffix}"
+                    h_dir = f"provider={prov}/dataset={ds_id}/tilesize={int(tile_size)}/buffer={int(buffer_size)}"
+                    h_path = f"{h_dir}/{b_name}"
 
                     writer.writerow({
-                        "task_id": idx + 1,
-                        "tile_id": t_id,
+                        "task_id": task_idx + 1,
+                        "tile_id": leaf_tid,
                         "basename": b_name,
                         "hive_dir": h_dir,
                         "hive_path": h_path,
                         "dataset_id": ds_id,
                         "provider": prov,
                         "grid_crs": row.get("grid_crs", str(grid_gdf.crs)),
-                        "tile_size": tile_size,
-                        "buffer_size": buffer_size,
+                        "tile_size": int(cur_t),
+                        "buffer_size": int(cur_b),
                         "core_minx": c_minx,
                         "core_miny": c_miny,
                         "core_maxx": c_maxx,

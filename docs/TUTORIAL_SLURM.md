@@ -444,7 +444,7 @@ Every tile is then naturally capped at $\sim 12.7\,\text{M points}$ ($\sim 4.8\,
 
 At scale, processing hundreds or thousands of spatial tiles is simply **one big loop**. Whether you run that loop across hundreds of compute nodes on a Slurm cluster or across multiple CPU cores on a local workstation, the control flow is identical.
 
-`als-finder plan --tasks-csv > tasks.csv` provides the **universal iterator**. Every row is an independent, self-contained unit of work containing all coordinate bounds, CRS definitions, point density estimates, and output basenames:
+`als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 10000000 --tasks-csv > tasks.csv` provides the **universal iterator**. Every row is an independent, self-contained unit of work containing all coordinate bounds, CRS definitions, point density estimates, and output basenames:
 
 ```
                   ┌─────────────────────────────────┐
@@ -493,13 +493,22 @@ R -e "library(terra); library(lidR); cat('R geospatial stack verified successful
 ### Step 2.1: The Fundamental Loop (First Principles)
 
 Before diving into distributed Slurm arrays or cluster schedulers, let's look at the basic loop. Every tile processing pipeline—regardless of language or environment—performs the same sequence:
-1. Read the tile assignment and metadata from `tasks.csv`.
-2. Stream the buffered tile lazily on-demand with `als-finder fetch tile`.
-3. Compute metrics in R (e.g. canopy height model, cover).
-4. Crop the buffer using the exact `core_minx`..`core_maxy` bounding box from `tasks.csv`.
-5. Remove the temporary `.laz` file to keep disk footprint near zero.
+1. Export a memory-safe `tasks.csv` using `--max-points` so point clouds fit in RAM.
+2. Read the tile assignment and metadata from `tasks.csv`.
+3. Stream the buffered tile lazily on-demand with `als-finder fetch tile`.
+4. Compute metrics in R (e.g. canopy height model, cover).
+5. Crop the buffer using the exact `core_minx`..`core_maxy` bounding box from `tasks.csv`.
+6. Remove the temporary `.laz` file to keep disk footprint near zero.
 
-#### The Loop in R:
+#### 1. Generate the Memory-Safe Task Table (`tasks.csv`):
+In your terminal, export `tasks.csv` passing `--max-points 10000000` so that any tile exceeding 10M points is automatically subdivided into safe, memory-bounded sub-tiles ($\sim 3.8\,\text{GB}$ RAM in R):
+
+```bash
+als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 10000000 --tasks-csv > tasks.csv
+head -n 5 tasks.csv
+```
+
+#### 2. The Loop in R:
 ```r
 library(terra)
 library(lidR)
