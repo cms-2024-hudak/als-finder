@@ -109,11 +109,14 @@ docker run --rm -v "${PWD}:/workspace" ghcr.io/cms-2024-hudak/als-finder:latest 
 ```
 
 #### Option B.2: Singularity / Apptainer (HPC Clusters like Expanse, Perlmutter, Bridges)
-On shared HPC supercomputers, users do not have root privileges and cannot run Docker. HPC systems instead provide **Apptainer / Singularity**:
+On shared HPC supercomputers, users do not have root/fakeroot privileges and cannot build containers from scratch or definition files. However, HPC environments allow unprivileged users to pull pre-built Docker images directly from a registry into an immutable Singularity Image File (`.sif`) using **`singularity pull`** (or **`apptainer pull`**):
 
 ```bash
-# 1. On cluster login node, build the Singularity Image File (.sif) directly from GHCR
-singularity build als-finder.sif docker://ghcr.io/cms-2024-hudak/als-finder:latest
+# 1. Pull and convert the Docker image into a .sif file (no root or fakeroot needed)
+singularity pull als-finder.sif docker://ghcr.io/cms-2024-hudak/als-finder:latest
+
+# If your cluster uses Apptainer (the modern Singularity fork):
+# apptainer pull als-finder.sif docker://ghcr.io/cms-2024-hudak/als-finder:latest
 
 # 2. Verify execution
 singularity exec als-finder.sif als-finder --version
