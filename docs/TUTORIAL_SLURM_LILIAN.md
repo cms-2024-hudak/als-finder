@@ -14,34 +14,40 @@ This tutorial provides a complete, production-grade guide for integrating **`als
 
 ### Method A: Conda Installation from GitHub (Windows & Linux/WSL)
 
-If you have never installed Python or Conda, start by installing **Miniforge** (a fast, lightweight Conda distribution preconfigured with `conda-forge`):
-- **Windows**: Download and install the [Miniforge3 Windows 64-bit installer](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe). During installation, choose "Just Me" and open the **Miniforge Prompt** from your Windows Start menu.
-- **Linux / WSL2 (Ubuntu/Debian)**: Run the following in your shell:
-  ```bash
-  curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-  bash Miniforge3-$(uname)-$(uname -m).sh -b -p "$HOME/miniforge3"
-  "$HOME/miniforge3/bin/conda" init bash
-  source ~/.bashrc
-  ```
-
-#### Step 1: Create a Dedicated Test Environment
-We will create an isolated environment named `als-tutorial` to ensure existing packages or system libraries do not conflict:
-
-**On Linux / WSL2:**
+#### Step 0: Check if Conda is Already Installed
+First, check if Conda is already on your system by typing:
 ```bash
-# Create the environment with all C++ and Python dependencies
-conda create -n als-tutorial -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv laspy git -y
+conda --version
+```
+- **If this prints a version number** (e.g. `conda 24.x.x`): Conda is already installed! **Skip directly to Step 1.**
+- **If it says "command not found":** Follow the installation below for your operating system:
 
-# Activate the tutorial environment
-conda activate als-tutorial
+**For Linux / WSL2 Users:**
+Copy and paste these terminal commands (only the lines of code, without the ```` ```bash ```` markers):
+```bash
+curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+bash Miniforge3-$(uname)-$(uname -m).sh -b -p "$HOME/miniforge3"
+"$HOME/miniforge3/bin/conda" init bash
+source ~/.bashrc
 ```
 
-**On Windows (Miniforge Prompt or PowerShell):**
-```powershell
-# Create the environment with all C++ and Python dependencies
-conda create -n als-tutorial -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv laspy git -y
+**For Windows Users:**
+1. Download the [Miniforge3 Windows Installer (.exe)](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe).
+2. Run the installer (choose "Just Me", accept defaults).
+3. From your Windows Start Menu, open **Miniforge Prompt** (or use PowerShell).
 
-# Activate the tutorial environment
+---
+
+#### Step 1: Create a Dedicated Test Environment
+We will create an isolated environment named `als-tutorial` to ensure existing packages or system libraries do not conflict.
+
+Run this command in your terminal (Linux/WSL) or Miniforge Prompt (Windows):
+```bash
+conda create -n als-tutorial -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv laspy git -y
+```
+
+Once creation finishes, activate the environment:
+```bash
 conda activate als-tutorial
 ```
 
