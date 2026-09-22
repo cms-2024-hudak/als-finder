@@ -1,6 +1,6 @@
 # als-finder
 
-**A high-performance, cloud-native CLI engine for discovering, streaming, and partitioning raw LiDAR point cloud data across the globe.**
+**A high-performance CLI engine for discovering, streaming, and partitioning raw LiDAR point cloud data across the globe.**
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/cms-2024-hudak/als-finder)
 
@@ -28,7 +28,7 @@ pip install git+https://github.com/cms-2024-hudak/als-finder.git
 
 ## 🧭 The Big-Data Architecture: The 4-Stage ALS Lifecycle
 
-Traditional tools force researchers to download massive, multi-gigabyte survey archives before doing any work. `als-finder` is built from the ground up for **cloud-native lazy evaluation and HPC job arrays**:
+Traditional tools force researchers to download massive, multi-gigabyte survey archives before doing any work. `als-finder` is built from the ground up for **lazy evaluation, on-demand streaming, and HPC job arrays**:
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌──────────────────┐     ┌──────────────────┐
