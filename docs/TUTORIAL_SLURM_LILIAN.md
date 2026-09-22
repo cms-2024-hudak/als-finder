@@ -4,7 +4,119 @@ This tutorial provides a complete, production-grade guide for integrating **`als
 
 ---
 
-## 1. Architectural Overview & The Master Planning Step
+## 1. Prerequisites & Environment Setup
+
+`als-finder` requires C++ geospatial libraries (GDAL, GEOS, PROJ, PDAL). Because configuring these from scratch can be challenging for users new to Python or Conda, we provide two recommended setup methods:
+- **Method A: From GitHub via Conda** (Recommended for local desktop/laptop testing on Windows or Linux/WSL).
+- **Method B: Containerized via Docker or Singularity / Apptainer** (Recommended for zero-install containers or unprivileged execution on HPC Slurm clusters).
+
+---
+
+### Method A: Conda Installation from GitHub (Windows & Linux/WSL)
+
+If you have never installed Python or Conda, start by installing **Miniforge** (a fast, lightweight Conda distribution preconfigured with `conda-forge`):
+- **Windows**: Download and install the [Miniforge3 Windows 64-bit installer](https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe). During installation, choose "Just Me" and open the **Miniforge Prompt** from your Windows Start menu.
+- **Linux / WSL2 (Ubuntu/Debian)**: Run the following in your shell:
+  ```bash
+  curl -L -O "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+  bash Miniforge3-$(uname)-$(uname -m).sh -b -p "$HOME/miniforge3"
+  "$HOME/miniforge3/bin/conda" init bash
+  source ~/.bashrc
+  ```
+
+#### Step 1: Create a Dedicated Test Environment
+We will create an isolated environment named `als-tutorial` to ensure existing packages or system libraries do not conflict:
+
+**On Linux / WSL2:**
+```bash
+# Create the environment with all C++ and Python dependencies
+conda create -n als-tutorial -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv laspy git -y
+
+# Activate the tutorial environment
+conda activate als-tutorial
+```
+
+**On Windows (Miniforge Prompt or PowerShell):**
+```powershell
+# Create the environment with all C++ and Python dependencies
+conda create -n als-tutorial -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv laspy git -y
+
+# Activate the tutorial environment
+conda activate als-tutorial
+```
+
+#### Step 2: Install als-finder from GitHub
+With your `als-tutorial` environment active, install `als-finder` directly from GitHub:
+
+```bash
+pip install git+https://github.com/cms-2024-hudak/als-finder.git
+```
+*(Alternatively, you can install the official release via `pip install als-finder==1.2.0`).*
+
+#### Step 3: Verify the Installation
+```bash
+als-finder --version
+als-finder --help
+```
+You should see:
+```text
+als-finder, version 1.2.0
+Usage: als-finder [OPTIONS] COMMAND [ARGS]...
+```
+
+---
+
+### Method B: Containerized Execution (Docker & Singularity / Apptainer)
+
+Containers bundle the entire operating system, GDAL, PDAL, Python, and `als-finder` into a single immutable image with zero manual environment configuration.
+
+#### Option B.1: Docker (Local Workstations & Development)
+Ensure Docker Desktop is running on your machine:
+
+**On Linux / WSL2 / macOS:**
+```bash
+# 1. Pull the pre-built image from GitHub Packages
+docker pull ghcr.io/cms-2024-hudak/als-finder:latest
+
+# 2. Verify the container
+docker run --rm ghcr.io/cms-2024-hudak/als-finder:latest --version
+
+# 3. Mount current directory to /workspace and run commands
+docker run --rm -v "$(pwd)":/workspace ghcr.io/cms-2024-hudak/als-finder:latest search --help
+```
+
+**On Windows (PowerShell):**
+```powershell
+# 1. Pull the pre-built image
+docker pull ghcr.io/cms-2024-hudak/als-finder:latest
+
+# 2. Verify the container
+docker run --rm ghcr.io/cms-2024-hudak/als-finder:latest --version
+
+# 3. Mount current directory to /workspace and run commands
+docker run --rm -v "${PWD}:/workspace" ghcr.io/cms-2024-hudak/als-finder:latest search --help
+```
+
+#### Option B.2: Singularity / Apptainer (HPC Clusters like Expanse, Perlmutter, Bridges)
+On shared HPC supercomputers, users do not have root privileges and cannot run Docker. HPC systems instead provide **Apptainer / Singularity**:
+
+```bash
+# 1. On cluster login node, build the Singularity Image File (.sif) directly from GHCR
+singularity build als-finder.sif docker://ghcr.io/cms-2024-hudak/als-finder:latest
+
+# 2. Verify execution
+singularity exec als-finder.sif als-finder --version
+
+# 3. Run inside Slurm batch jobs by mounting shared cluster storage and local scratch:
+singularity exec \
+  --bind /project:/project,/scratch:/scratch \
+  als-finder.sif \
+  als-finder fetch tile 15 --workspace /project/my_lab/lidar_project
+```
+
+---
+
+## 2. Architectural Overview & The Master Planning Step
 
 ### Distributed Architecture Rationale: Shared Pre-Flight Planning
 
@@ -61,7 +173,7 @@ Allowing hundreds or thousands of worker nodes to independently search and resol
 
 ---
 
-## 2. Phase 1: Shared Pre-Flight Master Planning
+## 3. Phase 1: Shared Pre-Flight Master Planning
 
 Execute this phase **once** on the login node or a lightweight 1-core interactive job. All outputs are saved to the cluster's shared filesystem (e.g., Lustre, GPFS, or NFS at `/project/my_lab/lidar_project`).
 
@@ -149,7 +261,7 @@ task_id,tile_id,basename,dataset_id,provider,grid_crs,tile_size,buffer_size,core
 
 ---
 
-## 3. Phase 2: Slurm Job Array Architecture
+## 4. Phase 2: Slurm Job Array Architecture
 
 Here is the complete Slurm batch submission script (`sbatch_lidar_metrics.slurm`):
 
@@ -228,7 +340,7 @@ echo "=== Task $SLURM_ARRAY_TASK_ID Finished Successfully ==="
 
 ---
 
-## 4. Phase 3: Raster Alignment & Mosaicking
+## 5. Phase 3: Raster Alignment & Mosaicking
 
 ### 4.1 Sub-Pixel Alignment Verification
 Because `als-finder` enforces coordinate origins snapped to exact integer multiples of the resolution:
@@ -260,7 +372,7 @@ gdal_translate -of COG -co COMPRESS=DEFLATE regional_canopy_cover_30m.vrt region
 
 ---
 
-## 5. Summary of Best Practices
+## 6. Summary of Best Practices
 
 | Workflow Component | Recommended Setting | Engineering Rationale |
 | :--- | :--- | :--- |
