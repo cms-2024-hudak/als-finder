@@ -45,6 +45,7 @@ Run this command in your terminal (Linux/WSL) or Miniforge Prompt (Windows):
 ```bash
 conda create -n als-tutorial -c conda-forge -y \
   python=3.11 \
+  gdal proj openssl libcurl \
   geopandas pdal python-pdal laspy pyogrio \
   shapely pyproj pystac stac-validator \
   requests click python-dotenv tqdm psutil git
@@ -73,6 +74,18 @@ You should see:
 als-finder, version 1.2.0
 Usage: als-finder [OPTIONS] COMMAND [ARGS]...
 ```
+
+> [!TIP]
+> **Linux / WSL2 Library Linking Note:**
+> On some Linux distributions (such as Ubuntu 22.04 LTS), the operating system's default OpenSSL is older (v3.0.2). If dynamic GDAL plugins warn that `OPENSSL_3.2.0 not found in /lib/x86_64-linux-gnu/`, tell your shell to prioritize Conda's modern libraries:
+> ```bash
+> export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+> ```
+> To automatically apply this every time you activate `als-tutorial`:
+> ```bash
+> conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib
+> conda activate als-tutorial
+> ```
 
 ---
 
