@@ -14,7 +14,7 @@ Because `als-finder` uses advanced C++ geospatial libraries (GDAL, PDAL, GEOS), 
 
 ```bash
 # 1. Create environment with all C++ and Python dependencies
-conda create -n als-finder -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv -y
+conda create -n als-finder -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv laspy -y
 
 # 2. Activate environment & install als-finder
 conda activate als-finder

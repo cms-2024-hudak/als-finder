@@ -20,28 +20,19 @@
 
 Because `als-finder` relies on advanced C++ geospatial libraries (`geopandas`, `shapely`, `pdal`, `gdal`), Conda or Mamba is the most reliable distribution channel.
 
-### Option A: Install from conda-forge (Official Stable)
+### Option A: Install from GitHub via Conda (Recommended)
 ```bash
-# Create a fresh environment with als-finder from conda-forge
-conda create -n als-finder -c conda-forge als-finder
-
-# Activate environment
-conda activate als-finder
-```
-
-### Option B: Install Bleeding-Edge from GitHub via Conda
-```bash
-# 1. Create a conda environment with all C++ and Python dependencies
-conda create -n als-finder -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv -y
+# 1. Create a conda environment with all C++ spatial dependencies from conda-forge
+conda create -n als-finder -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv laspy -y
 
 # 2. Activate the environment
 conda activate als-finder
 
-# 3. Install als-finder from GitHub
+# 3. Install als-finder directly from GitHub
 pip install git+https://github.com/cms-2024-hudak/als-finder.git
 ```
 
-### Option C: Install from Local Source Clone (Development)
+### Option B: Install from Local Source Clone / environment.yml (Development)
 ```bash
 # 1. Clone repository
 git clone https://github.com/cms-2024-hudak/als-finder.git
