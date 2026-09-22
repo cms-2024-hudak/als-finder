@@ -31,6 +31,6 @@ RUN pip install --no-cache-dir --no-deps -e .
 # Copy documentation after install so doc edits do not bust code build cache
 COPY --chown=$MAMBA_USER:$MAMBA_USER docs/ docs/
 
-# Define the entrypoint
-ENTRYPOINT ["/usr/local/bin/_entrypoint.sh", "python", "-m", "als_finder.cli"]
+# Define the entrypoint using the console_script directly
+ENTRYPOINT ["/usr/local/bin/_entrypoint.sh", "als-finder"]
 CMD ["--help"]
