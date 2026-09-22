@@ -43,7 +43,7 @@ We will create an isolated environment named `als-tutorial` to ensure existing p
 
 Run this command in your terminal (Linux/WSL) or Miniforge Prompt (Windows) — it works identically on all systems:
 ```bash
-conda create -n als-tutorial -c conda-forge -y python=3.11 pip gdal proj geopandas pdal python-pdal laspy pyogrio shapely pyproj pystac stac-validator requests click python-dotenv tqdm psutil git
+conda create -n als-tutorial -c conda-forge -y python=3.11 pip gdal proj boto3 geopandas pdal python-pdal laspy pyogrio shapely pyproj pystac stac-validator requests click python-dotenv tqdm psutil git
 ```
 
 Once creation finishes, activate the environment:

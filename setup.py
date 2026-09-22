@@ -27,6 +27,8 @@ setup(
         "pystac",
         "stac-validator",
         "psutil",
+        "boto3",
+        "laspy",
     ],
     extras_require={
         "dev": ["pytest", "setuptools_scm", "build"],
