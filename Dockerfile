@@ -18,17 +18,18 @@ RUN micromamba install -y -n base -c conda-forge \
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy the application code
+# Copy build definition and source files
+COPY --chown=$MAMBA_USER:$MAMBA_USER pyproject.toml setup.py README.md ./
 COPY --chown=$MAMBA_USER:$MAMBA_USER src/ src/
-COPY --chown=$MAMBA_USER:$MAMBA_USER docs/ docs/
-COPY --chown=$MAMBA_USER:$MAMBA_USER README.md .
-COPY --chown=$MAMBA_USER:$MAMBA_USER setup.py .
 
-# Install the package itself in editable mode via pip (since micromamba provides pip)
-# We use the micromamba python interpreter
+# Install package in editable mode without re-resolving pre-installed conda dependencies
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
-ENV SETUPTOOLS_SCM_PRETEND_VERSION=0.1.0
-RUN pip install --no-cache-dir -e .
+ARG VERSION=1.2.0
+ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
+RUN pip install --no-cache-dir --no-deps -e .
+
+# Copy documentation after install so doc edits do not bust code build cache
+COPY --chown=$MAMBA_USER:$MAMBA_USER docs/ docs/
 
 # Define the entrypoint
 ENTRYPOINT ["/usr/local/bin/_entrypoint.sh", "python", "-m", "als_finder.cli"]
