@@ -30,6 +30,9 @@ conda activate als-finder
 
 # 3. Install als-finder directly from GitHub
 pip install git+https://github.com/cms-2024-hudak/als-finder.git
+
+# 4. (Later) To update an existing install to the latest GitHub commit:
+python -m pip install --force-reinstall --no-deps git+https://github.com/cms-2024-hudak/als-finder.git
 ```
 
 ### Option B: Install from Local Source Clone / environment.yml (Development)

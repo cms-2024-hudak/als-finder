@@ -52,13 +52,21 @@ conda activate als-tutorial
 ```
 
 #### Step 2: Install als-finder from GitHub
-With your `als-tutorial` environment active, install the latest `als-finder` from GitHub using `--no-cache-dir` (to guarantee you pull the latest commits rather than a cached local wheel):
+With your `als-tutorial` environment active, install the latest `als-finder` from GitHub:
 
 ```bash
 python -m pip install --no-cache-dir git+https://github.com/cms-2024-hudak/als-finder.git
 ```
 
-*(Tip: If you ever need to completely reset and recreate your environment from scratch, run `conda deactivate && conda env remove -n als-tutorial -y` before running Step 1).*
+> [!TIP]
+> **How to Update to the Latest GitHub Version**
+> If you already have `als-finder` installed and want to pull newly pushed bugfixes or commits from GitHub, running a standard `pip install` will say *"Requirement already satisfied"* and skip updating because the package version is already registered.
+>
+> Run this command to force `pip` to overwrite with the newest GitHub commits without touching your Conda-managed geospatial dependencies (GDAL, PDAL, GeoPandas):
+> ```bash
+> python -m pip install --force-reinstall --no-deps git+https://github.com/cms-2024-hudak/als-finder.git
+> ```
+> *(If you ever need a 100% fresh start: `conda deactivate && conda env remove -n als-tutorial -y`)*
 
 #### Step 3: Verify the Installation
 ```bash
