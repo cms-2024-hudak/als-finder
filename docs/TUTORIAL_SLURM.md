@@ -504,17 +504,22 @@ Before diving into distributed Slurm arrays or cluster schedulers, let's look at
 library(terra)
 library(lidR)
 
-# 1. Load the task manifest
+# 1. Load the full task manifest (contains all 1,039 tiles)
 tasks <- read.csv("tasks.csv")
+cat(sprintf("Loaded master task table with %d total tiles.\n", nrow(tasks)))
+
+# 2. For local testing, subset to just a few tiles (e.g., the first 3 tiles)
+# (When ready to run everything, simply use: test_tasks <- tasks)
+test_tasks <- head(tasks, 3)
+cat(sprintf("Looping through a subset of %d test tiles...\n", nrow(test_tasks)))
+
 dir.create("scratch_tiles", showWarnings = FALSE)
 dir.create("outputs", showWarnings = FALSE)
 
-cat(sprintf("Starting processing loop across %d tiles...\n", nrow(tasks)))
-
-# 2. Iterate through each tile
-for (i in 1:nrow(tasks)) {
-  task <- tasks[i, ]
-  cat(sprintf("[%d/%d] Processing Tile %s (%s)...\n", i, nrow(tasks), task$tile_id, task$basename))
+# 3. Iterate through each tile in the subset
+for (i in 1:nrow(test_tasks)) {
+  task <- test_tasks[i, ]
+  cat(sprintf("\n--- [%d/%d] Processing Tile %s (%s) ---\n", i, nrow(test_tasks), task$tile_id, task$basename))
   
   # A. Stream buffered tile on-demand via als-finder
   system2("als-finder", args = c(
@@ -598,10 +603,12 @@ process_one_tile <- function(task) {
 }
 
 tasks <- read.csv("tasks.csv")
+# Subset to 4 tiles for local testing
+test_tasks <- head(tasks, 4)
 num_cores <- min(4, detectCores() - 1)
 
-# Run 4 tiles concurrently
-results <- mclapply(1:nrow(tasks), function(i) process_one_tile(tasks[i, ]), mc.cores = num_cores)
+# Run tiles concurrently across CPU cores
+results <- mclapply(1:nrow(test_tasks), function(i) process_one_tile(test_tasks[i, ]), mc.cores = num_cores)
 ```
 
 ---
