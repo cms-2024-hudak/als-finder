@@ -36,7 +36,7 @@ class OpenTopographyProvider(BaseProvider):
     def check_access(self) -> bool:
         """Check if API key is present and valid by hitting a lightweight endpoint."""
         if not self.api_key:
-            logger.error("OpenTopography API Key is missing. Please set OPENTOPOGRAPHY_API_KEY.")
+            logger.info("OpenTopography API key not provided; skipping OpenTopography searches.")
             return False
             
         # Verify connectivity/key with a lightweight call (e.g. searching for a tiny area or checking user info if possible)
