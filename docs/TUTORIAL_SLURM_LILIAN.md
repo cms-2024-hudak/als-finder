@@ -41,14 +41,9 @@ source ~/.bashrc
 #### Step 1: Create a Dedicated Test Environment
 We will create an isolated environment named `als-tutorial` to ensure existing packages or system libraries do not conflict.
 
-Run this command in your terminal (Linux/WSL) or Miniforge Prompt (Windows):
+Run this command in your terminal (Linux/WSL) or Miniforge Prompt (Windows) — it works identically on all systems:
 ```bash
-conda create -n als-tutorial -c conda-forge -y \
-  python=3.11 pip \
-  gdal proj openssl libcurl \
-  geopandas pdal python-pdal laspy pyogrio \
-  shapely pyproj pystac stac-validator \
-  requests click python-dotenv tqdm psutil git
+conda create -n als-tutorial -c conda-forge -y python=3.11 pip gdal proj geopandas pdal python-pdal laspy pyogrio shapely pyproj pystac stac-validator requests click python-dotenv tqdm psutil git
 ```
 
 Once creation finishes, activate the environment:
@@ -84,7 +79,7 @@ Containers bundle the entire operating system, GDAL, PDAL, Python, and `als-find
 #### Option B.1: Docker (Local Workstations & Development)
 Ensure Docker Desktop is running on your machine:
 
-**On Linux / WSL2 / macOS:**
+**On Linux / WSL2 / macOS (Bash):**
 ```bash
 # 1. Pull the pre-built image from GitHub Packages
 docker pull ghcr.io/cms-2024-hudak/als-finder:latest
@@ -96,17 +91,18 @@ docker run --rm ghcr.io/cms-2024-hudak/als-finder:latest --version
 docker run --rm -v "$(pwd)":/workspace ghcr.io/cms-2024-hudak/als-finder:latest search --help
 ```
 
-**On Windows (PowerShell):**
-```powershell
-# 1. Pull the pre-built image
+**On Windows (Miniforge Prompt / Command Prompt):**
+```cmd
+:: 1. Pull the pre-built image from GitHub Packages
 docker pull ghcr.io/cms-2024-hudak/als-finder:latest
 
-# 2. Verify the container
+:: 2. Verify the container
 docker run --rm ghcr.io/cms-2024-hudak/als-finder:latest --version
 
-# 3. Mount current directory to /workspace and run commands
-docker run --rm -v "${PWD}:/workspace" ghcr.io/cms-2024-hudak/als-finder:latest search --help
+:: 3. Mount current directory to /workspace and run commands
+docker run --rm -v "%cd%:/workspace" ghcr.io/cms-2024-hudak/als-finder:latest search --help
 ```
+*(If using PowerShell on Windows instead: use `-v "${PWD}:/workspace"` for the mount).*
 
 #### Option B.2: Singularity / Apptainer (HPC Clusters like Expanse, Perlmutter, Bridges)
 On shared HPC supercomputers, users do not have root/fakeroot privileges and cannot build containers from scratch or definition files. However, HPC environments allow unprivileged users to pull pre-built Docker images directly from a registry into an immutable Singularity Image File (`.sif`) using **`singularity pull`** (or **`apptainer pull`**):
@@ -189,28 +185,33 @@ Allowing hundreds or thousands of worker nodes to independently search and resol
 
 ## 3. Phase 1: Shared Pre-Flight Master Planning
 
-Execute this phase **once** on the login node or a lightweight 1-core interactive job. All outputs are saved to the cluster's shared filesystem (e.g., Lustre, GPFS, or NFS at `/project/my_lab/lidar_project`).
+Pre-flight planning organizes the catalog, regularizes the spatial tiling grid, and generates the worker task manifest.
 
-### Step 1.1: Search Remote Datasets Across Providers
-Search for point clouds intersecting your Region of Interest (ROI):
+To make all tutorial commands **100% identical and portable across Windows, Linux, WSL, and macOS**, we will work in a local project folder and use relative paths (`.`):
+
+### Step 1.0: Setup Project Directory & Extract Sample ROI
+Run these commands in your terminal (Linux/WSL) or Miniforge Prompt (Windows):
 
 ```bash
-# Set your shared project workspace path
-export SHARED_DIR="/project/my_lab/lidar_project"
-mkdir -p "$SHARED_DIR"
+mkdir lidar_project
+cd lidar_project
+als-finder get-example-roi
+```
+*(This extracts the bundled Lake Tahoe Region of Interest: `ltbmu_boundary.gpkg`).*
 
+> [!TIP]
+> **HPC / Cluster Deployment Note:**
+> On a shared supercomputer (e.g. Slurm on Lustre/GPFS), perform these same steps once on the login node inside your shared allocation folder (e.g., `cd /project/my_lab/lidar_project`). All worker nodes will then share the same catalog and task manifest.
+
+### Step 1.1: Search Remote Datasets Across Providers
+Search for point clouds intersecting your Region of Interest into the current workspace (`.`):
+
+```bash
 # Option A: Search across all supported public archives
-als-finder search \
-  --roi "$SHARED_DIR/aoi_boundary.geojson" \
-  --date 2018:2024 \
-  --workspace "$SHARED_DIR"
+als-finder search --roi ltbmu_boundary.gpkg --date 2018:2024 --workspace .
 
 # Option B: Target specific providers (comma-separated: usgs, noaa, opentopography, neon, gliht, earthdata)
-als-finder search \
-  --roi "$SHARED_DIR/aoi_boundary.geojson" \
-  --provider usgs,noaa \
-  --cloud-native \
-  --workspace "$SHARED_DIR"
+als-finder search --roi ltbmu_boundary.gpkg --provider usgs,noaa --workspace .
 ```
 
 ### Step 1.2: Selecting the Optimal Tile & Buffer Size for 30 m Rasters
@@ -235,11 +236,8 @@ When the primary objective is generating **30 m ecological or topographic raster
 - **Buffer Size:** `30` meters (1 pixel buffer collar $\rightarrow$ total bounds $1260\,\text{m} = 42$ pixels) or `60` meters (2 pixel buffer collar $\rightarrow$ total bounds $1320\,\text{m} = 44$ pixels).
 
 ```bash
-# Generate the 1200m / 30m regularized grid (default in als-finder v1.3+)
-als-finder plan \
-  --workspace "$SHARED_DIR" \
-  --tile-size 1200 \
-  --buffer-size 30
+# Generate the 1200m / 30m regularized grid
+als-finder plan --workspace . --tile-size 1200 --buffer-size 30
 ```
 
 ### Step 1.3: Exporting the All-Inclusive Task Manifest (`tasks.csv`)
@@ -247,10 +245,16 @@ als-finder plan \
 Rather than having Slurm workers open and parse individual JSON sidecar files during runtime, `als-finder` can export a single, self-contained **rich CSV manifest** containing all spatial bounds, CRS codes, point estimates, and basenames:
 
 ```bash
-als-finder plan \
-  --workspace "$SHARED_DIR" \
-  --tasks-csv > "$SHARED_DIR/tasks.csv"
+als-finder plan --workspace . --tasks-csv > tasks.csv
 ```
+
+### Step 1.4: Test Single-Tile Streaming Locally (Optional Verification)
+Before submitting a large Slurm array, you can test data streaming on a single tile (e.g. Tile 0) on your local machine:
+
+```bash
+als-finder fetch tile 0 --workspace . --output ./scratch_tiles --tile-size 1200 --buffer-size 30 --spatial-name
+```
+*(This streams Tile 0 into `scratch_tiles/` with exact 1200m core bounds and 30m spatial buffer).*
 
 Each row of `tasks.csv` provides a complete task definition:
 ```csv
