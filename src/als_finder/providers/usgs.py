@@ -44,7 +44,7 @@ class USGSProvider(BaseProvider):
             minx, miny, maxx, maxy = roi.bounds
             url = "https://index.nationalmap.gov/arcgis/rest/services/3DEPElevationIndex/MapServer/8/query"
             params = {
-                "geometry": f"{minx},{miny},{maxx},{maxy}",
+                "geometry": f"{minx:.6f},{miny:.6f},{maxx:.6f},{maxy:.6f}",
                 "geometryType": "esriGeometryEnvelope",
                 "inSR": "4326",
                 "spatialRel": "esriSpatialRelIntersects",
