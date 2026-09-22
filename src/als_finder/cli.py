@@ -1,6 +1,7 @@
 import click
 import logging
 import json
+import math
 import os
 import shutil
 import sys
@@ -1599,33 +1600,61 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
         audit_info = None
         leaf_ids = []
         if max_points is not None:
-            density = float(spec_0.get("point_density") or 10.0)
             cur_t = float(spec_0.get("nominal_tile_size", spec_0.get("tile_size", tile_size)))
             cur_b = float(spec_0.get("nominal_buffer_size", spec_0.get("buffer_size", buffer_size)))
-            tile_pts = int(density * ((cur_t + 2 * cur_b) ** 2))
-            floor_pts = int(density * (4.0 * (cur_b ** 2)))
-            is_hyperdense = (floor_pts >= max_points)
-            needs_subdiv = (tile_pts > max_points)
-            split_count = total_tiles if needs_subdiv else 0
-            standard_count = 0 if needs_subdiv else total_tiles
+            default_density = float(spec_0.get("point_density") or 10.0)
+
+            def _resolve_leaf_tasks(tid: str, c_size: float, b_size: float, dens: float, budget: int, depth: int = 0, max_depth: int = 2) -> List[str]:
+                pts = int(dens * ((c_size + 2 * b_size) ** 2))
+                buf_floor = int(dens * (4.0 * (b_size ** 2)))
+                if pts <= budget or buf_floor >= budget or depth >= max_depth or c_size <= 150:
+                    return [tid]
+                sub = []
+                for q in ["NW", "NE", "SW", "SE"]:
+                    sub.extend(_resolve_leaf_tasks(f"{tid}_{q}", c_size / 2.0, b_size, dens, budget, depth + 1, max_depth))
+                return sub
+
+            l0_count = 0
+            l1_count = 0
+            l2_count = 0
+
+            for i in range(total_tiles):
+                row_density = default_density
+                if "point_density" in grid_gdf.columns:
+                    val = grid_gdf.iloc[i].get("point_density")
+                    if val is not None and not (isinstance(val, float) and math.isnan(val)):
+                        try:
+                            row_density = float(val)
+                        except Exception:
+                            pass
+                sub_tasks = _resolve_leaf_tasks(str(i), cur_t, cur_b, row_density, max_points)
+                leaf_ids.extend(sub_tasks)
+                first_task = sub_tasks[0]
+                tokens = len(first_task.split("_")) - 1
+                if tokens == 0:
+                    l0_count += 1
+                elif tokens == 1:
+                    l1_count += 1
+                else:
+                    l2_count += 1
+
+            tile_pts_0 = int(default_density * ((cur_t + 2 * cur_b) ** 2))
+            floor_pts_0 = int(default_density * (4.0 * (cur_b ** 2)))
+            is_hyperdense = (floor_pts_0 >= max_points)
 
             audit_info = {
                 "max_points": max_points,
-                "point_density": density,
-                "estimated_points_per_tile": tile_pts,
-                "buffer_floor_points": floor_pts,
-                "standard_tiles": standard_count,
-                "subdivided_tiles": split_count,
-                "hyperdense_tiles_count": total_tiles if is_hyperdense else 0,
+                "point_density": default_density,
+                "estimated_points_per_tile": tile_pts_0,
+                "buffer_floor_points": floor_pts_0,
+                "standard_tiles": l0_count,
+                "subdivided_tiles": l1_count + l2_count,
+                "l1_subdivided_tiles": l1_count,
+                "l2_subdivided_tiles": l2_count,
+                "total_leaf_tasks": len(leaf_ids),
                 "is_hyperdense": is_hyperdense,
-                "recommended_mem_gb": round((max(tile_pts, floor_pts) * 250) / 1e9 * 1.5, 1) if is_hyperdense else 4.0
+                "recommended_mem_gb": round((max(tile_pts_0, floor_pts_0) * 250) / 1e9 * 1.5, 1) if is_hyperdense else 4.0
             }
-
-            for i in range(total_tiles):
-                if needs_subdiv:
-                    leaf_ids.extend([f"{i}_NW", f"{i}_NE", f"{i}_SW", f"{i}_SE"])
-                else:
-                    leaf_ids.append(str(i))
         else:
             leaf_ids = [str(i) for i in range(total_tiles)]
 
@@ -1761,7 +1790,10 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
                 click.echo(f"  Max Points Budget: {audit_info['max_points']:,}", err=True)
                 click.echo(f"  Est Points/Tile:   {audit_info['estimated_points_per_tile']:,}", err=True)
                 if audit_info['subdivided_tiles'] > 0:
-                    click.echo(f"  Subdivision:       {audit_info['subdivided_tiles']} tiles exceed budget (split into 4 quadrants each)", err=True)
+                    if audit_info.get('l2_subdivided_tiles', 0) > 0:
+                        click.echo(f"  Subdivision:       {audit_info['subdivided_tiles']} tiles exceed budget ({audit_info.get('l1_subdivided_tiles', 0)} split into 4 quadrants, {audit_info.get('l2_subdivided_tiles', 0)} split into 16 sub-quadrants)", err=True)
+                    else:
+                        click.echo(f"  Subdivision:       {audit_info['subdivided_tiles']} tiles exceed budget (split into 4 quadrants each)", err=True)
                     click.echo(f"  Slurm Array Size:  --array=1-{len(leaf_ids)}", err=True)
                 else:
                     click.echo(f"  Standard Status:   All {total_tiles:,} tiles fit within memory budget", err=True)

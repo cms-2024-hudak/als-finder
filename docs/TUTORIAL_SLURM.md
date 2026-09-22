@@ -1,6 +1,6 @@
 # Tutorial: Scaling LiDAR Metric Extraction with als-finder and Slurm
 
-This tutorial provides a complete, production-grade guide for integrating **`als-finder`** with **Lilian Vallet's LiDAR metric extraction workflow** ([`scratch/sample_workflow/extract_lidar_metrics.R`](file:///mnt/c/Users/gears/git/als-finder/scratch/sample_workflow/extract_lidar_metrics.R)) on High-Performance Computing (HPC) clusters managed by Slurm.
+This tutorial provides a complete, production-grade guide for integrating **`als-finder`** with **standard LiDAR metric extraction workflows in R/lidR** (such as [`scratch/sample_workflow/extract_lidar_metrics.R`](file:///mnt/c/Users/gears/git/als-finder/scratch/sample_workflow/extract_lidar_metrics.R)) on High-Performance Computing (HPC) clusters managed by Slurm.
 
 ---
 
@@ -285,7 +285,7 @@ task_id,tile_id,basename,dataset_id,provider,grid_crs,tile_size,buffer_size,core
 1. **Zero JSON Dependencies in Workers:** Workers do not need `jsonlite` in R or `jq` in bash.
 2. **Instant 1-Row Read:** In R, the worker loads its assignment in a single operation: `task <- read.csv("tasks.csv")[task_id, ]`.
 3. **Native Cropping & Vectorization:** The worker accesses `task$core_minx` through `task$core_maxy` directly for cropping rasters without guessing or calculating extents.
-4. **Direct Prepending to Metrics Outputs:** When Lilian's script finishes extracting forest statistics, it can immediately prepend the task metadata to its results:
+4. **Direct Prepending to Metrics Outputs:** When your R metric extraction script finishes computing forest statistics, it can immediately prepend the task metadata to its results:
    ```r
    out_row <- cbind(task, data.frame(
      mean_canopy_cover = mean(terra::values(r_cover), na.rm=TRUE),
@@ -314,17 +314,46 @@ Now that you understand the standard uniform grid workflow, what happens if your
 Notice the `est_points` and `recommended_mem_gb` columns in your `tasks.csv`:
 - In our Lake Tahoe search, the 2022 Sierra Nevada USGS dataset has a point density of **$29.18\,\text{pts/m}^2$**.
 - A $1200\,\text{m}$ core tile with a $30\,\text{m}$ buffer ($1260\,\text{m} \times 1260\,\text{m}$) contains **$\sim 46{,}326{,}000\text{ points}$**.
-- Loading 46 million points into R via `lidR::readLAS` requires approximately **$12\text{--}18\,\text{GB}$ of RAM**. On standard compute nodes allocated $8\,\text{GB}$ or $16\,\text{GB}$ of RAM per worker, this will cause an **Out-Of-Memory (OOM) crash** (`slurmstepd: error: Detected 1 oom-kill event`).
+- Loading 46 million points into R via `lidR::readLAS` requires approximately **$14\text{--}18\,\text{GB}$ of RAM**. On standard compute nodes allocated $8\,\text{GB}$ or $12\,\text{GB}$ of RAM per worker, this will trigger an **Out-Of-Memory (OOM) crash** (`slurmstepd: error: Detected 1 oom-kill event`).
 
-`als-finder` provides two complementary solutions to control worker memory before submitting jobs to Slurm:
+---
 
-#### Option A: Dynamic Quadtree Subdivision (`--max-points`)
-Set a point budget (e.g. `--max-points 15000000` $\approx 6\,\text{GB}$ RAM in R). `als-finder` audits the grid and automatically calculates how many tiles need to be split into 4 quadrants:
+#### Understanding the Suggested Max Points Formula
+
+How does `als-finder` calculate `recommended_mem_gb` and determine an appropriate point budget?
+
+In R, the `lidR` package stores point cloud structures as S4 `LAS` objects containing coordinates, attributes, classifications, and spatial index trees:
+1. **Base Memory per Point ($\approx 250\text{ bytes}$):**
+   Double-precision $(X, Y, Z)$ coordinates (24 bytes) + intensity, return counts, classification flags, scan angles, user data (16 bytes) + internal R data.table vector overhead and kd-tree spatial indexing ($\sim 200\text{ bytes}$).
+2. **Peak Working Memory Multiplier ($1.5\times$):**
+   When `lidR` interpolates a Canopy Height Model (CHM), builds Delaunay triangulations, or calculates grid metrics, R allocates intermediate raster matrices and temporary arrays before garbage collection.
+3. **The Memory Equation:**
+   $$\text{Peak RAM (GB)} \approx \frac{\text{Point Count} \times 250\,\text{bytes} \times 1.5}{10^9} = \frac{\text{Point Count} \times 375}{10^9}$$
+
+Based on your cluster's Slurm node partitions, use this sizing guide to set `--max-points`:
+
+| Slurm Worker Allocation (`--mem`) | Safe Point Budget (`--max-points`) | Est. Peak RAM in R | Headroom for OS & Caching |
+| :--- | :--- | :--- | :--- |
+| **8 GB** | `10000000` (10M pts) | $\approx 3.75\,\text{GB}$ | $4.25\,\text{GB}$ (Recommended for standard 8 GB nodes) |
+| **12 GB** | `15000000` (15M pts) | $\approx 5.6\,\text{GB}$ | $6.4\,\text{GB}$ (Safe) |
+| **16 GB** | `25000000` (25M pts) | $\approx 9.4\,\text{GB}$ | $6.6\,\text{GB}$ (Safe) |
+| **32 GB** | `50000000` (50M pts) | $\approx 18.7\,\text{GB}$ | $13.3\,\text{GB}$ (Safe) |
+
+---
+
+#### Option A: Dynamic Multi-Level Quadrant Subdivision (`--max-points`)
+
+Rather than re-engineering your entire grid by hand, you can pass `--max-points` directly to `als-finder plan`. `als-finder` audits every tile against the budget and dynamically subdivides tiles that exceed the limit.
+
+Because $1200\,\text{m}$ divides cleanly into halves ($600\,\text{m}$) and quarters ($300\,\text{m}$), all sub-tiles remain **exact integer multiples of $30\,\text{m}$ pixels** ($40 \times 40 \rightarrow 20 \times 20 \rightarrow 10 \times 10$ pixels), ensuring zero edge misalignment or resampling distortion.
+
+##### 1. One-Level Subdivision Example (`--max-points 15000000`):
+With a 15M budget, a 46M-point tile ($1200\,\text{m}$) is split into 4 quadrants ($600\,\text{m}$ core, $660\,\text{m}$ buffered $\approx 12.7\text{M points} \le 15\text{M}$):
 
 ```bash
 als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 15000000
 ```
-
+*Output:*
 ```text
 ==================================================
  ALS-FINDER SPATIAL PLANNING & GRID METRICS
@@ -343,30 +372,63 @@ als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 150
   Slurm Array Size:  --array=1-4156
 ==================================================
 ```
-
-##### 1. Generating Subdivided Task IDs:
-Passing `--tasks` with `--max-points` generates the complete list of leaf tasks for your Slurm array:
+Generating leaf tasks produces Level-1 tokens (`0_NW`, `0_NE`, `0_SW`, `0_SE`):
 ```bash
-als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 15000000 --tasks > tasks.txt
-head -n 8 tasks.txt
+als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 15000000 --tasks | head -n 4
 ```
-*Output:*
 ```text
 0_NW
 0_NE
 0_SW
 0_SE
-1_NW
-1_NE
-1_SW
-1_SE
 ```
 
-##### 2. On-the-Fly Quadrant Streaming:
-When a worker fetches a quadrant sub-tile (e.g., `als-finder fetch tile 0_NW ...`), `als-finder` automatically:
-- Halves the core tile size from $1200\,\text{m}$ to **$600\,\text{m}$** (which still divides cleanly into $20 \times 20$ pixels at $30\,\text{m}$).
-- Retains the full **$30\,\text{m}$ buffer collar** to prevent border edge effects.
-- Streams only **$\sim 11.5\,\text{M points}$** ($\sim 4.5\,\text{GB}$ RAM in R), allowing the task to execute safely within low-memory HPC allocations.
+##### 2. Two-Level Subdivision Example (`--max-points 10000000`):
+If your cluster nodes only have $8\,\text{GB}$ of RAM, set `--max-points 10000000`. Because $12.7\text{M points}$ (Level 1) still exceeds 10M, `als-finder` automatically recurses into **Level 2** ($300\,\text{m}$ core, $360\,\text{m}$ buffered $\approx 3.78\text{M points}$), creating 16 sub-quadrants:
+
+```bash
+als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 10000000
+```
+*Output:*
+```text
+==================================================
+ ALS-FINDER SPATIAL PLANNING & GRID METRICS
+==================================================
+  Master Tiles:      1,039
+  Total Leaf Tasks:  16,624
+  Tile ID Range:     0 to 1038
+--------------------------------------------------
+ MEMORY RISK AUDIT (PRE-FLIGHT):
+  Max Points Budget: 10,000,000
+  Est Points/Tile:   46,326,168
+  Subdivision:       1039 tiles exceed budget (0 split into 4 quadrants, 1039 split into 16 sub-quadrants)
+  Slurm Array Size:  --array=1-16624
+==================================================
+```
+Inspecting the leaf tasks reveals the hierarchical two-level tokens:
+```bash
+als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 10000000 --tasks | head -n 8
+```
+```text
+0_NW_NW
+0_NW_NE
+0_NW_SW
+0_NW_SE
+0_NE_NW
+0_NE_NE
+0_NE_SW
+0_NE_SE
+```
+
+##### 3. Heterogeneous Regional Surveys (Mixed Densities):
+If an ROI covers mixed survey vintages (e.g. legacy $5\,\text{pts/m}^2$, standard $12\,\text{pts/m}^2$, and recent $30\,\text{pts/m}^2$):
+- **Sparse tiles** ($\le 6.3\,\text{pts/m}^2$) stay whole as Level 0 ($1200\,\text{m}$).
+- **Moderate tiles** ($6.3\text{--}22.9\,\text{pts/m}^2$) split once into 4 quadrants ($600\,\text{m}$, e.g. `14_NW`).
+- **Dense tiles** ($> 22.9\,\text{pts/m}^2$) split twice into 16 sub-quadrants ($300\,\text{m}$, e.g. `0_NW_SE`).
+
+Every worker streams its assigned sub-tile on-demand using its exact task ID (e.g. `als-finder fetch tile 0_NW_SE ...`), automatically inheriting the correct scaled core bounding box while preserving the full $30\,\text{m}$ buffer.
+
+---
 
 #### Option B: Sizing the Nominal Grid to $600\,\text{m}$
 If an entire study area consists of uniform high-density lidar ($\ge 25\,\text{pts/m}^2$), you can avoid subdivision entirely by generating the nominal grid at $600\,\text{m}$ ($20 \times 20$ pixels at $30\,\text{m}$):
@@ -375,6 +437,12 @@ als-finder plan --workspace . --tile-size 600 --buffer-size 30 --overwrite
 als-finder plan --workspace . --tasks-csv > tasks.csv
 ```
 Every tile is then naturally capped at $\sim 12.7\,\text{M points}$ ($\sim 4.8\,\text{GB}$ in R) and executes smoothly on standard 8 GB nodes.
+
+---
+
+## Phase 2: Distributed Processing on Slurm
+
+### Step 2.1: The Slurm Batch Submission Script (`sbatch_lidar_metrics.slurm`)
 
 Here is the complete Slurm batch submission script (`sbatch_lidar_metrics.slurm`):
 
@@ -428,7 +496,7 @@ als-finder fetch tile "$TILE_ID" \
   --spatial-name \
   --sidecar
 
-# 5. Run Lilian's Metric Extraction Script (Unmodified)
+# 5. Run LiDAR Metric Extraction Script (extract_lidar_metrics.R)
 export PROJECT_DIR="$LOCAL_DIR"
 export DATA_FOLDER="$LOCAL_IN"
 export OUTPUT_FOLDER="$LOCAL_OUT"

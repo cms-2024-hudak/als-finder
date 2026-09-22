@@ -13,3 +13,4 @@ The following modular rules apply across all agent sessions in this workspace:
 - **Workflows & Slurm Recipes**: [docs/WORKFLOWS.md](docs/WORKFLOWS.md)
 - **Installation Guide**: [docs/INSTALLATION.md](docs/INSTALLATION.md)
 - **Multi-Scale Tiling Design**: [multiscale_tiling_spec.md](multiscale_tiling_spec.md)
+- **HPC Slurm Tutorial**: [docs/TUTORIAL_SLURM.md](docs/TUTORIAL_SLURM.md)
