@@ -52,7 +52,7 @@ class USGSProvider(BaseProvider):
                 "returnGeometry": "false",
                 "f": "json"
             }
-            resp = requests.get(url, params=params, headers={"User-Agent": "als-finder/1.1"}, timeout=8)
+            resp = requests.get(url, params=params, headers={"User-Agent": "als-finder/1.2"}, timeout=15)
             if resp.status_code != 200:
                 return {}
             data = resp.json()
