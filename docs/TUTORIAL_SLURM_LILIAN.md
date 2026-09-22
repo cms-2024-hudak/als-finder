@@ -203,18 +203,7 @@ als-finder get-example-roi
 > **HPC / Cluster Deployment Note:**
 > On a shared supercomputer (e.g. Slurm on Lustre/GPFS), perform these same steps once on the login node inside your shared allocation folder (e.g., `cd /project/my_lab/lidar_project`). All worker nodes will then share the same catalog and task manifest.
 
-### Step 1.1: Search Remote Datasets Across Providers
-Search for point clouds intersecting your Region of Interest into the current workspace (`.`):
-
-```bash
-# Option A: Search across all supported public archives
-als-finder search --roi ltbmu_boundary.gpkg --date 2018:2024 --workspace .
-
-# Option B: Target specific providers (comma-separated: usgs, noaa, opentopography, neon, gliht, earthdata)
-als-finder search --roi ltbmu_boundary.gpkg --provider usgs,noaa --workspace .
-```
-
-#### Provider Authentication & Free API Keys
+### Step 1.1: Provider Authentication & Free API Keys (Optional)
 
 `als-finder` searches open federal and scientific repositories. Major federal archives (USGS 3DEP and NOAA) require no authentication, while academic and community archives offer free API keys:
 
@@ -230,7 +219,18 @@ als-finder search --roi ltbmu_boundary.gpkg --provider usgs,noaa --workspace .
 > **Graceful Degradation:**
 > If you do not configure an OpenTopography or NASA key, `als-finder` automatically prints an informative notice, gracefully skips those providers, and successfully catalogs all datasets from open providers (such as USGS and NOAA).
 
-### Step 1.2: Selecting the Optimal Tile & Buffer Size for 30 m Rasters
+### Step 1.2: Search Remote Datasets Across Providers
+Search for point clouds intersecting your Region of Interest into the current workspace (`.`):
+
+```bash
+# Option A: Target open federal archives directly (no API keys required)
+als-finder search --roi ltbmu_boundary.gpkg --provider usgs,noaa --workspace .
+
+# Option B: Search across all archives (will include OpenTopography if --ot-key was configured)
+als-finder search --roi ltbmu_boundary.gpkg --date 2018:2024 --workspace .
+```
+
+### Step 1.3: Selecting the Optimal Tile & Buffer Size for 30 m Rasters
 
 When the primary objective is generating **30 m ecological or topographic rasters** (e.g., Landsat/SRTM scale), selecting the tile size and buffer requires careful consideration:
 
@@ -256,7 +256,7 @@ When the primary objective is generating **30 m ecological or topographic raster
 als-finder plan --workspace . --tile-size 1200 --buffer-size 30
 ```
 
-### Step 1.3: Exporting the All-Inclusive Task Manifest (`tasks.csv`)
+### Step 1.4: Exporting the All-Inclusive Task Manifest (`tasks.csv`)
 
 Rather than having Slurm workers open and parse individual JSON sidecar files during runtime, `als-finder` can export a single, self-contained **rich CSV manifest** containing all spatial bounds, CRS codes, point estimates, and basenames:
 
@@ -264,7 +264,7 @@ Rather than having Slurm workers open and parse individual JSON sidecar files du
 als-finder plan --workspace . --tasks-csv > tasks.csv
 ```
 
-### Step 1.4: Test Single-Tile Streaming Locally (Optional Verification)
+### Step 1.5: Test Single-Tile Streaming Locally (Optional Verification)
 Before submitting a large Slurm array, you can test data streaming on a single tile (e.g. Tile 0) on your local machine:
 
 ```bash
