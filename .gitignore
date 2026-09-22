@@ -37,8 +37,9 @@ htmlcov/
 
 # Local Workspaces & Scratch Outputs
 scratch/
-data/
-output/
+/data/
+/output/
+!src/als_finder/data/**
 test_workspace/
 *_workspace/
 tutorials/*_workspace/

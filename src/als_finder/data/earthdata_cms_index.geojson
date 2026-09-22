@@ -1,0 +1,91 @@
+{
+  "type": "FeatureCollection",
+  "name": "nasa_earthdata_cms_campaigns",
+  "crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "dataset_id": "CMS_MD_BIOMASS_2021",
+        "name": "NASA CMS Maryland High-Resolution Canopy Biomass 2021",
+        "campaign": "NASA Carbon Monitoring System (CMS)",
+        "daac": "ORNL DAAC",
+        "date": "2021-08-10",
+        "year": 2021,
+        "srs": "EPSG:32618",
+        "point_density": 18.5,
+        "url": "https://cmr.earthdata.nasa.gov/stac/ORNL_CLOUD/collections/CMS_MD_2021",
+        "instrument": "Airborne Topographic Mapper (ATM) / Riegl",
+        "doi": "10.3334/ORNLDAAC/1850"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-77.50, 38.80],
+            [-76.50, 38.80],
+            [-76.50, 39.70],
+            [-77.50, 39.70],
+            [-77.50, 38.80]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "dataset_id": "CMS_CA_SIERRA_2020",
+        "name": "NASA CMS California Sierra Nevada Forest Carbon 2020",
+        "campaign": "NASA Carbon Monitoring System (CMS)",
+        "daac": "ORNL DAAC",
+        "date": "2020-09-15",
+        "year": 2020,
+        "srs": "EPSG:32610",
+        "point_density": 22.0,
+        "url": "https://cmr.earthdata.nasa.gov/stac/ORNL_CLOUD/collections/CMS_CA_2020",
+        "instrument": "Airborne Laser Scanner / LVIS",
+        "doi": "10.3334/ORNLDAAC/1785"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-120.20, 38.70],
+            [-119.70, 38.70],
+            [-119.70, 39.30],
+            [-120.20, 39.30],
+            [-120.20, 38.70]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "dataset_id": "ABOVE_LVIS_AK_2019",
+        "name": "NASA ABoVE LVIS Airborne LiDAR Alaska Boreal 2019",
+        "campaign": "Arctic-Boreal Vulnerability Experiment (ABoVE)",
+        "daac": "ORNL DAAC",
+        "date": "2019-07-20",
+        "year": 2019,
+        "srs": "EPSG:32606",
+        "point_density": 16.0,
+        "url": "https://cmr.earthdata.nasa.gov/stac/ORNL_CLOUD/collections/ABOVE_LVIS_2019",
+        "instrument": "Land, Vegetation, and Ice Sensor (LVIS)",
+        "doi": "10.3334/ORNLDAAC/1734"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-149.00, 64.50],
+            [-147.50, 64.50],
+            [-147.50, 65.20],
+            [-149.00, 65.20],
+            [-149.00, 64.50]
+          ]
+        ]
+      }
+    }
+  ]
+}

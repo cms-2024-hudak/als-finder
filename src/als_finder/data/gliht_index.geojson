@@ -1,0 +1,162 @@
+{
+  "type": "FeatureCollection",
+  "name": "nasa_gliht_campaigns",
+  "crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "dataset_id": "GLIHT_TAHOE_20220718_FL01",
+        "name": "NASA G-LiHT Sierra Nevada / Lake Tahoe 2022 FL01",
+        "campaign": "Sierra Nevada Forest Structure",
+        "flight_line": "FL01",
+        "date": "2022-07-18",
+        "year": 2022,
+        "srs": "EPSG:32610",
+        "point_density": 32.5,
+        "url": "https://glihtdata.gsfc.nasa.gov/data/pub/Sierra_2022/las/Sierra_20220718_FL01_las.laz",
+        "instrument": "Riegl VQ-480 Airborne Laser Scanner",
+        "sensor_type": "Discrete Return & Waveform LiDAR",
+        "ancillary_sensors": "Hyperspectral (VNIR), Thermal IR, RGB Orthomosaic",
+        "altitude_m_agl": 335,
+        "landing_page": "https://gliht.gsfc.nasa.gov/"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-120.08, 38.90],
+            [-119.92, 38.90],
+            [-119.92, 38.98],
+            [-120.08, 38.98],
+            [-120.08, 38.90]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "dataset_id": "GLIHT_TAHOE_20220718_FL02",
+        "name": "NASA G-LiHT Sierra Nevada / Lake Tahoe 2022 FL02",
+        "campaign": "Sierra Nevada Forest Structure",
+        "flight_line": "FL02",
+        "date": "2022-07-18",
+        "year": 2022,
+        "srs": "EPSG:32610",
+        "point_density": 34.0,
+        "url": "https://glihtdata.gsfc.nasa.gov/data/pub/Sierra_2022/las/Sierra_20220718_FL02_las.laz",
+        "instrument": "Riegl VQ-480 Airborne Laser Scanner",
+        "sensor_type": "Discrete Return & Waveform LiDAR",
+        "ancillary_sensors": "Hyperspectral (VNIR), Thermal IR, RGB Orthomosaic",
+        "altitude_m_agl": 335,
+        "landing_page": "https://gliht.gsfc.nasa.gov/"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-120.05, 38.95],
+            [-119.88, 38.95],
+            [-119.88, 39.04],
+            [-120.05, 39.04],
+            [-120.05, 38.95]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "dataset_id": "GLIHT_WREF_20210622_FL01",
+        "name": "NASA G-LiHT Wind River Experimental Forest 2021 FL01",
+        "campaign": "Wind River WA Canopy",
+        "flight_line": "FL01",
+        "date": "2021-06-22",
+        "year": 2021,
+        "srs": "EPSG:32610",
+        "point_density": 38.2,
+        "url": "https://glihtdata.gsfc.nasa.gov/data/pub/WindRiver_2021/las/WindRiver_20210622_FL01_las.laz",
+        "instrument": "Riegl VQ-480 Airborne Laser Scanner",
+        "sensor_type": "Discrete Return & Waveform LiDAR",
+        "ancillary_sensors": "Hyperspectral (VNIR), Thermal IR, RGB Orthomosaic",
+        "altitude_m_agl": 335,
+        "landing_page": "https://gliht.gsfc.nasa.gov/"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-121.98, 45.78],
+            [-121.88, 45.78],
+            [-121.88, 45.88],
+            [-121.98, 45.88],
+            [-121.98, 45.78]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "dataset_id": "GLIHT_HARV_20200814_FL01",
+        "name": "NASA G-LiHT Harvard Forest 2020 FL01",
+        "campaign": "Harvard Forest Long-Term Canopy",
+        "flight_line": "FL01",
+        "date": "2020-08-14",
+        "year": 2020,
+        "srs": "EPSG:32618",
+        "point_density": 28.5,
+        "url": "https://glihtdata.gsfc.nasa.gov/data/pub/Harvard_2020/las/Harvard_20200814_FL01_las.laz",
+        "instrument": "Riegl VQ-480 Airborne Laser Scanner",
+        "sensor_type": "Discrete Return & Waveform LiDAR",
+        "ancillary_sensors": "Hyperspectral (VNIR), Thermal IR, RGB Orthomosaic",
+        "altitude_m_agl": 335,
+        "landing_page": "https://gliht.gsfc.nasa.gov/"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-72.24, 42.48],
+            [-72.16, 42.48],
+            [-72.16, 42.56],
+            [-72.24, 42.56],
+            [-72.24, 42.48]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "dataset_id": "GLIHT_BNZ_20190709_FL01",
+        "name": "NASA G-LiHT Bonanza Creek Alaska 2019 FL01",
+        "campaign": "Alaska Boreal Forest Ecology",
+        "flight_line": "FL01",
+        "date": "2019-07-09",
+        "year": 2019,
+        "srs": "EPSG:32606",
+        "point_density": 24.0,
+        "url": "https://glihtdata.gsfc.nasa.gov/data/pub/Bonanza_2019/las/Bonanza_20190709_FL01_las.laz",
+        "instrument": "Riegl VQ-480 Airborne Laser Scanner",
+        "sensor_type": "Discrete Return & Waveform LiDAR",
+        "ancillary_sensors": "Hyperspectral (VNIR), Thermal IR, RGB Orthomosaic",
+        "altitude_m_agl": 335,
+        "landing_page": "https://gliht.gsfc.nasa.gov/"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-148.35, 64.68],
+            [-148.15, 64.68],
+            [-148.15, 64.78],
+            [-148.35, 64.78],
+            [-148.35, 64.68]
+          ]
+        ]
+      }
+    }
+  ]
+}
