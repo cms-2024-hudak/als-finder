@@ -52,12 +52,13 @@ conda activate als-tutorial
 ```
 
 #### Step 2: Install als-finder from GitHub
-With your `als-tutorial` environment active, install `als-finder` using the active environment's Python (`python -m pip`):
+With your `als-tutorial` environment active, install the latest `als-finder` from GitHub using `--no-cache-dir` (to guarantee you pull the latest commits rather than a cached local wheel):
 
 ```bash
-python -m pip install git+https://github.com/cms-2024-hudak/als-finder.git
+python -m pip install --no-cache-dir git+https://github.com/cms-2024-hudak/als-finder.git
 ```
-*(Alternatively, you can install the official release via `python -m pip install als-finder==1.2.0`).*
+
+*(Tip: If you ever need to completely reset and recreate your environment from scratch, run `conda deactivate && conda env remove -n als-tutorial -y` before running Step 1).*
 
 #### Step 3: Verify the Installation
 ```bash
