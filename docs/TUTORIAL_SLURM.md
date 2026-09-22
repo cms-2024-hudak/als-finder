@@ -440,11 +440,154 @@ Every tile is then naturally capped at $\sim 12.7\,\text{M points}$ ($\sim 4.8\,
 
 ---
 
-## Phase 2: Distributed Processing on Slurm
+## Phase 2: Executing the Processing Loop (Slurm Array & R)
 
-### Step 2.1: The Slurm Batch Submission Script (`sbatch_lidar_metrics.slurm`)
+At scale, processing hundreds or thousands of spatial tiles is simply **one big loop**. Whether you run that loop across hundreds of compute nodes on a Slurm cluster or across multiple CPU cores on a local workstation, the control flow is identical.
 
-Here is the complete Slurm batch submission script (`sbatch_lidar_metrics.slurm`):
+`als-finder plan --tasks-csv > tasks.csv` provides the **universal iterator**. Every row is an independent, self-contained unit of work containing all coordinate bounds, CRS definitions, point density estimates, and output basenames:
+
+```
+                  ┌─────────────────────────────────┐
+                  │            tasks.csv            │
+                  │  (Universal Task Table: 1..N)   │
+                  └─────────────────────────────────┘
+                                   │
+         ┌─────────────────────────┴─────────────────────────┐
+         ▼                                                   ▼
+┌───────────────────────────────────┐       ┌───────────────────────────────────┐
+│     APPROACH A: SLURM ARRAY       │       │        APPROACH B: R LOOP         │
+│      (Distributed Cluster)        │       │   (Local Multicore Workstation)   │
+├───────────────────────────────────┤       ├───────────────────────────────────┤
+│ • Iterator: $SLURM_ARRAY_TASK_ID  │       │ • Iterator: 1:nrow(tasks)         │
+│ • Parallelism: Cluster nodes      │       │ • Parallelism: mclapply / future  │
+│ • Extract row: sed -n "${ID}p"    │       │ • Extract row: task <- tasks[i, ] │
+│ • Stream: als-finder fetch tile   │       │ • Stream: system2("als-finder")   │
+│ • Process: Rscript worker.R       │       │ • Process: lidR / terra in R      │
+│ • Crop core: task$core_minx..maxy │       │ • Crop core: task$core_minx..maxy │
+└───────────────────────────────────┘       └───────────────────────────────────┘
+```
+
+---
+
+### Step 2.0: The Fundamental Loop (First Principles)
+
+Before diving into distributed Slurm arrays or cluster schedulers, let's look at the basic loop. Every tile processing pipeline—regardless of language or environment—performs the same sequence:
+1. Read the tile assignment and metadata from `tasks.csv`.
+2. Stream the buffered tile lazily on-demand with `als-finder fetch tile`.
+3. Compute metrics in R (e.g. canopy height model, cover).
+4. Crop the buffer using the exact `core_minx`..`core_maxy` bounding box from `tasks.csv`.
+5. Remove the temporary `.laz` file to keep disk footprint near zero.
+
+#### The Loop in R:
+```r
+library(terra)
+library(lidR)
+
+# 1. Load the task manifest
+tasks <- read.csv("tasks.csv")
+dir.create("scratch_tiles", showWarnings = FALSE)
+dir.create("outputs", showWarnings = FALSE)
+
+cat(sprintf("Starting processing loop across %d tiles...\n", nrow(tasks)))
+
+# 2. Iterate through each tile
+for (i in 1:nrow(tasks)) {
+  task <- tasks[i, ]
+  cat(sprintf("[%d/%d] Processing Tile %s (%s)...\n", i, nrow(tasks), task$tile_id, task$basename))
+  
+  # A. Stream buffered tile on-demand via als-finder
+  system2("als-finder", args = c(
+    "fetch", "tile", as.character(task$tile_id),
+    "--workspace", ".",
+    "--output", "scratch_tiles",
+    "--spatial-name"
+  ))
+  
+  # B. Load point cloud in lidR
+  laz_path <- file.path("scratch_tiles", paste0(task$basename, ".laz"))
+  if (!file.exists(laz_path)) {
+    warning(paste("Could not find downloaded tile:", laz_path))
+    next
+  }
+  las <- readLAS(laz_path)
+  
+  # C. Compute canopy metric (e.g., 30m Canopy Height Model)
+  chm_buffered <- rasterize_canopy(las, res = 30, p2r())
+  
+  # D. Crop buffer collar using the exact core bounding box from tasks.csv!
+  core_box <- ext(task$core_minx, task$core_maxx, task$core_miny, task$core_maxy)
+  chm_core <- crop(chm_buffered, core_box)
+  
+  # E. Save final deliverable
+  out_tif <- file.path("outputs", paste0(task$basename, "_chm_30m.tif"))
+  writeRaster(chm_core, out_tif, overwrite = TRUE)
+  
+  # F. Delete scratch point cloud immediately (keeps local disk usage bounded)
+  unlink(laz_path)
+}
+
+cat("Processing loop completed successfully!\n")
+```
+
+#### The Equivalent Loop in Bash:
+```bash
+# Read tasks.csv line-by-line (skipping header)
+tail -n +2 tasks.csv | while IFS=',' read -r task_id tile_id basename hive_dir hive_path dataset_id provider grid_crs tile_size buffer_size core_minx core_miny core_maxx core_maxy buffered_minx buffered_miny buffered_maxx buffered_maxy crop_gdal_te point_density est_points recommended_mem_gb; do
+  echo "=== Processing Tile $tile_id ($basename) ==="
+  
+  # 1. Stream on-demand into local scratch
+  als-finder fetch tile "$tile_id" --workspace . --output ./scratch_tiles --spatial-name
+  
+  # 2. Run your per-tile metric script
+  Rscript process_single_tile.R "$basename" "$core_minx" "$core_miny" "$core_maxx" "$core_maxy"
+  
+  # 3. Clean up scratch
+  rm -f "./scratch_tiles/${basename}.laz"
+done
+```
+
+---
+
+### Step 2.1: Parallelizing Locally in R (`parallel::mclapply`)
+
+If you are running on a local multi-core workstation (e.g. 8 cores) and want to speed up execution before moving to HPC, simply wrap the loop body in a function and run it with `parallel::mclapply`:
+
+```r
+library(parallel)
+
+process_one_tile <- function(task) {
+  # (Same steps A through F from the loop above)
+  laz_path <- file.path("scratch_tiles", paste0(task$basename, ".laz"))
+  
+  system2("als-finder", args = c(
+    "fetch", "tile", as.character(task$tile_id),
+    "--workspace", ".",
+    "--output", "scratch_tiles",
+    "--spatial-name"
+  ))
+  
+  las <- readLAS(laz_path)
+  chm_buffered <- rasterize_canopy(las, res = 30, p2r())
+  core_box <- ext(task$core_minx, task$core_maxx, task$core_miny, task$core_maxy)
+  chm_core <- crop(chm_buffered, core_box)
+  
+  writeRaster(chm_core, file.path("outputs", paste0(task$basename, "_chm_30m.tif")), overwrite=TRUE)
+  unlink(laz_path)
+  return(task$tile_id)
+}
+
+tasks <- read.csv("tasks.csv")
+num_cores <- min(4, detectCores() - 1)
+
+# Run 4 tiles concurrently
+results <- mclapply(1:nrow(tasks), function(i) process_one_tile(tasks[i, ]), mc.cores = num_cores)
+```
+
+---
+
+### Step 2.2: Scaling to Distributed HPC Clusters via Slurm (`sbatch_lidar_metrics.slurm`)
+
+On a supercomputing cluster, instead of running a local R loop, **Slurm acts as the parallel loop engine**. Each array task (`SLURM_ARRAY_TASK_ID`) extracts its assigned row from `tasks.csv` and processes it independently:
 
 ```bash
 #!/bin/bash
