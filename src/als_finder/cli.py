@@ -9,12 +9,8 @@ from datetime import datetime
 import time
 from typing import Dict, Any, List, Optional, Callable, Union, Tuple
 import importlib.resources as pkg_resources
-import importlib.metadata
 from dotenv import load_dotenv
-try:
-    __version__ = importlib.metadata.version("als-finder")
-except importlib.metadata.PackageNotFoundError:
-    __version__ = "1.1.0-dev"
+from als_finder import __version__
 
 from als_finder.core.input_manager import load_roi, ROIError
 from als_finder.providers import get_active_providers, get_provider, list_available_providers, BaseProvider, get_provider_priority

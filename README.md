@@ -147,32 +147,35 @@ echo "Target Basename: $BASENAME"
 echo "Crop Bounds: $CROP_GDAL_TE"
 ```
 
+> [!TIP]
+> **Standardized Grid Alignment (1200m Core / 30m Buffer):**
+> By default, `als-finder` generates $1200\,\text{m}$ core tiles with a $30\,\text{m}$ buffer. This geometry guarantees exact pixel integer divisibility across standard remote sensing raster resolutions—$30\,\text{m}$ ($40\,\text{px}$ core, $42\,\text{px}$ buffered), $10\,\text{m}$ ($120\,\text{px}$), and $1\,\text{m}$ ($1200\,\text{px}$)—completely preventing sub-pixel edge interpolation artifacts.
+
 ---
 
-### Step 3: Generating HPC Slurm Task Lists (`--tasks`)
-When scheduling Slurm job arrays, you can output the pre-calculated list of all leaf tile IDs:
+### Step 3: Generating HPC Slurm Task Lists & Manifests (`--tasks` / `--tasks-csv`)
+When scheduling Slurm job arrays, you can output either a plain leaf tile list (`--tasks`) or a complete CSV manifest (`--tasks-csv`) with spatial coordinates, Hive paths, point counts, and recommended Slurm memory allocations:
 
 ```bash
+# 1. Plain leaf task list for simple Slurm array indexes:
 als-finder plan \
   --workspace scratch/test_workspace \
-  --tile-size 500 \
-  --buffer-size 50 \
-  --max-points 4000000 \
   --tasks > slurm_tasks.txt
 
-head -n 8 slurm_tasks.txt
+# 2. Comprehensive CSV manifest for Slurm arrays, HPC job schedulers, and tracking:
+als-finder plan \
+  --workspace scratch/test_workspace \
+  --tasks-csv slurm_manifest.csv
 ```
-**Output:**
-```text
-0_NW
-0_NE
-0_SW
-0_SE
-1_NW
-1_NE
-1_SW
-1_SE
-```
+
+**Manifest Columns in `slurm_manifest.csv`:**
+- `task_id`: Unique leaf task identifier (`0`, `15_NW`, etc.)
+- `tile_id`: Parent master tile integer
+- `basename`: Standardized spatial basename (`<dataset>_tile_E<easting>_N<northing>[_quad]`)
+- `hive_dir` & `hive_path`: Deterministic Hive partition directory and destination file path
+- `core_minx`, `core_miny`, `core_maxx`, `core_maxy`: Core bounding coordinates
+- `point_density`, `est_points`: Acquisition point density ($pts/m^2$) and pre-flight point count
+- `recommended_mem_gb`: Pre-calculated Slurm job memory allocation ($\approx 1.5 \times$ point payload)
 
 ---
 
@@ -265,6 +268,22 @@ done
 
 # 2. Build a seamless mosaic across the entire study area (works for both 500m and 250m tiles):
 # gdalbuildvrt full_study_area_chm.vrt "$TILES_DIR"/*_chm.tif
+```
+
+#### Native lidR (R) Integration & Buffer Point Tagging
+Streamed `.laz` tiles embed a native LAS 1.4 `buffer` extra dimension (`buffer=0` for points inside the core tile, `buffer=1` for boundary buffer overlap points). In R using `lidR`, you can filter away buffer points after edge-artifact-free metric calculation with zero geometry math:
+
+```r
+library(lidR)
+
+# Read LAS tile with extra dimensions:
+las <- readLAS("tile.laz", select = "xyzc", filter = "")
+
+# Compute metrics (e.g., CHM, canopy cover) with buffer points preventing edge voids:
+# ...
+
+# Instant zero-copy filter of core points only:
+core_pts <- filter_poi(las, buffer == 0)
 ```
 
 ---
