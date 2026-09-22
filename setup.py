@@ -29,6 +29,7 @@ setup(
         "psutil",
         "boto3",
         "laspy",
+        "pyarrow",
     ],
     extras_require={
         "dev": ["pytest", "setuptools_scm", "build"],

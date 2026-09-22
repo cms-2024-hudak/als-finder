@@ -1561,7 +1561,7 @@ def fetch_survey_subcmd(ctx, workspace, roi, name, date, density, provider, clou
 # PLANNING & PRE-FLIGHT AUDIT COMMAND (plan & grid-info alias)
 # ==============================================================================
 
-def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=False):
+def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=False, tasks_parquet=None):
     try:
         # Default workspace fallback to '.' if catalog/ exists
         if workspace is None and manifest is None:
@@ -1667,8 +1667,8 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
                 pass
             return
 
-        # If --tasks-csv flag is requested, output rich CSV task manifest with all metadata
-        if tasks_csv:
+        # If --tasks-csv or --tasks-parquet is requested, output rich task manifest with all metadata
+        if tasks_csv or tasks_parquet:
             import csv
             from shapely.geometry import box
             from als_finder.core.grid_manager import format_coord, parse_quadrant_tile_id
@@ -1678,77 +1678,91 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
                 "buffered_minx", "buffered_miny", "buffered_maxx", "buffered_maxy",
                 "crop_gdal_te", "point_density", "est_points", "recommended_mem_gb"
             ]
-            try:
-                writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
-                writer.writeheader()
-                for task_idx, leaf_tid in enumerate(leaf_ids):
-                    base_id, quadrants = parse_quadrant_tile_id(leaf_tid)
-                    row = grid_gdf.iloc[base_id]
-                    cur_c_poly = row.geometry
-                    cur_t = float(spec_0.get("nominal_tile_size", spec_0.get("tile_size", tile_size)))
-                    cur_b = float(spec_0.get("nominal_buffer_size", spec_0.get("buffer_size", buffer_size)))
+            records = []
+            for task_idx, leaf_tid in enumerate(leaf_ids):
+                base_id, quadrants = parse_quadrant_tile_id(leaf_tid)
+                row = grid_gdf.iloc[base_id]
+                cur_c_poly = row.geometry
+                cur_t = float(spec_0.get("nominal_tile_size", spec_0.get("tile_size", tile_size)))
+                cur_b = float(spec_0.get("nominal_buffer_size", spec_0.get("buffer_size", buffer_size)))
 
-                    if quadrants:
-                        for q in quadrants:
-                            c_minx_t, c_miny_t, c_maxx_t, c_maxy_t = cur_c_poly.bounds
-                            x_mid = (c_minx_t + c_maxx_t) / 2.0
-                            y_mid = (c_miny_t + c_maxy_t) / 2.0
-                            if q == "NW":
-                                cur_c_poly = box(c_minx_t, y_mid, x_mid, c_maxy_t)
-                            elif q == "NE":
-                                cur_c_poly = box(x_mid, y_mid, c_maxx_t, c_maxy_t)
-                            elif q == "SW":
-                                cur_c_poly = box(c_minx_t, c_miny_t, x_mid, y_mid)
-                            elif q == "SE":
-                                cur_c_poly = box(x_mid, c_miny_t, c_maxx_t, y_mid)
-                            cur_t = cur_t / 2.0
+                if quadrants:
+                    for q in quadrants:
+                        c_minx_t, c_miny_t, c_maxx_t, c_maxy_t = cur_c_poly.bounds
+                        x_mid = (c_minx_t + c_maxx_t) / 2.0
+                        y_mid = (c_miny_t + c_maxy_t) / 2.0
+                        if q == "NW":
+                            cur_c_poly = box(c_minx_t, y_mid, x_mid, c_maxy_t)
+                        elif q == "NE":
+                            cur_c_poly = box(x_mid, y_mid, c_maxx_t, c_maxy_t)
+                        elif q == "SW":
+                            cur_c_poly = box(c_minx_t, c_miny_t, x_mid, y_mid)
+                        elif q == "SE":
+                            cur_c_poly = box(x_mid, c_miny_t, c_maxx_t, y_mid)
+                        cur_t = cur_t / 2.0
 
-                    c_minx, c_miny, c_maxx, c_maxy = cur_c_poly.bounds
-                    b_minx = c_minx - cur_b
-                    b_miny = c_miny - cur_b
-                    b_maxx = c_maxx + cur_b
-                    b_maxy = c_maxy + cur_b
+                c_minx, c_miny, c_maxx, c_maxy = cur_c_poly.bounds
+                b_minx = c_minx - cur_b
+                b_miny = c_miny - cur_b
+                b_maxx = c_maxx + cur_b
+                b_maxy = c_maxy + cur_b
 
-                    density = float(row.get("point_density") or 10.0)
-                    t_pts = int(density * ((cur_t + 2 * cur_b) ** 2))
-                    rec_mem = round((t_pts * 250) / 1e9 * 1.5, 1)
+                density = float(row.get("point_density") or 10.0)
+                t_pts = int(density * ((cur_t + 2 * cur_b) ** 2))
+                rec_mem = round((t_pts * 250) / 1e9 * 1.5, 1)
 
-                    ds_id = str(row.get("dataset_id") or "dataset")
-                    prov = str(row.get("provider") or "unknown")
+                ds_id = str(row.get("dataset_id") or "dataset")
+                prov = str(row.get("provider") or "unknown")
 
-                    ul_e = format_coord(c_minx)
-                    ul_n = format_coord(c_maxy)
-                    q_suffix = ("_" + "_".join(quadrants)) if quadrants else ""
-                    b_name = f"{ds_id}_tile_E{ul_e}_N{ul_n}{q_suffix}"
-                    h_dir = f"provider={prov}/dataset={ds_id}/tilesize={int(tile_size)}/buffer={int(buffer_size)}"
-                    h_path = f"{h_dir}/{b_name}"
+                ul_e = format_coord(c_minx)
+                ul_n = format_coord(c_maxy)
+                q_suffix = ("_" + "_".join(quadrants)) if quadrants else ""
+                b_name = f"{ds_id}_tile_E{ul_e}_N{ul_n}{q_suffix}"
+                h_dir = f"provider={prov}/dataset={ds_id}/tilesize={int(tile_size)}/buffer={int(buffer_size)}"
+                h_path = f"{h_dir}/{b_name}"
 
-                    writer.writerow({
-                        "task_id": task_idx + 1,
-                        "tile_id": leaf_tid,
-                        "basename": b_name,
-                        "hive_dir": h_dir,
-                        "hive_path": h_path,
-                        "dataset_id": ds_id,
-                        "provider": prov,
-                        "grid_crs": row.get("grid_crs", str(grid_gdf.crs)),
-                        "tile_size": int(cur_t),
-                        "buffer_size": int(cur_b),
-                        "core_minx": c_minx,
-                        "core_miny": c_miny,
-                        "core_maxx": c_maxx,
-                        "core_maxy": c_maxy,
-                        "buffered_minx": b_minx,
-                        "buffered_miny": b_miny,
-                        "buffered_maxx": b_maxx,
-                        "buffered_maxy": b_maxy,
-                        "crop_gdal_te": f"{c_minx} {c_miny} {c_maxx} {c_maxy}",
-                        "point_density": density,
-                        "est_points": t_pts,
-                        "recommended_mem_gb": max(rec_mem, 4.0)
-                    })
-            except BrokenPipeError:
-                pass
+                records.append({
+                    "task_id": task_idx + 1,
+                    "tile_id": leaf_tid,
+                    "basename": b_name,
+                    "hive_dir": h_dir,
+                    "hive_path": h_path,
+                    "dataset_id": ds_id,
+                    "provider": prov,
+                    "grid_crs": row.get("grid_crs", str(grid_gdf.crs)),
+                    "tile_size": int(cur_t),
+                    "buffer_size": int(cur_b),
+                    "core_minx": c_minx,
+                    "core_miny": c_miny,
+                    "core_maxx": c_maxx,
+                    "core_maxy": c_maxy,
+                    "buffered_minx": b_minx,
+                    "buffered_miny": b_miny,
+                    "buffered_maxx": b_maxx,
+                    "buffered_maxy": b_maxy,
+                    "crop_gdal_te": f"{c_minx} {c_miny} {c_maxx} {c_maxy}",
+                    "point_density": density,
+                    "est_points": t_pts,
+                    "recommended_mem_gb": max(rec_mem, 4.0)
+                })
+
+            if tasks_parquet:
+                import pandas as pd
+                pq_df = pd.DataFrame(records)
+                pq_path = Path(tasks_parquet)
+                pq_path.parent.mkdir(parents=True, exist_ok=True)
+                pq_df.to_parquet(pq_path, engine="pyarrow", compression="snappy", index=False)
+                size_kb = pq_path.stat().st_size / 1024.0
+                click.echo(f"Parquet task manifest written to {pq_path} ({len(pq_df):,} tasks, {size_kb:.1f} KB)", err=True)
+
+            if tasks_csv:
+                try:
+                    writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
+                    writer.writeheader()
+                    for r in records:
+                        writer.writerow(r)
+                except BrokenPipeError:
+                    pass
             return
 
         payload = {
@@ -1842,13 +1856,14 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
 @click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
 @click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays (one per line)')
 @click.option('--tasks-csv', is_flag=True, help='Output rich task manifest CSV with all metadata (basenames, bounds, CRS, memory audits) for Slurm job arrays')
+@click.option('--tasks-parquet', is_flag=False, flag_value='tasks.parquet', default=None, help='Export rich task manifest to Parquet (defaults to tasks.parquet, or specify custom path)')
 @click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
 @click.option('--field', default=None, help='Extract a specific field from payload (e.g. total_tiles, grid_crs, basename, crop_pdal_bounds)')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, tasks_csv, overwrite, field, output_format, json_output):
+def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, tasks_csv, tasks_parquet, overwrite, field, output_format, json_output):
     """Plan spatial grid partitioning, pre-flight memory audits, and Slurm task lists."""
-    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv)
+    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv, tasks_parquet=tasks_parquet)
 
 
 @cli.command('grid-info')
@@ -1860,13 +1875,14 @@ def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, t
 @click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
 @click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays')
 @click.option('--tasks-csv', is_flag=True, help='Output rich task manifest CSV with all metadata for Slurm job arrays')
+@click.option('--tasks-parquet', is_flag=False, flag_value='tasks.parquet', default=None, help='Export rich task manifest to Parquet (defaults to tasks.parquet, or specify custom path)')
 @click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
 @click.option('--field', default=None, help='Extract a specific field from payload')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None)
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, tasks_csv, overwrite, field, output_format, json_output):
+def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, tasks_csv, tasks_parquet, overwrite, field, output_format, json_output):
     """Backward-compatible alias for 'als-finder plan'."""
-    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv)
+    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv, tasks_parquet=tasks_parquet)
 
 
 # ==============================================================================

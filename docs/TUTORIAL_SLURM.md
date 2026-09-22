@@ -266,27 +266,32 @@ als-finder plan
 ```
 *(You can explicitly customize `--tile-size` or `--buffer-size` if your analysis requires a different dimension, e.g. `--buffer-size 60` for a 2-pixel buffer collar).*
 
-### Step 1.4: Exporting the All-Inclusive Task Manifest (`tasks.csv`)
+### Step 1.4: Exporting the Task Manifest (`tasks.csv` & `tasks.parquet`)
 
-Rather than having Slurm workers open and parse individual JSON sidecar files during runtime, `als-finder` can export a single, self-contained **rich CSV manifest** containing all spatial bounds, CRS codes, point estimates, and basenames:
+Rather than having Slurm workers open and parse individual JSON sidecar files during runtime, `als-finder` can export a single, self-contained **rich manifest** containing all spatial bounds, CRS codes, point estimates, and basenames in either CSV or Parquet format:
 
 ```bash
+# Option A: Export standard task manifest CSV (streamed to stdout)
 als-finder plan --tasks-csv > tasks.csv
 head -n 5 tasks.csv
+
+# Option B: Export binary compressed Parquet (defaults to tasks.parquet, or specify custom path)
+als-finder plan --tasks-parquet
 ```
 
-Each row of `tasks.csv` provides a complete task definition:
+Each record provides a complete task definition:
 ```csv
 task_id,tile_id,basename,dataset_id,provider,grid_crs,tile_size,buffer_size,core_minx,core_miny,core_maxx,core_maxy,buffered_minx,buffered_miny,buffered_maxx,buffered_maxy,crop_gdal_te,point_density,est_points,recommended_mem_gb,hive_path
 1,0,CA_SierraNevada_5_2022_tile_E0736800_N4329600,CA_SierraNevada_5_2022,USGS_EPT,EPSG:32610,1200,30,736800.0,4328400.0,738000.0,4329600.0,736770.0,4328370.0,738030.0,4329630.0,"736800.0 4328400.0 738000.0 4329600.0",29.18,46326168,17.4,provider=USGS_EPT/...
 2,1,CA_SierraNevada_5_2022_tile_E0736800_N4330800,CA_SierraNevada_5_2022,USGS_EPT,EPSG:32610,1200,30,736800.0,4329600.0,738000.0,4330800.0,736770.0,4329570.0,738030.0,4330830.0,"736800.0 4329600.0 738000.0 4330800.0",29.18,46326168,17.4,provider=USGS_EPT/...
 ```
 
-#### Why the Enriched CSV Pattern Is Superior for Slurm & R:
+#### Why the Enriched Manifest Pattern Is Superior for Slurm & R:
 1. **Zero JSON Dependencies in Workers:** Workers do not need `jsonlite` in R or `jq` in bash.
-2. **Instant 1-Row Read:** In R, the worker loads its assignment in a single operation: `task <- read.csv("tasks.csv")[task_id, ]`.
-3. **Native Cropping & Vectorization:** The worker accesses `task$core_minx` through `task$core_maxy` directly for cropping rasters without guessing or calculating extents.
-4. **Direct Prepending to Metrics Outputs:** When your R metric extraction script finishes computing forest statistics, it can immediately prepend the task metadata to its results:
+2. **Instant 1-Row Read:** In R, the worker loads only its assigned task row directly from disk into memory without loading the full table.
+3. **Parquet Compression & Pushdown Filtering:** For large study areas (e.g. statewide California or CONUS where CSV manifests can grow to several gigabytes), Parquet compresses the file by **$\approx 8\times$** (e.g., 448 KB down to 56 KB for Tahoe; 2 GB down to ~250 MB for California). Using Apache Arrow in R, workers can query only their target row using pushdown predicate filters without parsing the full dataset into RAM.
+4. **Native Cropping & Vectorization:** The worker accesses `task$core_minx` through `task$core_maxy` directly for cropping rasters without guessing or calculating extents.
+5. **Direct Prepending to Metrics Outputs:** When your R metric extraction script finishes computing forest statistics, it can immediately prepend the task metadata to its results:
    ```r
    out_row <- cbind(task, data.frame(
      mean_canopy_cover = mean(terra::values(r_cover), na.rm=TRUE),
@@ -294,7 +299,7 @@ task_id,tile_id,basename,dataset_id,provider,grid_crs,tile_size,buffer_size,core
    ))
    write.csv(out_row, file=paste0(task$basename, "_summary.csv"), row.names=FALSE)
    ```
-5. **Portability Sidecar Retained:** `--sidecar` is generated automatically during streaming if individual `.laz` files need companion `tile.json` metadata for standalone use outside the cluster.
+6. **Portability Sidecar Retained:** `--sidecar` is generated automatically during streaming if individual `.laz` files need companion `tile.json` metadata for standalone use outside the cluster.
 
 ---
 
@@ -470,74 +475,118 @@ At scale, processing hundreds or thousands of spatial tiles is simply **one big 
 
 ---
 
-### Step 2.0: Environment Setup for R (`r-base`, `r-lidr`, `r-terra`)
+### Step 2.0: Environment Setup for R (`r-base`, `r-lidr`, `r-terra`, `r-arrow`)
 
-Before running your R metric extraction scripts or looping over tiles, install R and its core geospatial stack directly into your active `als-tutorial` Conda environment.
+Before running your R metric extraction scripts or looping over tiles, install R, its core geospatial stack, and Apache Arrow directly into your active `als-tutorial` Conda environment.
 
-This guarantees that R, `lidR`, `terra`, and their underlying C++ libraries (GDAL, PROJ, GEOS, UDUNITS) share the exact same environment as `als-finder`, completely eliminating missing shared object errors (`libudunits2.so`) or C++ compilation issues:
+This guarantees that R, `lidR`, `terra`, `arrow`, and their underlying C++ libraries (GDAL, PROJ, GEOS, UDUNITS, Arrow C++) share the exact same environment as `als-finder`, completely eliminating missing shared object errors (`libudunits2.so`) or C++ compilation issues:
 
 ```bash
 # Ensure your environment is active
 conda activate als-tutorial
 
-# Install R, lidR, and terra with all pre-compiled C++ geospatial bindings
-conda install -c conda-forge -y r-base r-lidr r-terra
+# Install R, lidR, terra, and arrow with all pre-compiled C++ geospatial bindings
+conda install -c conda-forge -y r-base r-lidr r-terra r-arrow r-dplyr
 ```
 
-Once installed, verify that `lidR` and `terra` load cleanly:
+Once installed, verify that `lidR`, `terra`, and `arrow` load cleanly:
 ```bash
-R -e "library(terra); library(lidR); cat('R geospatial stack verified successfully!\n')"
+R -e "library(terra); library(lidR); library(arrow); cat('R geospatial and Arrow stack verified successfully!\n')"
 ```
 
 ---
 
-### Step 2.1: The Fundamental Loop (First Principles)
+### Step 2.1: The Fundamental Loop & Memory-Bounded Task Ingestion
 
 Before diving into distributed Slurm arrays or cluster schedulers, let's look at the basic loop. Every tile processing pipeline—regardless of language or environment—performs the same sequence:
-1. Export a memory-safe `tasks.csv` using `--max-points` so point clouds fit in RAM.
-2. Read the tile assignment and metadata from `tasks.csv`.
+1. Export a memory-safe task manifest (`tasks.csv` or `tasks.parquet`) using `--max-points` so point clouds fit in RAM.
+2. Read the assigned tile metadata without wasting node memory.
 3. Stream the buffered tile lazily on-demand with `als-finder fetch tile`.
 4. Compute metrics in R (e.g. canopy height model, cover).
-5. Crop the buffer using the exact `core_minx`..`core_maxy` bounding box from `tasks.csv`.
+5. Crop the buffer using the exact `core_minx`..`core_maxy` bounding box from the manifest.
 6. Remove the temporary `.laz` file to keep disk footprint near zero.
 
-#### 1. Generate the Memory-Safe Task Table (`tasks.csv`):
-In your terminal, export `tasks.csv` passing `--max-points 10000000` so that any tile exceeding 10M points is automatically subdivided into safe, memory-bounded sub-tiles ($\sim 3.8\,\text{GB}$ RAM in R):
+#### 1. Generate the Memory-Safe Task Tables:
+In your terminal, export both `tasks.csv` and binary `tasks.parquet` passing `--max-points 10000000` so that any tile exceeding 10M points is automatically subdivided into safe, memory-bounded sub-tiles ($\sim 3.8\,\text{GB}$ RAM in R):
 
 ```bash
-als-finder plan --max-points 10000000 --tasks-csv > tasks.csv
-head -n 5 tasks.csv
+# Export both CSV and Parquet manifests simultaneously:
+als-finder plan --max-points 10000000 --tasks-csv > tasks.csv --tasks-parquet
 ```
 
-#### 2. The Loop in R:
+#### 2. Best Practice: Avoid Loading the Entire Table into RAM at Scale
+When working locally with a few hundred tiles, `tasks <- read.csv("tasks.csv")` is fine. However, on large regional surveys (tens of thousands of tiles) or statewide scales (hundreds of thousands of tiles), the task manifest is several gigabytes:
+- If 1,000 Slurm worker nodes all execute `read.csv("tasks.csv")` simultaneously, they will flood shared storage (Lustre/NFS) with gigabytes of redundant reads and waste hundreds of megabytes of RAM per worker just storing strings.
+- **The Solution:** Each worker only needs its assigned row!
+
+##### Approach A: Memory-Efficient Single-Row CSV Read (Base R)
+Using `readLines()` for the header and `scan()` with `skip`, you can stream **only** line $(N + 1)$ from disk in milliseconds:
+
+```r
+# Memory-safe 1-row CSV reader: skips directly to the assigned row without reading the rest of the file
+read_task_csv <- function(path, task_idx) {
+  header <- readLines(path, n = 1)
+  # Indexing: Line 1 is the header.
+  # skip = task_idx skips 1 header + (task_idx - 1) previous rows -> lands exactly on data row task_idx!
+  line <- scan(path, what = character(), sep = "\n", skip = task_idx, nlines = 1, quiet = TRUE)
+  read.csv(text = c(header, line), stringsAsFactors = FALSE)
+}
+
+# Example: Read assigned row for task 1 (e.g. from SLURM_ARRAY_TASK_ID or loop index)
+task <- read_task_csv("tasks.csv", task_idx = 1)
+cat(sprintf("Loaded Task %d: Tile %s (%s)\n", task$task_id, task$tile_id, task$basename))
+```
+
+##### Approach B: Single-Row Parquet Read with Pushdown Filtering (Apache Arrow)
+Parquet is columnar, compressed (Snappy/Zstd), and **$\approx 8\times$ smaller** on disk than CSV. Using the `arrow` package in R, `open_dataset()` parses only the file metadata (footer), and pushdown predicate filtering fetches **only the requested row** directly from disk:
+
+```r
+library(arrow)
+library(dplyr, warn.conflicts = FALSE)
+
+# open_dataset parses ONLY Parquet metadata (zero whole-table memory allocation)
+ds <- open_dataset("tasks.parquet")
+
+# Pushdown filter: Arrow reads ONLY the target row matching task_id from disk directly into R!
+task <- ds %>% 
+  filter(task_id == 1) %>% 
+  collect()
+
+cat(sprintf("Loaded Task %d from Parquet: Tile %s (%s)\n", task$task_id, task$tile_id, task$basename))
+```
+
+#### 3. The Processing Loop in R:
+Here is how the complete loop looks, processing each tile one at a time with near-zero memory footprint:
+
 ```r
 library(terra)
 library(lidR)
+library(arrow)
+library(dplyr, warn.conflicts = FALSE)
 
-# 1. Load the full task manifest (contains all 1,039 tiles)
-tasks <- read.csv("tasks.csv")
-cat(sprintf("Loaded master task table with %d total tiles.\n", nrow(tasks)))
+# Open dataset metadata (consumes virtually 0 MB RAM)
+ds <- open_dataset("tasks.parquet")
+total_tasks <- nrow(ds)
+cat(sprintf("Total tasks in survey: %d\n", total_tasks))
 
-# 2. For local testing, subset to just a few tiles (e.g., the first 3 tiles)
-# (When ready to run everything, simply use: test_tasks <- tasks)
-test_tasks <- head(tasks, 3)
-cat(sprintf("Looping through a subset of %d test tiles...\n", nrow(test_tasks)))
+# For local testing, process the first 3 tiles
+test_task_ids <- 1:min(3, total_tasks)
 
 dir.create("scratch_tiles", showWarnings = FALSE)
 dir.create("outputs", showWarnings = FALSE)
 
-# 3. Iterate through each tile in the subset
-for (i in 1:nrow(test_tasks)) {
-  task <- test_tasks[i, ]
-  cat(sprintf("\n--- [%d/%d] Processing Tile %s (%s) ---\n", i, nrow(test_tasks), task$tile_id, task$basename))
+for (tid in test_task_ids) {
+  # 1. Read ONLY this single task row using pushdown filter
+  task <- ds %>% filter(task_id == tid) %>% collect()
+  cat(sprintf("\n--- Processing Task %d: Tile %s (%s) ---\n", task$task_id, task$tile_id, task$basename))
   
-  # A. Stream buffered tile on-demand via als-finder
+  # 2. Stream buffered tile on-demand via als-finder
   system2("als-finder", args = c(
     "fetch", "tile", as.character(task$tile_id),
     "--output", "scratch_tiles"
   ))
   
-  # B. Load point cloud in lidR (using the exact Hive path from tasks.csv)
+  # 3. Load point cloud in lidR (using the exact Hive path from the manifest)
   # file.path() seamlessly handles Hive paths across Windows, WSL, and Linux.
   laz_path <- file.path("scratch_tiles", paste0(task$hive_path, ".laz"))
   if (!file.exists(laz_path)) {
@@ -548,21 +597,21 @@ for (i in 1:nrow(test_tasks)) {
   # Drop withheld points at read time to save memory and silence USGS 3DEP warnings
   las <- readLAS(laz_path, filter = "-drop_withheld")
   
-  # C. Compute canopy metric (e.g., 30m Canopy Height Model)
+  # 4. Compute canopy metric (e.g., 30m Canopy Height Model)
   chm_buffered <- rasterize_canopy(las, res = 30, p2r())
   
-  # D. Buffer removal: Crop buffer collar using the exact core bounding box from tasks.csv!
+  # 5. Buffer removal: Crop buffer collar using the exact core bounding box from the manifest!
   core_box <- ext(task$core_minx, task$core_maxx, task$core_miny, task$core_maxy)
   chm_core <- crop(chm_buffered, core_box)
   
-  # E. Save final deliverable (retaining the Hive partition structure in outputs/)
+  # 6. Save final deliverable (retaining the Hive partition structure in outputs/)
   out_dir <- file.path("outputs", task$hive_dir)
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   out_tif <- file.path(out_dir, paste0(task$basename, "_chm_30m.tif"))
   writeRaster(chm_core, out_tif, overwrite = TRUE)
   cat(sprintf("Saved: %s\n", out_tif))
   
-  # F. Delete scratch point cloud immediately (keeps local disk usage bounded)
+  # 7. Delete scratch point cloud immediately (keeps local disk usage bounded)
   unlink(laz_path)
 }
 

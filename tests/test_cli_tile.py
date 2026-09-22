@@ -149,3 +149,45 @@ def test_stream_single_tile_buffer_dimension_tagging(tmp_path: Path):
     assert buf_stat is not None, "buffer dimension not found in Extra Bytes VLR"
     assert buf_stat["minimum"] == 0, f"Expected minimum buffer value 0, got {buf_stat['minimum']}"
     assert buf_stat["maximum"] == 1, f"Expected maximum buffer value 1, got {buf_stat['maximum']}"
+
+
+def test_cli_plan_tasks_parquet(tmp_path: Path):
+    """Test that 'als-finder plan --tasks-parquet' exports valid compressed Parquet."""
+    from click.testing import CliRunner
+    from als_finder.cli import cli
+    import pandas as pd
+    from shapely.geometry import box
+    from als_finder.core.grid_manager import create_tile_grid_index, export_grid_manifest
+
+    # Setup minimal catalog
+    poly = box(0, 0, 2400, 2400)
+    roi_gdf = gpd.GeoDataFrame({"id": [1]}, geometry=[poly], crs="EPSG:3857")
+    grid_gdf, _ = create_tile_grid_index(roi_gdf, tile_size=1200, buffer_size=30, target_crs="EPSG:3857")
+    manifest_data = {
+        "search_parameters": {"roi": "test"},
+        "datasets": [{"name": "test_ds", "url": "http://example.com/test.laz"}],
+    }
+    cat_dir = tmp_path / "catalog"
+    export_grid_manifest(grid_gdf, manifest_data, cat_dir, tile_size=1200, buffer_size=30)
+
+    parquet_out = tmp_path / "tasks.parquet"
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "plan",
+        "--workspace", str(tmp_path),
+        "--tasks-parquet", str(parquet_out),
+        "--tasks-csv"
+    ])
+    assert result.exit_code == 0, f"Plan command failed: {result.output}"
+    assert parquet_out.exists(), "tasks.parquet file was not created"
+
+    # Read with pandas / pyarrow and verify contents
+    df = pd.read_parquet(parquet_out)
+    assert len(df) == len(grid_gdf)
+    assert "task_id" in df.columns
+    assert "basename" in df.columns
+    assert "core_minx" in df.columns
+    assert "crop_gdal_te" in df.columns
+    assert df["task_id"].iloc[0] == 1
+    assert str(df["tile_id"].iloc[0]) == "0"
+
