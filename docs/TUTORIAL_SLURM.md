@@ -529,8 +529,8 @@ for (i in 1:nrow(test_tasks)) {
     "--spatial-name"
   ))
   
-  # B. Load point cloud in lidR
-  laz_path <- file.path("scratch_tiles", paste0(task$basename, ".laz"))
+  # B. Load point cloud in lidR (using the exact Hive path from tasks.csv)
+  laz_path <- file.path("scratch_tiles", paste0(task$hive_path, ".laz"))
   if (!file.exists(laz_path)) {
     warning(paste("Could not find downloaded tile:", laz_path))
     next
@@ -544,15 +544,18 @@ for (i in 1:nrow(test_tasks)) {
   core_box <- ext(task$core_minx, task$core_maxx, task$core_miny, task$core_maxy)
   chm_core <- crop(chm_buffered, core_box)
   
-  # E. Save final deliverable
-  out_tif <- file.path("outputs", paste0(task$basename, "_chm_30m.tif"))
+  # E. Save final deliverable (retaining the Hive partition structure in outputs/)
+  out_dir <- file.path("outputs", task$hive_dir)
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  out_tif <- file.path(out_dir, paste0(task$basename, "_chm_30m.tif"))
   writeRaster(chm_core, out_tif, overwrite = TRUE)
+  cat(sprintf("Saved: %s\n", out_tif))
   
   # F. Delete scratch point cloud immediately (keeps local disk usage bounded)
   unlink(laz_path)
 }
 
-cat("Processing loop completed successfully!\n")
+cat("\nProcessing loop completed successfully!\n")
 ```
 
 #### The Equivalent Loop in Bash:
@@ -561,14 +564,18 @@ cat("Processing loop completed successfully!\n")
 tail -n +2 tasks.csv | while IFS=',' read -r task_id tile_id basename hive_dir hive_path dataset_id provider grid_crs tile_size buffer_size core_minx core_miny core_maxx core_maxy buffered_minx buffered_miny buffered_maxx buffered_maxy crop_gdal_te point_density est_points recommended_mem_gb; do
   echo "=== Processing Tile $tile_id ($basename) ==="
   
-  # 1. Stream on-demand into local scratch
+  # 1. Stream on-demand into local scratch (creates Hive subdirectories automatically)
   als-finder fetch tile "$tile_id" --workspace . --output ./scratch_tiles --spatial-name
   
-  # 2. Run your per-tile metric script
-  Rscript process_single_tile.R "$basename" "$core_minx" "$core_miny" "$core_maxx" "$core_maxy"
+  LAZ_PATH="./scratch_tiles/${hive_path}.laz"
+  OUT_DIR="./outputs/${hive_dir}"
+  mkdir -p "$OUT_DIR"
   
-  # 3. Clean up scratch
-  rm -f "./scratch_tiles/${basename}.laz"
+  # 2. Run your per-tile metric script
+  Rscript process_single_tile.R "$LAZ_PATH" "$OUT_DIR/${basename}_chm_30m.tif" "$core_minx" "$core_miny" "$core_maxx" "$core_maxy"
+  
+  # 3. Clean up scratch point cloud
+  rm -f "$LAZ_PATH"
 done
 ```
 
@@ -582,9 +589,7 @@ If you are running on a local multi-core workstation (e.g. 8 cores) and want to 
 library(parallel)
 
 process_one_tile <- function(task) {
-  # (Same steps A through F from the loop above)
-  laz_path <- file.path("scratch_tiles", paste0(task$basename, ".laz"))
-  
+  # 1. Stream on-demand into local scratch
   system2("als-finder", args = c(
     "fetch", "tile", as.character(task$tile_id),
     "--workspace", ".",
@@ -592,12 +597,22 @@ process_one_tile <- function(task) {
     "--spatial-name"
   ))
   
+  # 2. Read point cloud using exact Hive path from tasks.csv
+  laz_path <- file.path("scratch_tiles", paste0(task$hive_path, ".laz"))
+  if (!file.exists(laz_path)) return(NULL)
+  
   las <- readLAS(laz_path)
   chm_buffered <- rasterize_canopy(las, res = 30, p2r())
   core_box <- ext(task$core_minx, task$core_maxx, task$core_miny, task$core_maxy)
   chm_core <- crop(chm_buffered, core_box)
   
-  writeRaster(chm_core, file.path("outputs", paste0(task$basename, "_chm_30m.tif")), overwrite=TRUE)
+  # 3. Save deliverable into structured Hive output directory
+  out_dir <- file.path("outputs", task$hive_dir)
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  out_tif <- file.path(out_dir, paste0(task$basename, "_chm_30m.tif"))
+  writeRaster(chm_core, out_tif, overwrite = TRUE)
+  
+  # 4. Clean up scratch point cloud
   unlink(laz_path)
   return(task$tile_id)
 }
