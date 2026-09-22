@@ -24,7 +24,7 @@ COPY --chown=$MAMBA_USER:$MAMBA_USER src/ src/
 
 # Install package in editable mode without re-resolving pre-installed conda dependencies
 ARG MAMBA_DOCKERFILE_ACTIVATE=1
-ARG VERSION=1.3.1
+ARG VERSION=1.2.1
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION}
 RUN pip install --no-cache-dir --no-deps -e .
 
