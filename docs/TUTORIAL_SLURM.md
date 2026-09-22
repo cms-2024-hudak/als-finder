@@ -469,7 +469,28 @@ At scale, processing hundreds or thousands of spatial tiles is simply **one big 
 
 ---
 
-### Step 2.0: The Fundamental Loop (First Principles)
+### Step 2.0: Environment Setup for R (`r-base`, `r-lidr`, `r-terra`)
+
+Before running your R metric extraction scripts or looping over tiles, install R and its core geospatial stack directly into your active `als-tutorial` Conda environment.
+
+This guarantees that R, `lidR`, `terra`, and their underlying C++ libraries (GDAL, PROJ, GEOS, UDUNITS) share the exact same environment as `als-finder`, completely eliminating missing shared object errors (`libudunits2.so`) or C++ compilation issues:
+
+```bash
+# Ensure your environment is active
+conda activate als-tutorial
+
+# Install R, lidR, and terra with all pre-compiled C++ geospatial bindings
+conda install -c conda-forge -y r-base r-lidr r-terra
+```
+
+Once installed, verify that `lidR` and `terra` load cleanly:
+```bash
+R -e "library(terra); library(lidR); cat('R geospatial stack verified successfully!\n')"
+```
+
+---
+
+### Step 2.1: The Fundamental Loop (First Principles)
 
 Before diving into distributed Slurm arrays or cluster schedulers, let's look at the basic loop. Every tile processing pipeline—regardless of language or environment—performs the same sequence:
 1. Read the tile assignment and metadata from `tasks.csv`.
@@ -548,7 +569,7 @@ done
 
 ---
 
-### Step 2.1: Parallelizing Locally in R (`parallel::mclapply`)
+### Step 2.2: Parallelizing Locally in R (`parallel::mclapply`)
 
 If you are running on a local multi-core workstation (e.g. 8 cores) and want to speed up execution before moving to HPC, simply wrap the loop body in a function and run it with `parallel::mclapply`:
 
@@ -585,7 +606,7 @@ results <- mclapply(1:nrow(tasks), function(i) process_one_tile(tasks[i, ]), mc.
 
 ---
 
-### Step 2.2: Scaling to Distributed HPC Clusters via Slurm (`sbatch_lidar_metrics.slurm`)
+### Step 2.3: Scaling to Distributed HPC Clusters via Slurm (`sbatch_lidar_metrics.slurm`)
 
 On a supercomputing cluster, instead of running a local R loop, **Slurm acts as the parallel loop engine**. Each array task (`SLURM_ARRAY_TASK_ID`) extracts its assigned row from `tasks.csv` and processes it independently:
 
