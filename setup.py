@@ -2,8 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="als-finder",
-    use_scm_version=True,
-    setup_requires=["setuptools_scm"],
+    use_scm_version={"fallback_version": "1.3.0"},
     description="A high-performance, cloud-native CLI engine for discovering and parsing raw LiDAR point cloud metadata.",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
@@ -13,7 +12,7 @@ setup(
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     package_data={
-        "als_finder": ["data/*.gpkg"]
+        "als_finder": ["data/*.gpkg", "data/*.geojson"]
     },
     include_package_data=True,
     install_requires=[

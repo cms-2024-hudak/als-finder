@@ -17,27 +17,21 @@ class OpenTopographyProvider(BaseProvider):
     BASE_URL = "https://portal.opentopography.org/API"
 
     def __init__(self, ot_key: Optional[str] = None):
-        """Initializes the OpenTopography abstraction natively mapping keys organically."""
-        from dotenv import load_dotenv
-        
-        # Priority 1: Argument passed explicitly
-        # Priority 2: Current shell / workspace .env (loaded by cli.py)
-        self.api_key = ot_key or os.getenv("OPENTOPOGRAPHY_API_KEY")
-        
-        # Priority 3: Global config
-        global_config_dir = Path.home() / ".config" / "als-finder"
-        global_env = global_config_dir / ".env"
-        
-        # Priority 1: Check Explicit Keys natively via user argument constraints
-        if not self.api_key and global_env.exists():
-            load_dotenv(global_env)
-            self.api_key = os.getenv("OPENTOPOGRAPHY_API_KEY")
-            
-        # The native SDSC MinIO extraction architecture drops API key locks organically.
-        # Legacy search parameters still log it strictly for formal request headers.
-        # If still missing, log a warning.
-        if not self.api_key:
-            logger.warning("No OpenTopography API key provided. OT Discovery will bypass or have limited functionality.")
+        """Initializes the OpenTopography abstraction using unified credential resolver."""
+        from als_finder.core.auth_manager import resolve_credential
+        self.api_key = resolve_credential(
+            env_var_name="OPENTOPOGRAPHY_API_KEY",
+            cli_value=ot_key,
+            provider_name="OpenTopography",
+            signup_url="https://portal.opentopography.org/myopentopo",
+            instructions=[
+                "Create a free account at: https://portal.opentopography.org/myopentopo",
+                "Navigate to 'My Account' -> 'OpenTopography API Key'.",
+                "Click 'Request an API Key' and copy the alphanumeric key string.",
+                "Pass it once via CLI to auto-cache in your workspace: als-finder search --roi <file> --ot-key <YOUR_KEY>"
+            ],
+            auto_save_workspace_env=True
+        )
 
     def check_access(self) -> bool:
         """Check if API key is present and valid by hitting a lightweight endpoint."""
@@ -164,6 +158,7 @@ class OpenTopographyProvider(BaseProvider):
                     except:
                         pass
 
+                clean_meta = self.sanitize_metadata(meta)
                 results.append({
                     "provider": "OpenTopography",
                     "dataset_id": dataset_id,
@@ -176,8 +171,9 @@ class OpenTopographyProvider(BaseProvider):
                     "point_count": point_count, 
                     "point_density": point_density,
                     "area_sqkm": area,
-                    # Store raw for full context
-                    "raw_metadata": meta
+                    # Store all raw and random metadata for full context
+                    "raw_metadata": clean_meta,
+                    "additional_metadata": clean_meta
                 })
             return results
 
@@ -192,17 +188,34 @@ class OpenTopographyProvider(BaseProvider):
         """
         pass
 
-    def get_pdal_reader(self, urls: List[str], buffered_poly: Polygon) -> List[Dict[str, Any]]:
+    def get_pdal_reader(
+        self,
+        urls: List[str],
+        buffered_poly: Polygon,
+        poly_crs: Optional[str] = None,
+        **kwargs: Any
+    ) -> List[Dict[str, Any]]:
         pipeline = []
         inputs = []
+        b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
+        bounds_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
+
         for i, url in enumerate(urls):
             tag = f"reader_{i}"
-            pipeline.append({
-                "type": "readers.copc",
-                "filename": url,
-                "polygon": buffered_poly.wkt,
-                "tag": tag
-            })
+            if url.lower().endswith("ept.json"):
+                pipeline.append({
+                    "type": "readers.ept",
+                    "filename": url,
+                    "bounds": bounds_str,
+                    "tag": tag
+                })
+            else:
+                pipeline.append({
+                    "type": "readers.copc",
+                    "filename": url,
+                    "polygon": buffered_poly.wkt,
+                    "tag": tag
+                })
             inputs.append(tag)
             
         if len(urls) > 1:

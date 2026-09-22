@@ -46,7 +46,13 @@ class BaseProvider(ABC):
         pass
 
     @abstractmethod
-    def get_pdal_reader(self, urls: List[str], buffered_poly: Polygon) -> List[Dict[str, Any]]:
+    def get_pdal_reader(
+        self,
+        urls: List[str],
+        buffered_poly: Polygon,
+        poly_crs: Optional[str] = None,
+        **kwargs: Any
+    ) -> List[Dict[str, Any]]:
         """
         Constructs the provider-specific PDAL reader pipeline stages.
         This allows each provider to handle its own spatial subsetting logic natively.
@@ -54,8 +60,40 @@ class BaseProvider(ABC):
         Args:
             urls (List[str]): List of remote URLs intersecting the processing tile.
             buffered_poly (Polygon): The spatial processing bounds.
+            poly_crs (Optional[str]): Coordinate reference system of buffered_poly.
+            **kwargs: Additional provider-specific parameters.
             
         Returns:
             List[Dict]: A list of PDAL stage dictionaries (readers + potential merges).
         """
         pass
+
+    @staticmethod
+    def sanitize_metadata(raw_dict: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Ensures all keys and values in an additional_metadata dictionary are JSON-serializable primitives.
+        Converts non-serializable objects (such as Shapely geometries, Path objects, Datetime) to strings.
+        
+        Args:
+            raw_dict (Optional[Dict[str, Any]]): Raw dictionary from provider API.
+            
+        Returns:
+            Dict[str, Any]: Clean, JSON-safe metadata dictionary.
+        """
+        if not raw_dict or not isinstance(raw_dict, dict):
+            return {}
+        clean = {}
+        for k, v in raw_dict.items():
+            if k in ("geometry", "buffered_geometry", "buffered_poly", "core_poly"):
+                continue
+            if isinstance(v, (str, int, float, bool, type(None))):
+                clean[str(k)] = v
+            elif isinstance(v, (list, tuple)):
+                clean[str(k)] = [str(item) if not isinstance(item, (int, float, bool, type(None))) else item for item in v]
+            elif isinstance(v, dict):
+                clean[str(k)] = BaseProvider.sanitize_metadata(v)
+            else:
+                clean[str(k)] = str(v)
+        return clean
+
+

@@ -6,13 +6,13 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Union, List, Optional, Tuple, Dict, Any
 import geopandas as gpd
 from shapely.geometry import Polygon, box
 
 logger = logging.getLogger(__name__)
 
-def execute_with_memory_limit(cmd: List[str], input_data: bytes, memory_limit_mb: int = 1536) -> Tuple[bool, str]:
+def execute_with_memory_limit(cmd: List[str], input_data: bytes, memory_limit_mb: int = 4096) -> Tuple[bool, str]:
     memory_limit_bytes = memory_limit_mb * 1024 * 1024
     
     # Prevent virtual memory explosion from thread allocation by restricting underlying C++ multi-threading.
@@ -521,3 +521,245 @@ def run_final_copc_merge(interim_index_path: Path, final_copc_path: Path, crs: s
     except Exception as e:
         logger.error(f"Final COPC merge failed: {e}")
         return False
+
+def stream_single_tile(
+    manifest_or_grid_path: Union[str, Path],
+    tile_id: Union[int, str] = 0,
+    out_path: Optional[Union[str, Path]] = None,
+    tile_size: int = 500,
+    buffer_size: int = 50,
+    crs: Optional[str] = None,
+    overwrite: bool = False,
+    use_spatial_name: bool = False,
+    write_sidecar: bool = True,
+    tile_format: str = "laz",
+) -> Path:
+    """
+    Directly streams and crops point cloud data for a single spatial tile into a standardized point cloud file.
+    Supports integer base tile IDs (e.g. 15) and hierarchical quadrant string IDs (e.g. '15_NW').
+    Automatically nests output within a Hive-partitioned directory layout if out_path is a directory or None.
+
+    Args:
+        manifest_or_grid_path (Union[str, Path]): Path to catalog manifest.json, workspace dir, or grid.gpkg.
+        tile_id (Union[int, str]): Target tile index or quadrant string (e.g. 15 or '15_NW').
+        out_path (Optional[Union[str, Path]]): Destination file or directory path. If a directory
+            (e.g. /scratch or workspace/data), automatically nests output within Hive partition hierarchy.
+        tile_size (int): Core metric tile size in meters (default: 500m).
+        buffer_size (int): Overlap buffer size in meters (default: 50m).
+        crs (Optional[str]): Target coordinate reference system (defaults to grid's projected UTM CRS).
+        overwrite (bool): Force re-creation if output tile already exists.
+        use_spatial_name (bool): If True, uses metric coordinate-anchored filename.
+        write_sidecar (bool): If True, writes a companion .json sidecar metadata file alongside the tile.
+        tile_format (str): Output format: 'laz' (default, LASzip), 'copc' (Cloud Optimized Point Cloud), or 'las'.
+
+    Returns:
+        Path: Path to the generated point cloud tile.
+    """
+    from als_finder.core.grid_manager import get_tile_spec
+    from als_finder.providers import get_provider
+
+    fmt = tile_format.lower() if tile_format else "laz"
+    if fmt == "copc":
+        ext = ".copc.laz"
+    elif fmt == "las":
+        ext = ".las"
+    else:
+        ext = ".laz"
+
+    # 1. Retrieve tile spec via zero-copy SQL query (lazy auto-builds grid if missing or overwrite=True!)
+    spec = get_tile_spec(
+        manifest_or_grid_path,
+        tile_id,
+        tile_size=tile_size,
+        buffer_size=buffer_size,
+        overwrite=overwrite
+    )
+    buffered_poly = spec["buffered_poly"]
+    urls = spec["urls"]
+
+    if not urls:
+        raise ValueError(f"No dataset URLs found in manifest/grid for tile_id {tile_id}")
+
+    rel_hive = spec["hive_path"]
+    for sfx in [".copc.laz", ".laz", ".las"]:
+        if rel_hive.endswith(sfx):
+            rel_hive = rel_hive[:-len(sfx)]
+            break
+    rel_file = f"{rel_hive}{ext}"
+
+    # 2. Resolve output path: if directory or None, append Hive partition hierarchy
+    if out_path is None:
+        p = Path(manifest_or_grid_path)
+        ws_dir = p.parent.parent if p.parent.name == "catalog" else (p if p.is_dir() else p.parent)
+        target_out = ws_dir / "data" / "tiles" / rel_file
+    else:
+        raw_out = Path(out_path)
+        if raw_out.is_dir() or not (str(raw_out).endswith(".laz") or str(raw_out).endswith(".las")):
+            target_out = raw_out / rel_file
+        else:
+            target_out = raw_out
+
+    if target_out.exists() and not overwrite:
+        logger.info(f"Tile output {target_out} already exists and overwrite=False. Skipping.")
+        return target_out
+
+    target_out.parent.mkdir(parents=True, exist_ok=True)
+
+    pipeline = []
+
+    # 2. Build provider reader stages
+    if str(urls[0]).startswith("http"):
+        provider_name = spec.get("provider", "USGS_EPT")
+        provider_instance = get_provider(provider_name)
+        poly_crs = spec.get("grid_crs", "EPSG:4326")
+        reader_stages = provider_instance.get_pdal_reader(urls, buffered_poly, poly_crs=poly_crs)
+        pipeline.extend(reader_stages)
+    else:
+        inputs = []
+        for i, url in enumerate(urls):
+            tag = f"reader_{i}"
+            reader_type = "readers.copc" if str(url).lower().endswith(".copc.laz") else "readers.las"
+            pipeline.append({"type": reader_type, "filename": str(url), "tag": tag})
+            inputs.append(tag)
+        if len(urls) > 1:
+            pipeline.append({"type": "filters.merge", "inputs": inputs})
+
+    grid_crs = spec.get("grid_crs", "EPSG:32610")
+    # Default target_crs to grid_crs (projected UTM) for metric accuracy unless explicitly overridden
+    target_crs = crs if crs else grid_crs
+
+    # 3. Reprojection to target CRS so crop bounds match point cloud coordinate space
+    if target_crs and target_crs.lower() != "native":
+        pipeline.append({
+            "type": "filters.reprojection",
+            "out_srs": target_crs,
+        })
+
+    # 4. Transform buffered_poly to target_crs so crop bounds match point cloud coordinates exactly
+    from pyproj import Transformer
+    from shapely.ops import transform
+
+    core_poly = spec["core_poly"]
+    poly_src_crs = spec.get("grid_crs", "EPSG:32610")
+    if target_crs and target_crs != poly_src_crs and target_crs.lower() != "native":
+        try:
+            trans = Transformer.from_crs(poly_src_crs, target_crs, always_xy=True).transform
+            crop_poly = transform(trans, buffered_poly)
+            core_crop_poly = transform(trans, core_poly)
+        except Exception as e:
+            logger.warning(f"Could not transform polygons to {target_crs}: {e}. Using raw bounds.")
+            crop_poly = buffered_poly
+            core_crop_poly = core_poly
+    else:
+        crop_poly = buffered_poly
+        core_crop_poly = core_poly
+
+    b_minx, b_miny, b_maxx, b_maxy = crop_poly.bounds
+    pipeline.append({
+        "type": "filters.crop",
+        "bounds": f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])",
+    })
+
+    # 5. Taxonomy assignment & expression filter
+    pipeline.append({
+        "type": "filters.assign",
+        "value": ["Classification = 1 WHERE (Classification != 2 && Classification != 7 && Classification != 18)"],
+    })
+    pipeline.append({
+        "type": "filters.expression",
+        "expression": "ReturnNumber > 0 && NumberOfReturns > 0",
+    })
+
+    # Tag buffer points natively (0 = core tile, 1 = buffer) for lidR and external tools
+    c_minx, c_miny, c_maxx, c_maxy = core_crop_poly.bounds
+    pipeline.append({
+        "type": "filters.ferry",
+        "dimensions": "X => buffer",
+    })
+    if int(buffer_size) > 0:
+        pipeline.append({
+            "type": "filters.assign",
+            "value": [
+                "buffer = 1 WHERE X >= -999999999",
+                f"buffer = 0 WHERE (X >= {c_minx} && X <= {c_maxx} && Y >= {c_miny} && Y <= {c_maxy})",
+            ],
+        })
+    else:
+        pipeline.append({
+            "type": "filters.assign",
+            "value": [
+                "buffer = 0 WHERE X >= -999999999",
+            ],
+        })
+
+    # 6. Writer stage
+    extra_dims = "buffer=uint8"
+    if fmt == "copc":
+        pipeline.append({
+            "type": "writers.copc",
+            "filename": str(target_out.absolute()),
+            "a_srs": target_crs,
+            "extra_dims": extra_dims,
+        })
+    elif fmt == "las":
+        pipeline.append({
+            "type": "writers.las",
+            "filename": str(target_out.absolute()),
+            "a_srs": target_crs,
+            "minor_version": 4,
+            "extra_dims": extra_dims,
+        })
+    else:
+        pipeline.append({
+            "type": "writers.las",
+            "filename": str(target_out.absolute()),
+            "compression": "laszip",
+            "minor_version": 4,
+            "a_srs": target_crs,
+            "extra_dims": extra_dims,
+        })
+
+    # 7. Memory-guarded PDAL execution
+    pdal_json = json.dumps(pipeline)
+    success, err_msg = execute_with_memory_limit(
+        ["pdal", "pipeline", "-s"],
+        pdal_json.encode("utf-8"),
+        memory_limit_mb=4096,
+    )
+
+    if not success or not target_out.exists():
+        raise RuntimeError(f"PDAL stream execution failed for tile_id {tile_id}: {err_msg}")
+
+    # 8. Optional sidecar metadata export
+    if write_sidecar:
+        sidecar_path = target_out.with_suffix(".json")
+        core_b = spec["core_poly"].bounds
+        buf_b = spec["buffered_poly"].bounds
+        sidecar_meta = {
+            "tile_id": str(tile_id) if spec.get("quadrant") else int(spec.get("parent_tile_id", tile_id)),
+            "parent_tile_id": spec.get("parent_tile_id"),
+            "quadrant": spec.get("quadrant"),
+            "level": spec.get("level", 0),
+            "basename": spec.get("basename", target_out.stem),
+            "hive_dir": spec.get("hive_dir"),
+            "hive_path": spec.get("hive_path"),
+            "path": str(target_out.absolute()),
+            "dataset_id": str(spec.get("dataset_id", "")),
+            "provider": str(spec.get("provider", "")),
+            "grid_crs": str(target_crs),
+            "tile_size": int(spec.get("tile_size", tile_size)),
+            "buffer_size": int(spec.get("buffer_size", buffer_size)),
+            "est_points": spec.get("est_points"),
+            "is_hyperdense": spec.get("is_hyperdense", False),
+            "recommended_mem_gb": spec.get("recommended_mem_gb"),
+            "core_bounds": spec.get("crop_bbox", [round(core_b[0], 2), round(core_b[1], 2), round(core_b[2], 2), round(core_b[3], 2)]),
+            "crop_pdal_bounds": spec.get("crop_pdal_bounds"),
+            "crop_gdal_te": spec.get("crop_gdal_te"),
+            "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
+            "source_urls": spec.get("urls", []),
+        }
+        with open(sidecar_path, "w", encoding="utf-8") as sf:
+            json.dump(sidecar_meta, sf, indent=2)
+        logger.info(f"Wrote metadata sidecar to {sidecar_path}")
+
+    return target_out

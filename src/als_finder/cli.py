@@ -7,18 +7,13 @@ import sys
 from pathlib import Path
 from datetime import datetime
 import time
+from typing import Dict, Any, List, Optional, Callable, Union, Tuple
 import importlib.resources as pkg_resources
-import importlib.metadata
 from dotenv import load_dotenv
+from als_finder import __version__
+
 from als_finder.core.input_manager import load_roi, ROIError
-from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvider
-
-try:
-    __version__ = importlib.metadata.version("als-finder")
-except importlib.metadata.PackageNotFoundError:
-    __version__ = "1.1.0-dev"
-
-from als_finder.providers import OpenTopographyProvider, USGSProvider, NOAAProvider
+from als_finder.providers import get_active_providers, get_provider, list_available_providers, BaseProvider, get_provider_priority
 from als_finder.download import generate_fetch_array, execute_fetch_array
 
 # Configure logging
@@ -83,57 +78,92 @@ def get_example_roi():
 @cli.command()
 @click.option('--roi', required=False, help='Path to ROI file (GeoJSON/Shapefile) or BBox string')
 @click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex e.g. ~^USGS)')
-@click.option('--date', help='Temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
-@click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
+@click.option('--date', help='Temporal filter: colon range 2018-01-01:2022-12-31, open-ended 2020:, or single year 2020')
+@click.option('--density', help='Point density filter in pts/m2 (e.g. 8.0, 2:10) or QL Level (QL0, QL1, QL2, QL3)')
 @click.option('--workspace', help='Path to project workspace directory')
-@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
+@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NASA_GLIHT'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
-@click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
-def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
+@click.option('--ot-key', help='OpenTopography API Key. Auto-saved to workspace .env.')
+@click.option('--earthdata-token', help='NASA Earthdata Login (EDL) Bearer Token. Auto-saved to workspace .env.')
+@click.option('--neon-key', help='NEON API Token. Auto-saved to workspace .env.')
+@click.option('--dedup/--no-dedup', default=True, help='Deduplicate multi-archive surveys, prioritizing open repositories (default True). Pass --no-dedup to disable.')
+@click.option('--overwrite/--no-overwrite', default=True, help='Overwrite existing catalog files in workspace (default True). Use --no-overwrite to prevent replacing an existing catalog.')
+def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, earthdata_token, neon_key, dedup, overwrite):
     """Search for available LiDAR data."""
     start_time_exec = time.time()
     
     if ot_key:
-        env_path = Path.cwd() / '.env'
-        with open(env_path, 'a') as f:
-            f.write(f"\nOPENTOPOGRAPHY_API_KEY={ot_key}\n")
         os.environ['OPENTOPOGRAPHY_API_KEY'] = ot_key
-        logger.info(f"OpenTopography API key successfully cached locally to {env_path}")
+    if earthdata_token:
+        os.environ['EARTHDATA_BEARER_TOKEN'] = earthdata_token
+    if neon_key:
+        os.environ['NEON_API_KEY'] = neon_key
         
     if not (roi or name or date or density):
         raise click.UsageError("At least one filter (--roi, --name, --date, or --density) must be provided to execute a pipeline search securely avoiding arbitrary global extraction ceilings.")
 
     start_date, end_date = None, None
     if date:
-        if '/' not in date:
-            raise click.UsageError("Temporal mapping via --date must strictly contain a slash '/' delimiter isolating bounds. Options: '2020-01-01/' (after), '/2020-01-01' (before), or '2015-01-01/2020-01-01' (explicit range).")
+        date_str = str(date).strip()
+        date_delim = None
+        for delim in [':', '..', '/']:
+            if delim in date_str:
+                date_delim = delim
+                break
         
-        start_date, end_date = date.split('/', 1)
-        start_date = start_date.strip() if start_date.strip() else None
-        end_date = end_date.strip() if end_date.strip() else None
+        if date_delim:
+            s_raw, e_raw = date_str.split(date_delim, 1)
+            start_date = s_raw.strip() if s_raw.strip() else None
+            end_date = e_raw.strip() if e_raw.strip() else None
+            if start_date and len(start_date) == 4 and start_date.isdigit():
+                start_date = f"{start_date}-01-01"
+            if end_date and len(end_date) == 4 and end_date.isdigit():
+                end_date = f"{end_date}-12-31"
+        else:
+            if len(date_str) == 4 and date_str.isdigit():
+                start_date = f"{date_str}-01-01"
+                end_date = f"{date_str}-12-31"
+            else:
+                start_date = date_str
+                end_date = date_str
             
     min_density, max_density = None, None
     if density:
-        if density.upper().startswith('QL'):
+        density_str = str(density).strip()
+        if density_str.upper().startswith('QL'):
             ql_map = {'QL0': 8.0, 'QL1': 8.0, 'QL2': 2.0, 'QL3': 0.5}
-            min_density = ql_map.get(density.upper())
+            min_density = ql_map.get(density_str.upper())
             if min_density is None:
                 raise click.ClickException(f"Invalid QL specification: {density}. Use QL0, QL1, QL2, or QL3.")
-        elif '/' in density:
-            mn, mx = density.split('/')
-            min_density, max_density = float(mn), float(mx)
         else:
-            min_density = float(density)
+            # Check for range delimiters: '..', ':', '-', '/'
+            range_delim = None
+            for delim in ['..', ':', '/', '-']:
+                if delim in density_str:
+                    parts = density_str.split(delim)
+                    if len(parts) == 2 and (parts[0] != '' or parts[1] != ''):
+                        range_delim = delim
+                        break
+            if range_delim:
+                mn, mx = density_str.split(range_delim, 1)
+                try:
+                    min_density = float(mn.strip()) if mn.strip() else None
+                    max_density = float(mx.strip()) if mx.strip() else None
+                except ValueError:
+                    raise click.ClickException(f"Invalid density range: '{density}'. Expected format like '2:10', '2-10', '2..10', or 'QL1'.")
+            else:
+                try:
+                    min_density = float(density_str)
+                except ValueError:
+                    raise click.ClickException(f"Invalid density value: '{density}'. Use a number (e.g. 8.0), a range ('2:10', '2-10', '2..10'), or a QL level ('QL1').")
 
     logger.info(f"Searching for data in ROI: {roi}")
     logger.info(f"Providers: {provider}")
     
     # Workspace Validation
     if not workspace:
-        cwd = os.getcwd()
-        if not click.confirm(f"WARNING: No --workspace specified. This will build 'catalog/' and 'data/' directories directly into: {cwd}. Proceed?"):
-            raise click.Abort()
-        workspace = cwd
+        workspace = os.getcwd()
+        click.echo(f"Writing catalog to current directory: {workspace}", err=True)
         
     # Secure API Key Isolation: Look for .env physically inside the workspace
     env_path = os.path.join(workspace, '.env')
@@ -148,6 +178,9 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
     output_csv = os.path.join(catalog_dir, 'catalog.csv')
     output_gpkg = os.path.join(catalog_dir, 'catalog.gpkg')
     
+    if not overwrite and os.path.exists(output_manifest):
+        raise click.ClickException(f"Catalog already exists at {output_manifest}. Pass --overwrite to replace it or choose another workspace.")
+    
     try:
         # Parse and validate the ROI
         roi_geom = None
@@ -155,18 +188,13 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
             roi_geom = load_roi(roi)
             logger.info(f"ROI Loaded: {roi_geom.geom_type} with bounds {roi_geom.bounds}")
         else:
-            logger.warning("No ROI provided! Querying the global index natively.")
-            if not click.confirm("Are you sure you want to query the entire global index without a spatial boundary?"):
-                raise click.Abort()
+            # Default to global planetary bounding box for backwards compatibility
+            from shapely.geometry import box
+            roi_geom = box(-180.0, -90.0, 180.0, 90.0)
+            logger.info("No ROI provided; using global planetary bounding box (-180, -90, 180, 90).")
         
-        # Initialize Providers
-        active_providers = []
-        if 'OpenTopography' in provider:
-            active_providers.append(OpenTopographyProvider())
-        if 'USGS_EPT' in provider:
-            active_providers.append(USGSProvider())
-        if 'NOAA_STAC' in provider:
-            active_providers.append(NOAAProvider())
+        # Initialize Providers dynamically from Registry
+        active_providers = get_active_providers(provider)
         
         final_results = []
         for p in active_providers:
@@ -234,18 +262,27 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
                     poly = shape(geom_dict)
                     area_sqm = abs(geod.geometry_area_perimeter(poly)[0])
                     item['area_sqkm'] = round(area_sqm / 1e6, 2)
-                    
-                    if count and not item.get('point_density') and area_sqm > 0:
-                        calc_density = float(count) / area_sqm
-                        if calc_density < 0.01:
-                            item['point_density'] = round(calc_density, 4)
-                        else:
-                            item['point_density'] = round(calc_density, 2)
-                    elif item.get('point_density') and not count and area_sqm > 0:
-                        imputed_count = int(float(item.get('point_density')) * area_sqm)
-                        item['point_count'] = imputed_count
-                        # Automatically track the new sizes globally
-                        item['size'] = imputed_count * 8 
+                elif item.get('area_sqkm'):
+                    area_sqm = float(item['area_sqkm']) * 1e6
+                else:
+                    area_sqm = 0
+
+                if count and not item.get('point_density') and area_sqm > 0:
+                    calc_density = float(count) / area_sqm
+                    if calc_density < 0.01:
+                        item['point_density'] = round(calc_density, 4)
+                    else:
+                        item['point_density'] = round(calc_density, 2)
+                elif item.get('point_density') and not count and area_sqm > 0:
+                    imputed_count = int(float(item.get('point_density')) * area_sqm)
+                    item['point_count'] = imputed_count
+
+                if not item.get('size') and item.get('point_count'):
+                    item['size'] = int(item['point_count']) * 8
+                elif not item.get('size') and item.get('point_density') and area_sqm > 0:
+                    imputed_count = int(float(item.get('point_density')) * area_sqm)
+                    item['point_count'] = imputed_count
+                    item['size'] = imputed_count * 8
             except Exception as e:
                 logger.debug(f"Failed calculating density: {e}")
 
@@ -268,8 +305,14 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
                         logger.warning(f"Invalid regex pattern provided: {pattern[1:]}")
                         continue
                 else:
-                    if not fnmatch.fnmatch(target.lower(), pattern.lower()):
-                        continue
+                    pat_lower = pattern.lower()
+                    tgt_lower = target.lower()
+                    if '*' in pattern or '?' in pattern:
+                        if not fnmatch.fnmatch(tgt_lower, pat_lower):
+                            continue
+                    else:
+                        if pat_lower not in tgt_lower:
+                            continue
 
             # 2. Date filter natively intercepts standard sort_date formatting
             raw_date_test = str(item.get('date') or '').strip()
@@ -353,8 +396,52 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
                     
                 item['display_date'] = display_date
                 item['sort_date'] = sort_date
+                item['priority'] = get_provider_priority(item.get('provider', ''))
             
-            unique_results.sort(key=lambda k: k.get('sort_date', '0000-00-00'), reverse=True)
+            # Sort primarily by date (newest first), secondarily by provider priority (Open/Octree first)
+            unique_results.sort(key=lambda k: (k.get('sort_date', '0000-00-00'), -k.get('priority', 99)), reverse=True)
+
+            if dedup:
+                deduped: List[Dict[str, Any]] = []
+                for candidate in unique_results:
+                    c_name = str(candidate.get('name', '')).lower().replace('_', ' ').replace('-', ' ')
+                    c_year = str(candidate.get('year', '') or '')
+                    c_bounds = candidate.get('bounds')
+                    
+                    is_dup = False
+                    for kept in deduped:
+                        k_name = str(kept.get('name', '')).lower().replace('_', ' ').replace('-', ' ')
+                        k_year = str(kept.get('year', '') or '')
+                        k_bounds = kept.get('bounds')
+                        
+                        # Name + year match
+                        if c_year and k_year and c_year == k_year:
+                            c_words = set([w for w in c_name.split() if len(w) > 4])
+                            k_words = set([w for w in k_name.split() if len(w) > 4])
+                            if c_words and k_words and len(c_words.intersection(k_words)) >= 2:
+                                is_dup = True
+                                break
+                        
+                        # Bounding box IoU overlap > 0.80 with matching year
+                        if c_bounds and k_bounds and c_year and k_year and c_year == k_year:
+                            minx = max(c_bounds[0], k_bounds[0])
+                            miny = max(c_bounds[1], k_bounds[1])
+                            maxx = min(c_bounds[2], k_bounds[2])
+                            maxy = min(c_bounds[3], k_bounds[3])
+                            if maxx > minx and maxy > miny:
+                                inter_area = (maxx - minx) * (maxy - miny)
+                                c_area = (c_bounds[2] - c_bounds[0]) * (c_bounds[3] - c_bounds[1])
+                                k_area = (k_bounds[2] - k_bounds[0]) * (k_bounds[3] - k_bounds[1])
+                                union_area = c_area + k_area - inter_area
+                                if union_area > 0 and (inter_area / union_area) > 0.80:
+                                    is_dup = True
+                                    break
+                    
+                    if not is_dup:
+                        deduped.append(candidate)
+                        
+                unique_results = deduped
+                logger.info(f"Deduplication retained {len(unique_results)} distinct surveys.")
             
             for item in unique_results:
                 prov = str(item.get('provider', 'Unknown'))[:col_widths['Provider']]
@@ -469,7 +556,28 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key):
                         if item.get('srs') == 'EPSG:3857':
                             geom = transform(transformer_3857_to_4326.transform, geom)
                         
-                        rec = {k: str(v) for k, v in item.items() if k not in ['bounds', 'geometry', 'raw_metadata']}
+                        rec = {}
+                        for k, v in item.items():
+                            if k in ['bounds', 'geometry', 'raw_metadata', 'additional_metadata']:
+                                continue
+                            if k in ['point_count', 'size']:
+                                try:
+                                    rec[k] = int(v) if v is not None else None
+                                except:
+                                    rec[k] = None
+                            elif k in ['point_density', 'area_sqkm']:
+                                try:
+                                    rec[k] = float(v) if v is not None else None
+                                except:
+                                    rec[k] = None
+                            elif isinstance(v, (dict, list)):
+                                rec[k] = json.dumps(v, default=str)
+                            else:
+                                rec[k] = str(v) if v is not None else None
+                                
+                        # Generic preservation: serialize all raw/rando metadata as JSON string
+                        add_meta = item.get('additional_metadata') or item.get('raw_metadata') or {}
+                        rec['additional_metadata_json'] = json.dumps(add_meta, default=str)
                         rec['geometry'] = geom
                         records.append(rec)
                 except Exception as parse_e:
@@ -569,9 +677,11 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex e.g. ~^USGS)')
 @click.option('--date', help='Date filter YYYY-MM-DD or range YYYY-MM-DD/YYYY-MM-DD')
 @click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. 8.0, 2.0/10.0, or QL1)')
-@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
+@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NASA_GLIHT'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
-@click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
+@click.option('--ot-key', help='OpenTopography API Key. Auto-saved to workspace .env.')
+@click.option('--earthdata-token', help='NASA Earthdata Login (EDL) Bearer Token. Auto-saved to workspace .env.')
+@click.option('--neon-key', help='NEON API Token. Auto-saved to workspace .env.')
 @click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats to the local drive natively.')
 @click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull the entirely comprehensive upstream dataset payload natively.')
 @click.option('--standardize', is_flag=True, help='Execute PDAL standardization concurrently after extracting binaries.')
@@ -581,8 +691,14 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
 @click.option('--preserve-raw', is_flag=True, help='Preserve the raw .laz binaries after successful standardization. By default, raw files are purged to save space.')
 @click.option('--workers', type=int, help='Override the number of concurrent thread workers. Defaults to dynamic scaling based on os.cpu_count()')
 @click.option('--overwrite', is_flag=True, help='Force overwrite of existing files instead of skipping them.')
-def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, execute, full, standardize, crs, stac, quicklook, preserve_raw, workers, overwrite):
+def download(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, earthdata_token, neon_key, execute, full, standardize, crs, stac, quicklook, preserve_raw, workers, overwrite):
     """Generate target fetch arrays or physically download filtered binary segments directly to the Hive local cache."""
+    if ot_key:
+        os.environ['OPENTOPOGRAPHY_API_KEY'] = ot_key
+    if earthdata_token:
+        os.environ['EARTHDATA_BEARER_TOKEN'] = earthdata_token
+    if neon_key:
+        os.environ['NEON_API_KEY'] = neon_key
     workspace_path = Path(workspace)
     fetch_array_path = workspace_path / 'catalog' / 'fetch_array.csv'
     manifest_path = workspace_path / 'catalog' / 'manifest.json'
@@ -1026,6 +1142,715 @@ def clean_cmd(workspace):
     except Exception as e:
         logger.error(f"Failed to clean workspace: {e}")
         raise click.ClickException(str(e))
+
+def format_cli_output(
+    payload: Dict[str, Any],
+    json_output: bool = False,
+    field: Optional[str] = None,
+    output_format: Optional[str] = None,
+    default_human_printer: Optional[Callable[[], None]] = None,
+) -> None:
+    """
+    Standardized CLI output formatter supporting:
+      1. --field <key>: extracts a specific key or dotted nested path (e.g. total_tiles or audit.subdivided_tiles).
+      2. --format env: outputs key=value pairs for eval $(...) in bash/Slurm.
+      3. --json or --format json: outputs machine-readable JSON.
+      4. Default: calls default_human_printer() or outputs formatted JSON.
+    """
+    if field:
+        curr: Any = payload
+        for part in field.split("."):
+            if isinstance(curr, dict):
+                curr = curr.get(part)
+            else:
+                curr = None
+                break
+        if curr is not None:
+            if isinstance(curr, (dict, list)):
+                click.echo(json.dumps(curr, indent=2))
+            else:
+                click.echo(str(curr))
+        else:
+            click.echo("", err=True)
+        return
+
+    if output_format == "env":
+        for k, v in payload.items():
+            if v is not None and not isinstance(v, (dict, list)):
+                click.echo(f"{k.upper()}={json.dumps(str(v))}")
+        return
+
+    if json_output or output_format == "json":
+        click.echo(json.dumps(payload, indent=2))
+        return
+
+    if default_human_printer:
+        default_human_printer()
+    else:
+        click.echo(json.dumps(payload, indent=2))
+
+
+def _execute_fetch_single_tile(
+    target_manifest: Path,
+    tile_id: str,
+    ws_dir: Path,
+    output: Optional[str],
+    buffer_size: int,
+    tile_size: int,
+    max_points: Optional[int],
+    subtiles: bool,
+    crs: str,
+    spatial_name: bool,
+    sidecar: bool,
+    overwrite: bool,
+    tile_format: str = "laz",
+) -> Tuple[bool, Union[Dict[str, Any], List[Dict[str, Any]]]]:
+    from als_finder.core.grid_manager import get_tile_spec
+    from als_finder.core.standardization import stream_single_tile
+
+    spec = get_tile_spec(
+        target_manifest,
+        tile_id=tile_id,
+        tile_size=tile_size,
+        buffer_size=buffer_size,
+        overwrite=overwrite
+    )
+
+    should_subdivide = (
+        subtiles and max_points is not None and spec.get("est_points", 0) > max_points and not spec.get("quadrant")
+    )
+
+    if should_subdivide:
+        subtile_results = []
+        quads = ["NW", "NE", "SW", "SE"]
+        for q in quads:
+            child_id = f"{tile_id}_{q}"
+            child_spec = get_tile_spec(
+                target_manifest,
+                tile_id=child_id,
+                tile_size=tile_size,
+                buffer_size=buffer_size,
+                overwrite=overwrite
+            )
+            child_path = stream_single_tile(
+                manifest_or_grid_path=target_manifest,
+                tile_id=child_id,
+                out_path=output,
+                tile_size=tile_size,
+                buffer_size=buffer_size,
+                crs=crs,
+                overwrite=overwrite,
+                use_spatial_name=spatial_name,
+                write_sidecar=sidecar,
+                tile_format=tile_format,
+            )
+            core_b = child_spec["core_poly"].bounds
+            buf_b = child_spec["buffered_poly"].bounds
+            grid_crs = child_spec.get("grid_crs", "EPSG:32610")
+            target_crs = crs if crs else grid_crs
+            child_sidecar = child_path.with_suffix(".json") if sidecar else None
+
+            subtile_results.append({
+                "tile_id": child_id,
+                "parent_tile_id": int(child_spec["parent_tile_id"]),
+                "quadrant": q,
+                "basename": child_spec.get("basename"),
+                "hive_dir": child_spec.get("hive_dir"),
+                "hive_path": child_spec.get("hive_path"),
+                "path": str(child_path.absolute()),
+                "sidecar_path": str(child_sidecar.absolute()) if child_sidecar else None,
+                "grid_crs": str(target_crs),
+                "tile_size": child_spec["tile_size"],
+                "buffer_size": child_spec["buffer_size"],
+                "est_points": child_spec["est_points"],
+                "is_hyperdense": child_spec["is_hyperdense"],
+                "crop_bbox": child_spec.get("crop_bbox"),
+                "crop_pdal_bounds": child_spec.get("crop_pdal_bounds"),
+                "crop_gdal_te": child_spec.get("crop_gdal_te"),
+                "crop_minx": child_spec.get("crop_minx"),
+                "crop_miny": child_spec.get("crop_miny"),
+                "crop_maxx": child_spec.get("crop_maxx"),
+                "crop_maxy": child_spec.get("crop_maxy"),
+                "core_bounds": child_spec.get("crop_bbox"),
+                "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
+            })
+        return True, subtile_results
+
+    res_path = stream_single_tile(
+        manifest_or_grid_path=target_manifest,
+        tile_id=tile_id,
+        out_path=output,
+        tile_size=tile_size,
+        buffer_size=buffer_size,
+        crs=crs,
+        overwrite=overwrite,
+        use_spatial_name=spatial_name,
+        write_sidecar=sidecar,
+        tile_format=tile_format,
+    )
+
+    core_b = spec["core_poly"].bounds
+    buf_b = spec["buffered_poly"].bounds
+    grid_crs = spec.get("grid_crs", "EPSG:32610")
+    target_crs = crs if crs else grid_crs
+    sidecar_path = res_path.with_suffix(".json") if sidecar else None
+
+    payload = {
+        "status": "success",
+        "tile_id": str(tile_id) if spec.get("quadrant") else int(spec.get("parent_tile_id", tile_id)),
+        "parent_tile_id": spec.get("parent_tile_id"),
+        "quadrant": spec.get("quadrant"),
+        "level": spec.get("level", 0),
+        "basename": spec.get("basename"),
+        "hive_dir": spec.get("hive_dir"),
+        "hive_path": spec.get("hive_path"),
+        "path": str(res_path.absolute()),
+        "sidecar_path": str(sidecar_path.absolute()) if sidecar_path else None,
+        "grid_crs": str(target_crs),
+        "tile_size": spec.get("tile_size", tile_size),
+        "buffer_size": spec.get("buffer_size", buffer_size),
+        "nominal_tile_size": spec.get("nominal_tile_size", tile_size),
+        "nominal_buffer_size": spec.get("nominal_buffer_size", buffer_size),
+        "est_points": spec.get("est_points"),
+        "is_hyperdense": spec.get("is_hyperdense", False),
+        "recommended_mem_gb": spec.get("recommended_mem_gb"),
+        "crop_bbox": spec.get("crop_bbox"),
+        "crop_pdal_bounds": spec.get("crop_pdal_bounds"),
+        "crop_gdal_te": spec.get("crop_gdal_te"),
+        "crop_minx": spec.get("crop_minx"),
+        "crop_miny": spec.get("crop_miny"),
+        "crop_maxx": spec.get("crop_maxx"),
+        "crop_maxy": spec.get("crop_maxy"),
+        "core_bounds": spec.get("crop_bbox"),
+        "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
+        "provider": str(spec.get("provider", "")),
+        "dataset_id": str(spec.get("dataset_id", "")),
+    }
+    return False, payload
+
+
+# ==============================================================================
+# UNIFIED ACQUISITION GROUP (fetch)
+# ==============================================================================
+
+@cli.group('fetch')
+def fetch_group():
+    """Unified point cloud data acquisition (spatial tiles, plots, and surveys)."""
+    pass
+
+
+@fetch_group.command('tile')
+@click.argument('tile_ids', nargs=-1, required=False)
+@click.option('--tile-id', default=None, type=str, help='Target tile ID (flag alternative to positional argument)')
+@click.option('-w', '--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
+@click.option('-m', '--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
+@click.option('-o', '--output', default=None, type=click.Path(), help='Target output .laz file path or directory (auto-Hive partitioned if directory or omitted)')
+@click.option('-b', '--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m for 30m raster compatibility)')
+@click.option('-s', '--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m for 30m/10m/1m divisibility)')
+@click.option('--max-points', type=int, default=None, help='Point budget threshold. If exceeded, splits tile into 4 quadrants')
+@click.option('--subtiles/--no-subtiles', default=True, help='If tile exceeds max-points, sequentially stream child quadrants (default True)')
+@click.option('--crs', default=None, help='Target CRS (defaults to local UTM)')
+@click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming')
+@click.option('--sidecar/--no-sidecar', default=True, help='Write a companion .json metadata sidecar file alongside the .laz tile (default True)')
+@click.option('--tile-format', type=click.Choice(['laz', 'copc', 'las'], case_sensitive=False), default='laz', help='Point cloud file format: laz (default, LASzip), copc (Cloud Optimized Point Cloud), or las (uncompressed).')
+@click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
+@click.option('--field', default=None, help='Extract a specific field from payload (e.g. path, tile_id, crop_pdal_bounds)')
+@click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
+@click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
+def fetch_tile_subcmd(tile_ids, tile_id, workspace, manifest, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, tile_format, overwrite, field, output_format, json_output):
+    """Stream on-demand spatial tiles (e.g. als-finder fetch tile 15 or als-finder fetch tile 14 15 16)."""
+    try:
+        # Default workspace fallback to '.' if catalog/ exists
+        if workspace is None and manifest is None:
+            if (Path(".") / "catalog" / "grid.gpkg").exists() or (Path(".") / "catalog" / "manifest.json").exists():
+                workspace = "."
+
+        if workspace:
+            ws_path = Path(workspace)
+            manifest_candidate = ws_path / "catalog" / "grid.gpkg"
+            if not manifest_candidate.exists():
+                manifest_candidate = ws_path / "catalog" / "manifest.json"
+            if not manifest_candidate.exists():
+                raise click.UsageError(f"Neither grid.gpkg nor manifest.json found in workspace '{workspace}/catalog/'. Run 'search' first.")
+            target_manifest = manifest_candidate
+        elif manifest:
+            target_manifest = Path(manifest)
+            ws_path = target_manifest.parent.parent if target_manifest.parent.name == "catalog" else target_manifest.parent
+        else:
+            raise click.UsageError("Either --workspace or --manifest must be provided (or run from inside a workspace).")
+
+        # Resolve target tile IDs: positional takes precedence, then flag
+        targets: List[str] = list(tile_ids) if tile_ids else []
+        if not targets and tile_id:
+            targets = [tile_id]
+        if not targets:
+            raise click.UsageError("A target tile ID must be specified (e.g. 'als-finder fetch tile 15' or '--tile-id 15').")
+
+        results = []
+        for tid in targets:
+            is_subdiv, item_res = _execute_fetch_single_tile(
+                target_manifest=target_manifest,
+                tile_id=tid,
+                ws_dir=ws_path,
+                output=output,
+                buffer_size=buffer_size,
+                tile_size=tile_size,
+                max_points=max_points,
+                subtiles=subtiles,
+                crs=crs,
+                spatial_name=spatial_name,
+                sidecar=sidecar,
+                overwrite=overwrite,
+                tile_format=tile_format,
+            )
+            results.append((tid, is_subdiv, item_res))
+
+        # Output formatting
+        if len(results) == 1:
+            tid, is_subdiv, res = results[0]
+            if is_subdiv:
+                def human_subdiv_printer():
+                    msg = f"Tile {tid} exceeded budget. Subdivided into 4 quadrants:\n"
+                    for r in res:
+                        msg += f"  - Streamed {r['tile_id']} to {r['path']}\n"
+                    click.echo(msg.rstrip(), err=True)
+
+                format_cli_output(
+                    {"status": "success", "subdivided": True, "tiles": res},
+                    json_output=json_output,
+                    field=field,
+                    output_format=output_format,
+                    default_human_printer=human_subdiv_printer
+                )
+            else:
+                def human_fetch_printer():
+                    msg = f"Successfully streamed tile {tid} to {res['path']}"
+                    if sidecar and res.get("sidecar_path"):
+                        msg += f"\nWrote metadata sidecar to {res['sidecar_path']}"
+                    click.echo(msg, err=True)
+
+                format_cli_output(
+                    res,
+                    json_output=json_output,
+                    field=field,
+                    output_format=output_format,
+                    default_human_printer=human_fetch_printer
+                )
+        else:
+            # Multi-tile batch output
+            flat_items = []
+            for tid, is_subdiv, res in results:
+                if is_subdiv:
+                    flat_items.extend(res)
+                else:
+                    flat_items.append(res)
+
+            def human_multi_printer():
+                click.echo(f"Successfully processed {len(results)} target tile(s) ({len(flat_items)} file(s) generated):", err=True)
+                for item in flat_items:
+                    click.echo(f"  - Tile {item['tile_id']} -> {item['path']}", err=True)
+
+            format_cli_output(
+                {"status": "success", "total_tiles": len(flat_items), "tiles": flat_items},
+                json_output=json_output,
+                field=field,
+                output_format=output_format,
+                default_human_printer=human_multi_printer
+            )
+
+    except Exception as e:
+        if json_output or output_format == "json":
+            click.echo(json.dumps({"status": "error", "error": str(e)}, indent=2))
+            sys.exit(1)
+        else:
+            click.echo(f"Error fetching tile: {e}", err=True)
+            sys.exit(1)
+
+
+@cli.command('fetch-tile')
+@click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory')
+@click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
+@click.option('--tile-id', required=True, type=str, help='Target tile ID (e.g. 15 or 15_NW)')
+@click.option('--output', default=None, type=click.Path(), help='Target output .laz file or directory')
+@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
+@click.option('--max-points', type=int, default=None, help='Point budget threshold for auto-subdivision')
+@click.option('--subtiles/--no-subtiles', default=True, help='If exceeded, stream child quadrants (default True)')
+@click.option('--crs', default=None, help='Target CRS (defaults to local UTM)')
+@click.option('--spatial-name', is_flag=True, help='Use metric coordinate-anchored tile naming')
+@click.option('--sidecar/--no-sidecar', default=True, help='Write a companion .json metadata sidecar (default True)')
+@click.option('--tile-format', type=click.Choice(['laz', 'copc', 'las'], case_sensitive=False), default='laz', help='Point cloud file format: laz, copc, or las.')
+@click.option('--overwrite', is_flag=True, help='Force overwrite existing output file')
+@click.option('--field', default=None, help='Extract a specific field from payload')
+@click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None)
+@click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON')
+@click.pass_context
+def fetch_tile_cmd(ctx, workspace, manifest, tile_id, output, buffer_size, tile_size, max_points, subtiles, crs, spatial_name, sidecar, tile_format, overwrite, field, output_format, json_output):
+    """Backward-compatible alias for 'als-finder fetch tile'."""
+    ctx.invoke(
+        fetch_tile_subcmd,
+        tile_ids=(),
+        tile_id=tile_id,
+        workspace=workspace,
+        manifest=manifest,
+        output=output,
+        buffer_size=buffer_size,
+        tile_size=tile_size,
+        max_points=max_points,
+        subtiles=subtiles,
+        crs=crs,
+        spatial_name=spatial_name,
+        sidecar=sidecar,
+        tile_format=tile_format,
+        overwrite=overwrite,
+        field=field,
+        output_format=output_format,
+        json_output=json_output
+    )
+
+
+@fetch_group.command('survey')
+@click.pass_context
+@click.option('--workspace', required=True, help='Path to target workspace directory containing manifest.json')
+@click.option('--roi', help='Path to spatial boundary file to dynamically mask downloads.')
+@click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex)')
+@click.option('--date', help='Date filter YYYY-MM-DD or range YYYY-MM-DD/YYYY-MM-DD')
+@click.option('--density', help='Point density filter pts/m2 or QL Level (e.g. QL1)')
+@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NASA_GLIHT'], callback=parse_comma_separated, help='Provider(s) to search')
+@click.option('--cloud-native', is_flag=True, help='Filter exclusively for streaming formats (EPT or COPC)')
+@click.option('--ot-key', help='OpenTopography API Key')
+@click.option('--earthdata-token', help='NASA Earthdata Login Bearer Token')
+@click.option('--neon-key', help='NEON API Token')
+@click.option('--execute', is_flag=True, help='Disable dry-run safety and physically pull binary formats.')
+@click.option('--full', is_flag=True, help='Bypass spatial ROI intersections and pull entire dataset.')
+@click.option('--standardize', is_flag=True, help='Execute PDAL standardization concurrently.')
+@click.option('--crs', default=None, help='Target output projection (defaults to local UTM)')
+@click.option('--stac', is_flag=True, help='Generate PySTAC schema hierarchies.')
+@click.option('--quicklook', is_flag=True, help='Generate rapid 2D quicklook previews.')
+@click.option('--preserve-raw', is_flag=True, help='Preserve raw binaries after standardization.')
+@click.option('--workers', type=int, help='Override concurrent thread workers.')
+@click.option('--overwrite', is_flag=True, help='Force overwrite of existing files.')
+def fetch_survey_subcmd(ctx, workspace, roi, name, date, density, provider, cloud_native, ot_key, earthdata_token, neon_key, execute, full, standardize, crs, stac, quicklook, preserve_raw, workers, overwrite):
+    """Bulk download full raw survey archives for offline staging."""
+    ctx.invoke(
+        download,
+        workspace=workspace,
+        roi=roi,
+        name=name,
+        date=date,
+        density=density,
+        provider=provider,
+        cloud_native=cloud_native,
+        ot_key=ot_key,
+        earthdata_token=earthdata_token,
+        neon_key=neon_key,
+        execute=execute,
+        full=full,
+        standardize=standardize,
+        crs=crs,
+        stac=stac,
+        quicklook=quicklook,
+        preserve_raw=preserve_raw,
+        workers=workers,
+        overwrite=overwrite
+    )
+
+
+# ==============================================================================
+# PLANNING & PRE-FLIGHT AUDIT COMMAND (plan & grid-info alias)
+# ==============================================================================
+
+def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=False):
+    try:
+        # Default workspace fallback to '.' if catalog/ exists
+        if workspace is None and manifest is None:
+            if (Path(".") / "catalog" / "grid.gpkg").exists() or (Path(".") / "catalog" / "manifest.json").exists():
+                workspace = "."
+
+        if workspace:
+            ws_path = Path(workspace)
+            manifest_candidate = ws_path / "catalog" / "grid.gpkg"
+            if not manifest_candidate.exists():
+                manifest_candidate = ws_path / "catalog" / "manifest.json"
+            if not manifest_candidate.exists():
+                raise click.UsageError(f"Neither grid.gpkg nor manifest.json found in workspace '{workspace}/catalog/'. Run 'search' first.")
+            target_manifest = manifest_candidate
+        elif manifest:
+            target_manifest = Path(manifest)
+            ws_path = target_manifest.parent.parent if target_manifest.parent.name == "catalog" else target_manifest.parent
+        else:
+            raise click.UsageError("Either --workspace or --manifest must be provided (or run from inside a workspace).")
+
+        from als_finder.core.grid_manager import read_grid, get_tile_spec
+
+        grid_gdf = read_grid(
+            target_manifest,
+            tile_size=tile_size,
+            buffer_size=buffer_size,
+            overwrite=overwrite
+        )
+        total_tiles = len(grid_gdf)
+        target_tile_id = tile_id if tile_id is not None else 0
+        spec_0 = get_tile_spec(target_manifest, tile_id=target_tile_id, tile_size=tile_size, buffer_size=buffer_size)
+
+        ws_dir = ws_path if workspace else Path(manifest).parent.parent
+        abs_laz_path = ws_dir / "data" / "tiles" / f"{spec_0['hive_path']}.laz"
+
+        audit_info = None
+        leaf_ids = []
+        if max_points is not None:
+            density = float(spec_0.get("point_density") or 10.0)
+            cur_t = float(spec_0.get("nominal_tile_size", spec_0.get("tile_size", tile_size)))
+            cur_b = float(spec_0.get("nominal_buffer_size", spec_0.get("buffer_size", buffer_size)))
+            tile_pts = int(density * ((cur_t + 2 * cur_b) ** 2))
+            floor_pts = int(density * (4.0 * (cur_b ** 2)))
+            is_hyperdense = (floor_pts >= max_points)
+            needs_subdiv = (tile_pts > max_points)
+            split_count = total_tiles if needs_subdiv else 0
+            standard_count = 0 if needs_subdiv else total_tiles
+
+            audit_info = {
+                "max_points": max_points,
+                "point_density": density,
+                "estimated_points_per_tile": tile_pts,
+                "buffer_floor_points": floor_pts,
+                "standard_tiles": standard_count,
+                "subdivided_tiles": split_count,
+                "hyperdense_tiles_count": total_tiles if is_hyperdense else 0,
+                "is_hyperdense": is_hyperdense,
+                "recommended_mem_gb": round((max(tile_pts, floor_pts) * 250) / 1e9 * 1.5, 1) if is_hyperdense else 4.0
+            }
+
+            for i in range(total_tiles):
+                if needs_subdiv:
+                    leaf_ids.extend([f"{i}_NW", f"{i}_NE", f"{i}_SW", f"{i}_SE"])
+                else:
+                    leaf_ids.append(str(i))
+        else:
+            leaf_ids = [str(i) for i in range(total_tiles)]
+
+        # If --tasks flag is requested, output flat list of leaf tasks for Slurm
+        if tasks:
+            try:
+                for tid in leaf_ids:
+                    click.echo(tid)
+            except BrokenPipeError:
+                pass
+            return
+
+        # If --tasks-csv flag is requested, output rich CSV task manifest with all metadata
+        if tasks_csv:
+            import csv
+            from als_finder.core.grid_manager import format_coord
+            fieldnames = [
+                "task_id", "tile_id", "basename", "hive_dir", "hive_path", "dataset_id", "provider", "grid_crs",
+                "tile_size", "buffer_size", "core_minx", "core_miny", "core_maxx", "core_maxy",
+                "buffered_minx", "buffered_miny", "buffered_maxx", "buffered_maxy",
+                "crop_gdal_te", "point_density", "est_points", "recommended_mem_gb"
+            ]
+            try:
+                writer = csv.DictWriter(sys.stdout, fieldnames=fieldnames)
+                writer.writeheader()
+                for idx, row in grid_gdf.iterrows():
+                    c_minx, c_miny, c_maxx, c_maxy = row.geometry.bounds
+                    b_geom = row.get("buffered_geometry")
+                    if b_geom is not None and hasattr(b_geom, "bounds"):
+                        b_minx, b_miny, b_maxx, b_maxy = b_geom.bounds
+                    else:
+                        b_minx = c_minx - buffer_size
+                        b_miny = c_miny - buffer_size
+                        b_maxx = c_maxx + buffer_size
+                        b_maxy = c_maxy + buffer_size
+                    density = float(row.get("point_density") or 10.0)
+                    t_pts = int(density * ((tile_size + 2 * buffer_size) ** 2))
+                    rec_mem = round((t_pts * 250) / 1e9 * 1.5, 1)
+
+                    t_id = row.get("tile_id", idx)
+                    ds_id = str(row.get("dataset_id") or "dataset")
+                    prov = str(row.get("provider") or "unknown")
+                    b_name = row.get("basename")
+                    h_dir = row.get("hive_dir")
+                    h_path = row.get("hive_path")
+
+                    if not b_name or not h_path:
+                        ul_e = format_coord(c_minx)
+                        ul_n = format_coord(c_maxy)
+                        b_name = f"{ds_id}_tile_E{ul_e}_N{ul_n}"
+                        h_dir = f"provider={prov}/dataset={ds_id}/tilesize={tile_size}/buffer={buffer_size}"
+                        h_path = f"{h_dir}/{b_name}"
+
+                    writer.writerow({
+                        "task_id": idx + 1,
+                        "tile_id": t_id,
+                        "basename": b_name,
+                        "hive_dir": h_dir,
+                        "hive_path": h_path,
+                        "dataset_id": ds_id,
+                        "provider": prov,
+                        "grid_crs": row.get("grid_crs", str(grid_gdf.crs)),
+                        "tile_size": tile_size,
+                        "buffer_size": buffer_size,
+                        "core_minx": c_minx,
+                        "core_miny": c_miny,
+                        "core_maxx": c_maxx,
+                        "core_maxy": c_maxy,
+                        "buffered_minx": b_minx,
+                        "buffered_miny": b_miny,
+                        "buffered_maxx": b_maxx,
+                        "buffered_maxy": b_maxy,
+                        "crop_gdal_te": f"{c_minx} {c_miny} {c_maxx} {c_maxy}",
+                        "point_density": density,
+                        "est_points": t_pts,
+                        "recommended_mem_gb": max(rec_mem, 4.0)
+                    })
+            except BrokenPipeError:
+                pass
+            return
+
+        payload = {
+            "status": "success",
+            "tile_id": str(target_tile_id) if spec_0.get("quadrant") else int(spec_0.get("parent_tile_id", target_tile_id)),
+            "total_tiles": total_tiles,
+            "total_leaf_tasks": len(leaf_ids),
+            "tile_id_min": 0,
+            "tile_id_max": total_tiles - 1 if total_tiles > 0 else 0,
+            "tile_size": spec_0.get("tile_size", tile_size),
+            "buffer_size": spec_0.get("buffer_size", buffer_size),
+            "nominal_tile_size": spec_0.get("nominal_tile_size", tile_size),
+            "nominal_buffer_size": spec_0.get("nominal_buffer_size", buffer_size),
+            "grid_crs": spec_0["grid_crs"],
+            "ul_easting": spec_0["ul_easting"],
+            "ul_northing": spec_0["ul_northing"],
+            "basename": spec_0["basename"],
+            "hive_dir": spec_0["hive_dir"],
+            "hive_path": spec_0["hive_path"],
+            "path": str(abs_laz_path.absolute()),
+            "crop_bbox": spec_0["crop_bbox"],
+            "crop_pdal_bounds": spec_0["crop_pdal_bounds"],
+            "crop_gdal_te": spec_0["crop_gdal_te"],
+            "crop_minx": spec_0["crop_minx"],
+            "crop_miny": spec_0["crop_miny"],
+            "crop_maxx": spec_0["crop_maxx"],
+            "crop_maxy": spec_0["crop_maxy"],
+            "sample_tile_bounds": spec_0["bbox_str"],
+            "grid_gpkg": spec_0.get("grid_gpkg_path"),
+            "leaf_tile_ids": leaf_ids,
+            "audit": audit_info
+        }
+
+        def human_grid_printer():
+            click.echo("==================================================", err=True)
+            click.echo(" ALS-FINDER SPATIAL PLANNING & GRID METRICS", err=True)
+            click.echo("==================================================", err=True)
+            click.echo(f"  Master Tiles:      {total_tiles:,}", err=True)
+            click.echo(f"  Total Leaf Tasks:  {len(leaf_ids):,}", err=True)
+            click.echo(f"  Tile ID Range:     0 to {max(0, total_tiles - 1)}", err=True)
+            click.echo(f"  Tile Size:         {spec_0['tile_size']}m (core)", err=True)
+            click.echo(f"  Buffer Size:       {spec_0['buffer_size']}m (overlap)", err=True)
+            click.echo(f"  Grid CRS:          {spec_0['grid_crs']}", err=True)
+            click.echo(f"  Target Tile ID:    {target_tile_id}", err=True)
+            click.echo(f"  Basename:          {spec_0['basename']}", err=True)
+            click.echo(f"  Hive Directory:    {spec_0['hive_dir']}", err=True)
+            click.echo(f"  Crop PDAL Bounds:  {spec_0['crop_pdal_bounds']}", err=True)
+            click.echo(f"  Crop GDAL -te:     {spec_0['crop_gdal_te']}", err=True)
+            if spec_0.get("grid_gpkg_path"):
+                click.echo(f"  Grid File:         {spec_0['grid_gpkg_path']}", err=True)
+            if audit_info:
+                click.echo("--------------------------------------------------", err=True)
+                click.echo(" MEMORY RISK AUDIT (PRE-FLIGHT):", err=True)
+                click.echo(f"  Max Points Budget: {audit_info['max_points']:,}", err=True)
+                click.echo(f"  Est Points/Tile:   {audit_info['estimated_points_per_tile']:,}", err=True)
+                if audit_info['subdivided_tiles'] > 0:
+                    click.echo(f"  Subdivision:       {audit_info['subdivided_tiles']} tiles exceed budget (split into 4 quadrants each)", err=True)
+                    click.echo(f"  Slurm Array Size:  --array=1-{len(leaf_ids)}", err=True)
+                else:
+                    click.echo(f"  Standard Status:   All {total_tiles:,} tiles fit within memory budget", err=True)
+                if audit_info['is_hyperdense']:
+                    click.echo(f"  [WARNING] Hyper-Dense: Buffer alone ({audit_info['buffer_floor_points']:,} pts) exceeds budget!", err=True)
+                    click.echo(f"  Recommend Memory:  >= {audit_info['recommended_mem_gb']} GB RAM", err=True)
+            click.echo("==================================================", err=True)
+
+        format_cli_output(
+            payload,
+            json_output=json_output,
+            field=field,
+            output_format=output_format,
+            default_human_printer=human_grid_printer
+        )
+    except Exception as e:
+        if json_output or output_format == "json":
+            click.echo(json.dumps({"status": "error", "error": str(e)}, indent=2))
+            sys.exit(1)
+        else:
+            click.echo(f"Error reading grid plan: {e}", err=True)
+            sys.exit(1)
+
+
+@cli.command('plan')
+@click.option('-w', '--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
+@click.option('-m', '--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
+@click.option('--tile-id', default=None, type=str, help='Specific tile ID (e.g. 15 or 15_NW) to inspect. Defaults to tile 0.')
+@click.option('-s', '--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m for 30m/10m/1m divisibility)')
+@click.option('-b', '--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m for 30m raster compatibility)')
+@click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
+@click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays (one per line)')
+@click.option('--tasks-csv', is_flag=True, help='Output rich task manifest CSV with all metadata (basenames, bounds, CRS, memory audits) for Slurm job arrays')
+@click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
+@click.option('--field', default=None, help='Extract a specific field from payload (e.g. total_tiles, grid_crs, basename, crop_pdal_bounds)')
+@click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
+@click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
+def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, tasks_csv, overwrite, field, output_format, json_output):
+    """Plan spatial grid partitioning, pre-flight memory audits, and Slurm task lists."""
+    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv)
+
+
+@cli.command('grid-info')
+@click.option('--workspace', default=None, type=click.Path(exists=True), help='Path to target workspace directory containing catalog/')
+@click.option('--manifest', default=None, type=click.Path(exists=True), help='Direct path to catalog manifest.json or grid.gpkg')
+@click.option('--tile-id', default=None, type=str, help='Specific tile ID (e.g. 15 or 15_NW) to inspect. Defaults to tile 0.')
+@click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
+@click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
+@click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
+@click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays')
+@click.option('--tasks-csv', is_flag=True, help='Output rich task manifest CSV with all metadata for Slurm job arrays')
+@click.option('--overwrite', is_flag=True, help='Force regeneration of the spatial grid index')
+@click.option('--field', default=None, help='Extract a specific field from payload')
+@click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None)
+@click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
+def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, tasks_csv, overwrite, field, output_format, json_output):
+    """Backward-compatible alias for 'als-finder plan'."""
+    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv)
+
+
+# ==============================================================================
+# WORKSPACE MANAGEMENT GROUP (workspace)
+# ==============================================================================
+
+@cli.group('workspace')
+def workspace_group():
+    """Workspace catalog, configuration, and cache management."""
+    pass
+
+
+@workspace_group.command('update')
+@click.pass_context
+@click.option('--workspace', required=True, help='Path to existing als-finder workspace')
+@click.option('--name', help='Override dataset name filter')
+@click.option('--date', help='Override temporal filter')
+@click.option('--density', help='Override point density filter')
+@click.option('--provider', help='Override provider(s)')
+@click.option('--ot-key', help='OpenTopography API Key')
+def workspace_update_cmd(ctx, workspace, name, date, density, provider, ot_key):
+    """Update an existing workspace catalog with new filters."""
+    ctx.invoke(update, workspace=workspace, name=name, date=date, density=density, provider=provider, ot_key=ot_key)
+
+
+@workspace_group.command('clean')
+@click.option('--workspace', required=True, type=click.Path(exists=True), help='Path to target workspace directory to clean.')
+def workspace_clean_cmd(workspace):
+    """Clean the specified workspace by removing scratch and interim data."""
+    clean_cmd(workspace)
+
 
 if __name__ == '__main__':
     cli()

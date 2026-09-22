@@ -1,0 +1,28 @@
+name: Prebuild DevContainer for Codespaces
+
+on:
+  push:
+    branches: [ "main", "dev", "feat/**" ]
+    paths:
+      - ".devcontainer/**"
+      - "environment.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  prebuild:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Pre-build Dev Container Image
+        uses: devcontainers/ci@v0.3
+        with:
+          imageName: ghcr.io/${{ github.repository }}/devcontainer
+          cacheFrom: ghcr.io/${{ github.repository }}/devcontainer
+          push: filter

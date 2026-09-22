@@ -35,8 +35,18 @@ MANIFEST
 .coverage
 htmlcov/
 
-# Local Workspaces
+# Local Workspaces & Scratch Outputs
 scratch/
 data/
 output/
 test_workspace/
+*_workspace/
+tutorials/*_workspace/
+tutorials/tiling_workspace/
+tutorials/demo_workspace/
+tutorials/tiny_subset/
+tiny_subset/
+
+# LiDAR Point Cloud Binaries
+*.laz
+*.las
