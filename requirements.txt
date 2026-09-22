@@ -11,6 +11,7 @@ stac-validator
 psutil
 laspy
 boto3
+pyarrow
 pyyaml
 matplotlib
 pytest

@@ -1,0 +1,54 @@
+{% set name = "als-finder" %}
+{% set version = "1.3.1" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  url: https://github.com/cms-2024-hudak/als-finder/archive/refs/tags/v{{ version }}.tar.gz
+
+build:
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  entry_points:
+    - als-finder=als_finder.cli:cli
+
+requirements:
+  host:
+    - python >=3.8
+    - pip
+    - setuptools >=64
+    - setuptools_scm >=8
+  run:
+    - python >=3.8
+    - click
+    - requests
+    - geopandas
+    - shapely
+    - pyproj
+    - python-dotenv
+    - tqdm
+    - pyogrio
+    - pystac
+    - stac-validator
+    - psutil
+    - boto3
+    - laspy
+    - pyarrow
+    - pdal
+    - python-pdal
+
+test:
+  imports:
+    - als_finder
+  commands:
+    - als-finder --help
+
+about:
+  home: https://github.com/cms-2024-hudak/als-finder
+  license: MIT
+  license_family: MIT
+  license_file: LICENSE
+  summary: High-performance CLI engine for discovering, streaming, and partitioning raw LiDAR point cloud data globally.
