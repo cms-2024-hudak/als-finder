@@ -44,7 +44,7 @@ We will create an isolated environment named `als-tutorial` to ensure existing p
 Run this command in your terminal (Linux/WSL) or Miniforge Prompt (Windows):
 ```bash
 conda create -n als-tutorial -c conda-forge -y \
-  python=3.11 \
+  python=3.11 pip \
   gdal proj openssl libcurl \
   geopandas pdal python-pdal laspy pyogrio \
   shapely pyproj pystac stac-validator \
@@ -57,12 +57,12 @@ conda activate als-tutorial
 ```
 
 #### Step 2: Install als-finder from GitHub
-With your `als-tutorial` environment active, install `als-finder` directly from GitHub:
+With your `als-tutorial` environment active, install `als-finder` using the active environment's Python (`python -m pip`):
 
 ```bash
-pip install git+https://github.com/cms-2024-hudak/als-finder.git
+python -m pip install git+https://github.com/cms-2024-hudak/als-finder.git
 ```
-*(Alternatively, you can install the official release via `pip install als-finder==1.2.0`).*
+*(Alternatively, you can install the official release via `python -m pip install als-finder==1.2.0`).*
 
 #### Step 3: Verify the Installation
 ```bash
