@@ -265,18 +265,61 @@ When the primary objective is generating **30 m ecological or topographic raster
 als-finder plan --workspace . --tile-size 1200 --buffer-size 30
 ```
 
-### Step 1.4: Pre-Flight Memory Auditing & High-Density Tile Handling (`--max-points`)
+### Step 1.4: Exporting the All-Inclusive Task Manifest (`tasks.csv`)
 
-While a $1200\,\text{m}$ tile size ensures perfect raster divisibility ($40 \times 40$ pixels at $30\,\text{m}$), **high-density point cloud surveys** can pose significant memory challenges for HPC workers.
+Rather than having Slurm workers open and parse individual JSON sidecar files during runtime, `als-finder` can export a single, self-contained **rich CSV manifest** containing all spatial bounds, CRS codes, point estimates, and basenames:
 
-#### The HPC Out-of-Memory (OOM) Challenge:
+```bash
+als-finder plan --workspace . --tasks-csv > tasks.csv
+head -n 5 tasks.csv
+```
+
+Each row of `tasks.csv` provides a complete task definition:
+```csv
+task_id,tile_id,basename,dataset_id,provider,grid_crs,tile_size,buffer_size,core_minx,core_miny,core_maxx,core_maxy,buffered_minx,buffered_miny,buffered_maxx,buffered_maxy,crop_gdal_te,point_density,est_points,recommended_mem_gb,hive_path
+1,0,CA_SierraNevada_5_2022_tile_E0736800_N4329600,CA_SierraNevada_5_2022,USGS_EPT,EPSG:32610,1200,30,736800.0,4328400.0,738000.0,4329600.0,736770.0,4328370.0,738030.0,4329630.0,"736800.0 4328400.0 738000.0 4329600.0",29.18,46326168,17.4,provider=USGS_EPT/...
+2,1,CA_SierraNevada_5_2022_tile_E0736800_N4330800,CA_SierraNevada_5_2022,USGS_EPT,EPSG:32610,1200,30,736800.0,4329600.0,738000.0,4330800.0,736770.0,4329570.0,738030.0,4330830.0,"736800.0 4329600.0 738000.0 4330800.0",29.18,46326168,17.4,provider=USGS_EPT/...
+```
+
+#### Why the Enriched CSV Pattern Is Superior for Slurm & R:
+1. **Zero JSON Dependencies in Workers:** Workers do not need `jsonlite` in R or `jq` in bash.
+2. **Instant 1-Row Read:** In R, the worker loads its assignment in a single operation: `task <- read.csv("tasks.csv")[task_id, ]`.
+3. **Native Cropping & Vectorization:** The worker accesses `task$core_minx` through `task$core_maxy` directly for cropping rasters without guessing or calculating extents.
+4. **Direct Prepending to Metrics Outputs:** When Lilian's script finishes extracting forest statistics, it can immediately prepend the task metadata to its results:
+   ```r
+   out_row <- cbind(task, data.frame(
+     mean_canopy_cover = mean(terra::values(r_cover), na.rm=TRUE),
+     p95_height = quantile(terra::values(r_height), 0.95, na.rm=TRUE)
+   ))
+   write.csv(out_row, file=paste0(task$basename, "_summary.csv"), row.names=FALSE)
+   ```
+5. **Portability Sidecar Retained:** `--sidecar` is still available during streaming if individual `.laz` files need companion `tile.json` metadata for standalone use outside the cluster.
+
+---
+
+### Step 1.5: Test Single-Tile Streaming Locally (Optional Verification)
+Before submitting a large Slurm array, you can test data streaming on a single tile (e.g. Tile 0) on your local machine:
+
+```bash
+als-finder fetch tile 0 --workspace . --output ./scratch_tiles --tile-size 1200 --buffer-size 30 --spatial-name
+```
+*(This streams Tile 0 into `scratch_tiles/` with exact 1200m core bounds and 30m spatial buffer in ~3 seconds).*
+
+---
+
+### Step 1.6: Controlling Worker Memory Usage & High-Density Tiles (`--max-points`)
+
+Now that you understand the standard uniform grid workflow, what happens if your study area contains **high-density LiDAR**?
+
+Notice the `est_points` and `recommended_mem_gb` columns in your `tasks.csv`:
 - In our Lake Tahoe search, the 2022 Sierra Nevada USGS dataset has a point density of **$29.18\,\text{pts/m}^2$**.
-- A $1200\,\text{m}$ core tile with a $30\,\text{m}$ buffer ($1260\,\text{m} \times 1260\,\text{m}$) contains:
-  $$1260 \times 1260 \times 29.18 \approx \mathbf{46{,}326{,}000\text{ points per tile}}$$
-- Loading 46 million points into R via `lidR::readLAS` requires approximately **$12\text{--}18\,\text{GB}$ of RAM**. On standard compute nodes allocated $8\,\text{GB}$ or $16\,\text{GB}$ of RAM per core, this causes an instant **Out-Of-Memory (OOM) crash** (`slurmstepd: error: Detected 1 oom-kill event`).
+- A $1200\,\text{m}$ core tile with a $30\,\text{m}$ buffer ($1260\,\text{m} \times 1260\,\text{m}$) contains **$\sim 46{,}326{,}000\text{ points}$**.
+- Loading 46 million points into R via `lidR::readLAS` requires approximately **$12\text{--}18\,\text{GB}$ of RAM**. On standard compute nodes allocated $8\,\text{GB}$ or $16\,\text{GB}$ of RAM per worker, this will cause an **Out-Of-Memory (OOM) crash** (`slurmstepd: error: Detected 1 oom-kill event`).
 
-#### The Solution: Point Budget Auditing with `--max-points`:
-`als-finder plan` includes a built-in pre-flight memory audit. By supplying a target point budget (e.g. `--max-points 15000000` $\approx 6\,\text{GB}$ RAM in R), `als-finder` automatically flags tiles that exceed worker memory limits and calculates a multi-scale quadtree subdivision:
+`als-finder` provides two complementary solutions to control worker memory before submitting jobs to Slurm:
+
+#### Option A: Dynamic Quadtree Subdivision (`--max-points`)
+Set a point budget (e.g. `--max-points 15000000` $\approx 6\,\text{GB}$ RAM in R). `als-finder` audits the grid and automatically calculates how many tiles need to be split into 4 quadrants:
 
 ```bash
 als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 15000000
@@ -301,80 +344,37 @@ als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 150
 ==================================================
 ```
 
-#### How Hierarchical Quadrant Sub-Tiles Work:
-1. **Generating Subdivided Task IDs:**
-   Passing `--tasks` with `--max-points` generates the complete list of leaf tasks for your Slurm array:
-   ```bash
-   als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 15000000 --tasks > tasks.txt
-   head -n 8 tasks.txt
-   ```
-   *Output:*
-   ```text
-   0_NW
-   0_NE
-   0_SW
-   0_SE
-   1_NW
-   1_NE
-   1_SW
-   1_SE
-   ```
-2. **On-the-Fly Quadrant Streaming:**
-   When a worker fetches a quadrant sub-tile (e.g., `als-finder fetch tile 0_NW ...`), `als-finder` automatically:
-   - Halves the core tile size from $1200\,\text{m}$ to **$600\,\text{m}$** (which still divides cleanly into $20 \times 20$ pixels at $30\,\text{m}$).
-   - Retains the full **$30\,\text{m}$ buffer collar** to prevent border edge effects.
-   - Streams only **$\sim 11.5\,\text{M points}$** ($\sim 4.5\,\text{GB}$ RAM in R), allowing the task to execute safely within low-memory HPC allocations.
-
-> [!TIP]
-> **Alternative: Sizing the Nominal Grid to $600\,\text{m}$**
-> If an entire study area consists of uniform high-density lidar ($\ge 25\,\text{pts/m}^2$), you can configure the nominal grid directly at $600\,\text{m}$ ($20 \times 20$ pixels at $30\,\text{m}$):
-> ```bash
-> als-finder plan --workspace . --tile-size 600 --buffer-size 30 --overwrite
-> ```
-> Every tile will be naturally sized at $\sim 12.7\,\text{M points}$ ($\sim 4.8\,\text{GB}$ in R) without requiring quadtree splitting.
-
----
-
-### Step 1.5: Exporting the All-Inclusive Task Manifest (`tasks.csv`)
-
-Rather than having Slurm workers open and parse individual JSON sidecar files during runtime, `als-finder` can export a single, self-contained **rich CSV manifest** containing all spatial bounds, CRS codes, point estimates, and basenames:
-
+##### 1. Generating Subdivided Task IDs:
+Passing `--tasks` with `--max-points` generates the complete list of leaf tasks for your Slurm array:
 ```bash
+als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 15000000 --tasks > tasks.txt
+head -n 8 tasks.txt
+```
+*Output:*
+```text
+0_NW
+0_NE
+0_SW
+0_SE
+1_NW
+1_NE
+1_SW
+1_SE
+```
+
+##### 2. On-the-Fly Quadrant Streaming:
+When a worker fetches a quadrant sub-tile (e.g., `als-finder fetch tile 0_NW ...`), `als-finder` automatically:
+- Halves the core tile size from $1200\,\text{m}$ to **$600\,\text{m}$** (which still divides cleanly into $20 \times 20$ pixels at $30\,\text{m}$).
+- Retains the full **$30\,\text{m}$ buffer collar** to prevent border edge effects.
+- Streams only **$\sim 11.5\,\text{M points}$** ($\sim 4.5\,\text{GB}$ RAM in R), allowing the task to execute safely within low-memory HPC allocations.
+
+#### Option B: Sizing the Nominal Grid to $600\,\text{m}$
+If an entire study area consists of uniform high-density lidar ($\ge 25\,\text{pts/m}^2$), you can avoid subdivision entirely by generating the nominal grid at $600\,\text{m}$ ($20 \times 20$ pixels at $30\,\text{m}$):
+```bash
+als-finder plan --workspace . --tile-size 600 --buffer-size 30 --overwrite
 als-finder plan --workspace . --tasks-csv > tasks.csv
 ```
-
-### Step 1.6: Test Single-Tile Streaming Locally (Optional Verification)
-Before submitting a large Slurm array, you can test data streaming on a single tile (e.g. Tile 0) on your local machine:
-
-```bash
-als-finder fetch tile 0 --workspace . --output ./scratch_tiles --tile-size 1200 --buffer-size 30 --spatial-name
-```
-*(This streams Tile 0 into `scratch_tiles/` with exact 1200m core bounds and 30m spatial buffer).*
-
-Each row of `tasks.csv` provides a complete task definition:
-```csv
-task_id,tile_id,basename,dataset_id,provider,grid_crs,tile_size,buffer_size,core_minx,core_miny,core_maxx,core_maxy,buffered_minx,buffered_miny,buffered_maxx,buffered_maxy,crop_gdal_te,point_density,est_points,recommended_mem_gb,hive_path
-1,0,CA_SierraNevada_8_2022_tile_E0763200_N4326000,CA_SierraNevada_8_2022,USGS_EPT,EPSG:32610,1200,30,763200.0,4324800.0,764400.0,4326000.0,763170.0,4324770.0,764430.0,4326030.0,"763200.0 4324800.0 764400.0 4326000.0",10.0,15876000,6.0,provider=USGS_EPT/...
-2,1,CA_SierraNevada_8_2022_tile_E0763200_N4327200,CA_SierraNevada_8_2022,USGS_EPT,EPSG:32610,1200,30,763200.0,4326000.0,764400.0,4327200.0,763170.0,4325970.0,764430.0,4327230.0,"763200.0 4326000.0 764400.0 4327200.0",10.0,15876000,6.0,provider=USGS_EPT/...
-```
-
-#### Why the Enriched CSV Pattern Is Superior for Slurm & R:
-1. **Zero JSON Dependencies in Workers:** Workers do not need `jsonlite` in R or `jq` in bash.
-2. **Instant 1-Row Read:** In R, the worker loads its assignment in a single operation: `task <- read.csv("tasks.csv")[task_id, ]`.
-3. **Native Cropping & Vectorization:** The worker accesses `task$core_minx` through `task$core_maxy` directly for cropping rasters without guessing or calculating extents.
-4. **Direct Prepending to Metrics Outputs:** When Lilian's script finishes extracting forest statistics, it can immediately prepend the task metadata to its results:
-   ```r
-   out_row <- cbind(task, data.frame(
-     mean_canopy_cover = mean(terra::values(r_cover), na.rm=TRUE),
-     p95_height = quantile(terra::values(r_height), 0.95, na.rm=TRUE)
-   ))
-   write.csv(out_row, file=paste0(task$basename, "_summary.csv"), row.names=FALSE)
-   ```
-5. **Portability Sidecar Retained:** `--sidecar` is still available during streaming if individual `.laz` files need companion `tile.json` metadata for standalone use outside the cluster.
-
----
-
-## 4. Phase 2: Slurm Job Array Architecture
+Every tile is then naturally capped at $\sim 12.7\,\text{M points}$ ($\sim 4.8\,\text{GB}$ in R) and executes smoothly on standard 8 GB nodes.
 
 Here is the complete Slurm batch submission script (`sbatch_lidar_metrics.slurm`):
 
