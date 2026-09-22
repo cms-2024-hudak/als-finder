@@ -54,6 +54,8 @@ conda create -n als-tutorial -c conda-forge -y \
 Once creation finishes, activate the environment:
 ```bash
 conda activate als-tutorial
+# If your system uses pyenv or custom shims, ensure Conda's binaries take priority:
+export PATH="$CONDA_PREFIX/bin:$PATH"
 ```
 
 #### Step 2: Install als-finder from GitHub
@@ -76,16 +78,16 @@ Usage: als-finder [OPTIONS] COMMAND [ARGS]...
 ```
 
 > [!TIP]
-> **Linux / WSL2 Library Linking Note:**
-> On some Linux distributions (such as Ubuntu 22.04 LTS), the operating system's default OpenSSL is older (v3.0.2). If dynamic GDAL plugins warn that `OPENSSL_3.2.0 not found in /lib/x86_64-linux-gnu/`, tell your shell to prioritize Conda's modern libraries:
-> ```bash
-> export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
-> ```
-> To automatically apply this every time you activate `als-tutorial`:
-> ```bash
-> conda env config vars set LD_LIBRARY_PATH=$CONDA_PREFIX/lib
-> conda activate als-tutorial
-> ```
+> **Linux / WSL2 Troubleshooting Note:**
+> - **Pyenv / PATH conflicts**: If you have `pyenv` installed, its shims can intercept `python` and `pip`. Always run `export PATH="$CONDA_PREFIX/bin:$PATH"` after activating `als-tutorial`.
+> - **OpenSSL linking**: On Linux distros like Ubuntu 22.04 LTS with an older system OpenSSL (v3.0.2), if GDAL plugins warn about `OPENSSL_3.2.0 not found in /lib/x86_64-linux-gnu/`, run:
+>   ```bash
+>   export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$LD_LIBRARY_PATH"
+>   ```
+>   You can make both settings automatic on activation:
+>   ```bash
+>   conda env config vars set PATH="$CONDA_PREFIX/bin:$PATH" LD_LIBRARY_PATH="$CONDA_PREFIX/lib"
+>   ```
 
 ---
 
