@@ -699,21 +699,20 @@ def get_tile_spec(
     nom_tile_size = int(row.get("tile_size") or tile_size or cur_tile_size)
     nom_buffer_size = int(row.get("buffer_size") or buffer_size or cur_buffer_size)
 
-    # Upper-Left coordinates: West (minx), North (maxy) of the parent cell
-    parent_geom = row.geometry
-    ul_e_str = format_coord(parent_geom.bounds[0])
-    ul_n_str = format_coord(parent_geom.bounds[3])
-
-    tile_basename = f"{dataset_id}_tile_E{ul_e_str}_N{ul_n_str}{quadrant_suffix}"
-    hive_dir = f"provider={provider}/dataset={dataset_id}/tilesize={nom_tile_size}/buffer={nom_buffer_size}"
-    hive_path = f"{hive_dir}/{tile_basename}"
-
-    # Unbuffered Core Bounds for direct cropping (PDAL, GDAL, Python, R)
+    # Unbuffered Core Bounds for direct cropping and spatial naming
     c_b = core_poly.bounds
     core_minx = round(float(c_b[0]), 2)
     core_miny = round(float(c_b[1]), 2)
     core_maxx = round(float(c_b[2]), 2)
     core_maxy = round(float(c_b[3]), 2)
+
+    # Upper-Left coordinates: West (minx), North (maxy) of the active tile/sub-tile
+    ul_e_str = format_coord(core_minx)
+    ul_n_str = format_coord(core_maxy)
+
+    tile_basename = f"{dataset_id}_tile_E{ul_e_str}_N{ul_n_str}{quadrant_suffix}"
+    hive_dir = f"provider={provider}/dataset={dataset_id}/tilesize={nom_tile_size}/buffer={nom_buffer_size}"
+    hive_path = f"{hive_dir}/{tile_basename}"
 
     crop_bbox = [core_minx, core_miny, core_maxx, core_maxy]
     crop_pdal_bounds = f"([{core_minx}, {core_maxx}], [{core_miny}, {core_maxy}])"

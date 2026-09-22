@@ -233,10 +233,10 @@ Search for point clouds intersecting your Region of Interest into the current wo
 
 ```bash
 # Option A: Target open federal archives directly (no API keys required)
-als-finder search --roi ltbmu_boundary.gpkg --provider usgs,noaa --workspace .
+als-finder search --roi ltbmu_boundary.gpkg --provider usgs,noaa
 
 # Option B: Search across all archives (will include OpenTopography if --ot-key was configured)
-als-finder search --roi ltbmu_boundary.gpkg --date 2018:2024 --workspace .
+als-finder search --roi ltbmu_boundary.gpkg --date 2018:2024
 ```
 
 ### Step 1.3: Selecting the Optimal Tile & Buffer Size for 30 m Rasters
@@ -257,20 +257,21 @@ When the primary objective is generating **30 m ecological or topographic raster
   - **$1\,\text{m}$ rasters:** Exactly **$1200 \times 1200$ pixels** ($1200 / 1 = 1200$).
 
 #### Recommended Grid Configuration:
-- **Tile Size:** `1200` meters (40 core pixels at $30\,\text{m}$)
-- **Buffer Size:** `30` meters (1 pixel buffer collar $\rightarrow$ total bounds $1260\,\text{m} = 42$ pixels) or `60` meters (2 pixel buffer collar $\rightarrow$ total bounds $1320\,\text{m} = 44$ pixels).
+- **Tile Size:** `1200` meters (40 core pixels at $30\,\text{m}$) — *built-in default*
+- **Buffer Size:** `30` meters (1 pixel buffer collar $\rightarrow$ total bounds $1260\,\text{m} = 42$ pixels) — *built-in default*
 
 ```bash
-# Generate the 1200m / 30m regularized grid
-als-finder plan --workspace . --tile-size 1200 --buffer-size 30
+# Generate the regularized grid (defaults to 1200m core tiles with 30m overlap buffer)
+als-finder plan
 ```
+*(You can explicitly customize `--tile-size` or `--buffer-size` if your analysis requires a different dimension, e.g. `--buffer-size 60` for a 2-pixel buffer collar).*
 
 ### Step 1.4: Exporting the All-Inclusive Task Manifest (`tasks.csv`)
 
 Rather than having Slurm workers open and parse individual JSON sidecar files during runtime, `als-finder` can export a single, self-contained **rich CSV manifest** containing all spatial bounds, CRS codes, point estimates, and basenames:
 
 ```bash
-als-finder plan --workspace . --tasks-csv > tasks.csv
+als-finder plan --tasks-csv > tasks.csv
 head -n 5 tasks.csv
 ```
 
@@ -293,7 +294,7 @@ task_id,tile_id,basename,dataset_id,provider,grid_crs,tile_size,buffer_size,core
    ))
    write.csv(out_row, file=paste0(task$basename, "_summary.csv"), row.names=FALSE)
    ```
-5. **Portability Sidecar Retained:** `--sidecar` is still available during streaming if individual `.laz` files need companion `tile.json` metadata for standalone use outside the cluster.
+5. **Portability Sidecar Retained:** `--sidecar` is generated automatically during streaming if individual `.laz` files need companion `tile.json` metadata for standalone use outside the cluster.
 
 ---
 
@@ -301,9 +302,9 @@ task_id,tile_id,basename,dataset_id,provider,grid_crs,tile_size,buffer_size,core
 Before submitting a large Slurm array, you can test data streaming on a single tile (e.g. Tile 0) on your local machine:
 
 ```bash
-als-finder fetch tile 0 --workspace . --output ./scratch_tiles --tile-size 1200 --buffer-size 30 --spatial-name
+als-finder fetch tile 0 --output scratch_tiles
 ```
-*(This streams Tile 0 into `scratch_tiles/` with exact 1200m core bounds and 30m spatial buffer in ~3 seconds).*
+*(This streams Tile 0 into `scratch_tiles/` with exact 1200m core bounds, 30m spatial buffer collar, and coordinate-anchored spatial naming in ~3 seconds).*
 
 ---
 
@@ -351,7 +352,7 @@ Because $1200\,\text{m}$ divides cleanly into halves ($600\,\text{m}$) and quart
 With a 15M budget, a 46M-point tile ($1200\,\text{m}$) is split into 4 quadrants ($600\,\text{m}$ core, $660\,\text{m}$ buffered $\approx 12.7\text{M points} \le 15\text{M}$):
 
 ```bash
-als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 15000000
+als-finder plan --max-points 15000000
 ```
 *Output:*
 ```text
@@ -374,7 +375,7 @@ als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 150
 ```
 Generating leaf tasks produces Level-1 tokens (`0_NW`, `0_NE`, `0_SW`, `0_SE`):
 ```bash
-als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 15000000 --tasks | head -n 4
+als-finder plan --max-points 15000000 --tasks | head -n 4
 ```
 ```text
 0_NW
@@ -387,7 +388,7 @@ als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 150
 If your cluster nodes only have $8\,\text{GB}$ of RAM, set `--max-points 10000000`. Because $12.7\text{M points}$ (Level 1) still exceeds 10M, `als-finder` automatically recurses into **Level 2** ($300\,\text{m}$ core, $360\,\text{m}$ buffered $\approx 3.78\text{M points}$), creating 16 sub-quadrants:
 
 ```bash
-als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 10000000
+als-finder plan --max-points 10000000
 ```
 *Output:*
 ```text
@@ -407,7 +408,7 @@ als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 100
 ```
 Inspecting the leaf tasks reveals the hierarchical two-level tokens:
 ```bash
-als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 10000000 --tasks | head -n 8
+als-finder plan --max-points 10000000 --tasks | head -n 8
 ```
 ```text
 0_NW_NW
@@ -433,8 +434,8 @@ Every worker streams its assigned sub-tile on-demand using its exact task ID (e.
 #### Option B: Sizing the Nominal Grid to $600\,\text{m}$
 If an entire study area consists of uniform high-density lidar ($\ge 25\,\text{pts/m}^2$), you can avoid subdivision entirely by generating the nominal grid at $600\,\text{m}$ ($20 \times 20$ pixels at $30\,\text{m}$):
 ```bash
-als-finder plan --workspace . --tile-size 600 --buffer-size 30 --overwrite
-als-finder plan --workspace . --tasks-csv > tasks.csv
+als-finder plan --tile-size 600 --overwrite
+als-finder plan --tasks-csv > tasks.csv
 ```
 Every tile is then naturally capped at $\sim 12.7\,\text{M points}$ ($\sim 4.8\,\text{GB}$ in R) and executes smoothly on standard 8 GB nodes.
 
@@ -504,7 +505,7 @@ Before diving into distributed Slurm arrays or cluster schedulers, let's look at
 In your terminal, export `tasks.csv` passing `--max-points 10000000` so that any tile exceeding 10M points is automatically subdivided into safe, memory-bounded sub-tiles ($\sim 3.8\,\text{GB}$ RAM in R):
 
 ```bash
-als-finder plan --workspace . --tile-size 1200 --buffer-size 30 --max-points 10000000 --tasks-csv > tasks.csv
+als-finder plan --max-points 10000000 --tasks-csv > tasks.csv
 head -n 5 tasks.csv
 ```
 
@@ -533,23 +534,24 @@ for (i in 1:nrow(test_tasks)) {
   # A. Stream buffered tile on-demand via als-finder
   system2("als-finder", args = c(
     "fetch", "tile", as.character(task$tile_id),
-    "--workspace", ".",
-    "--output", "scratch_tiles",
-    "--spatial-name"
+    "--output", "scratch_tiles"
   ))
   
   # B. Load point cloud in lidR (using the exact Hive path from tasks.csv)
+  # file.path() seamlessly handles Hive paths across Windows, WSL, and Linux.
   laz_path <- file.path("scratch_tiles", paste0(task$hive_path, ".laz"))
   if (!file.exists(laz_path)) {
     warning(paste("Could not find downloaded tile:", laz_path))
     next
   }
-  las <- readLAS(laz_path)
+  
+  # Drop withheld points at read time to save memory and silence USGS 3DEP warnings
+  las <- readLAS(laz_path, filter = "-drop_withheld")
   
   # C. Compute canopy metric (e.g., 30m Canopy Height Model)
   chm_buffered <- rasterize_canopy(las, res = 30, p2r())
   
-  # D. Crop buffer collar using the exact core bounding box from tasks.csv!
+  # D. Buffer removal: Crop buffer collar using the exact core bounding box from tasks.csv!
   core_box <- ext(task$core_minx, task$core_maxx, task$core_miny, task$core_maxy)
   chm_core <- crop(chm_buffered, core_box)
   
@@ -567,6 +569,45 @@ for (i in 1:nrow(test_tasks)) {
 cat("\nProcessing loop completed successfully!\n")
 ```
 
+> [!NOTE]
+> **Understanding lidR Warnings & Data Hygiene:**
+> When reading raw public ALS point clouds (such as USGS 3DEP), you may see warnings:
+> 1. **`There are X points flagged 'withheld'`**:
+>    In the ASPRS LAS specification, points outside nominal project boundaries, calibration sweeps, or points failing vendor QA are flagged as "withheld".
+>    - **Best Practice:** Pass `filter = "-drop_withheld"` to `readLAS()`. This tells the underlying LASlib C++ reader to discard them during ingestion, silencing the warning and saving substantial memory in R.
+> 2. **`Invalid data: X points with a 'return number' greater than 'number of returns'`**:
+>    Occasionally, airborne optical sensor noise produces spurious pulses (e.g. Return 2 of 1). `als-finder` automatically cleans these sensor anomalies during lazy streaming (`ReturnNumber <= NumberOfReturns`). In R, you can also sanitize any LAS object directly with:
+>    ```r
+>    las <- filter_poi(las, ReturnNumber <= NumberOfReturns)
+>    ```
+
+> [!TIP]
+> **Two Ways to Handle Buffer Removal in lidR:**
+> `als-finder` embeds a $30\,\text{m}$ spatial buffer around each core tile to avoid edge artifacts. You can remove the buffer in two ways depending on your analysis:
+> 
+> - **Method 1: Post-Rasterization Cropping (Recommended for CHM & Surface Interpolation)**
+>   Rasterize the buffered point cloud first (ensuring edge pixels have full neighbor interpolation), then crop the output raster to the tile's exact core bounds using `tasks.csv`:
+>   ```r
+>   chm_buffered <- rasterize_canopy(las, res = 30, p2r())
+>   core_box <- ext(task$core_minx, task$core_maxx, task$core_miny, task$core_maxy)
+>   chm_core <- crop(chm_buffered, core_box)
+>   ```
+> - **Method 2: Point-Level Buffer Removal via Built-In Point Tagging**
+>   `als-finder` embeds an extra dimension named `buffer` into every point (`0 = core tile`, `1 = buffer collar`). If your pipeline requires raw point cloud filtering (such as individual tree segmentation or discrete pulse metrics) before computing statistics:
+>   ```r
+>   # Filter directly using lidR's filter_poi on the embedded buffer attribute
+>   las_core <- filter_poi(las, buffer == 0)
+>   
+>   # Or via lidR's spatial ROI clipping using the task bounding box:
+>   las_core <- clip_roi(las, core_box)
+>   ```
+
+> [!TIP]
+> **Cross-Platform Path Compatibility (Windows, macOS, Linux):**
+> Notice that `task$hive_path` in `tasks.csv` uses standard forward slashes (`/`).
+> - **In R:** R natively supports forward slashes across all operating systems. `file.path("scratch_tiles", paste0(task$hive_path, ".laz"))` works seamlessly on Windows, WSL, and Linux without manual string editing.
+> - **In Python:** `pathlib.Path(task["hive_path"])` automatically resolves to the operating system's native path separator.
+
 #### The Equivalent Loop in Bash:
 ```bash
 # Read tasks.csv line-by-line (skipping header)
@@ -574,7 +615,7 @@ tail -n +2 tasks.csv | while IFS=',' read -r task_id tile_id basename hive_dir h
   echo "=== Processing Tile $tile_id ($basename) ==="
   
   # 1. Stream on-demand into local scratch (creates Hive subdirectories automatically)
-  als-finder fetch tile "$tile_id" --workspace . --output ./scratch_tiles --spatial-name
+  als-finder fetch tile "$tile_id" --output ./scratch_tiles
   
   LAZ_PATH="./scratch_tiles/${hive_path}.laz"
   OUT_DIR="./outputs/${hive_dir}"
@@ -601,16 +642,14 @@ process_one_tile <- function(task) {
   # 1. Stream on-demand into local scratch
   system2("als-finder", args = c(
     "fetch", "tile", as.character(task$tile_id),
-    "--workspace", ".",
-    "--output", "scratch_tiles",
-    "--spatial-name"
+    "--output", "scratch_tiles"
   ))
   
   # 2. Read point cloud using exact Hive path from tasks.csv
   laz_path <- file.path("scratch_tiles", paste0(task$hive_path, ".laz"))
   if (!file.exists(laz_path)) return(NULL)
   
-  las <- readLAS(laz_path)
+  las <- readLAS(laz_path, filter = "-drop_withheld")
   chm_buffered <- rasterize_canopy(las, res = 30, p2r())
   core_box <- ext(task$core_minx, task$core_maxx, task$core_miny, task$core_maxy)
   chm_core <- crop(chm_buffered, core_box)
@@ -682,14 +721,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# 4. Stream Tile On-Demand into Node-Local Scratch (1200m core + 30m buffer)
+# 4. Stream Tile On-Demand into Node-Local Scratch
 als-finder fetch tile "$TILE_ID" \
   --workspace "$SHARED_DIR" \
-  --output "$LOCAL_IN" \
-  --tile-size 1200 \
-  --buffer-size 30 \
-  --spatial-name \
-  --sidecar
+  --output "$LOCAL_IN"
 
 # 5. Run LiDAR Metric Extraction Script (extract_lidar_metrics.R)
 export PROJECT_DIR="$LOCAL_DIR"

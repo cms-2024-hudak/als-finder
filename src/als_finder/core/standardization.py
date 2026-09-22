@@ -667,7 +667,7 @@ def stream_single_tile(
     })
     pipeline.append({
         "type": "filters.expression",
-        "expression": "ReturnNumber > 0 && NumberOfReturns > 0",
+        "expression": "ReturnNumber > 0 && NumberOfReturns > 0 && ReturnNumber <= NumberOfReturns",
     })
 
     # Tag buffer points natively (0 = core tile, 1 = buffer) for lidR and external tools
