@@ -214,6 +214,22 @@ als-finder search --roi ltbmu_boundary.gpkg --date 2018:2024 --workspace .
 als-finder search --roi ltbmu_boundary.gpkg --provider usgs,noaa --workspace .
 ```
 
+#### Provider Authentication & Free API Keys
+
+`als-finder` searches open federal and scientific repositories. Major federal archives (USGS 3DEP and NOAA) require no authentication, while academic and community archives offer free API keys:
+
+| Provider | Access Level | How to Obtain & Configure |
+| :--- | :--- | :--- |
+| **USGS 3DEP** | **Open / Anonymous** | No key or account required. Works out of the box. |
+| **NOAA Digital Coast** | **Open / Anonymous** | No key or account required. Works out of the box. |
+| **OpenTopography** | **Free Academic Key** | 1. Create a free account at [portal.opentopography.org/myopentopo](https://portal.opentopography.org/myopentopo).<br>2. Navigate to **My Account** $\rightarrow$ **OpenTopography API Key** $\rightarrow$ **Request an API Key**.<br>3. Pass it once via CLI: `als-finder search --roi ltbmu_boundary.gpkg --ot-key <YOUR_KEY> --workspace .`<br>*(als-finder will automatically save it to `.env` in your workspace so you never need to type it again).* |
+| **NASA Earthdata** | **Free NASA Account** | 1. Register a free account at [urs.earthdata.nasa.gov](https://urs.earthdata.nasa.gov).<br>2. Generate a Bearer Token under your profile.<br>3. Pass once: `als-finder search --roi ltbmu_boundary.gpkg --earthdata-token <YOUR_TOKEN> --workspace .` |
+| **NEON** | **Optional Token** | Optional free token at [data.neonscience.org](https://data.neonscience.org) (increases rate limits from 100 to 1,000 req/min). Pass via `--neon-key <KEY>`. |
+
+> [!NOTE]
+> **Graceful Degradation:**
+> If you do not configure an OpenTopography or NASA key, `als-finder` automatically prints an informative notice, gracefully skips those providers, and successfully catalogs all datasets from open providers (such as USGS and NOAA).
+
 ### Step 1.2: Selecting the Optimal Tile & Buffer Size for 30 m Rasters
 
 When the primary objective is generating **30 m ecological or topographic rasters** (e.g., Landsat/SRTM scale), selecting the tile size and buffer requires careful consideration:
