@@ -17,6 +17,7 @@ class USGSProvider(BaseProvider):
     REGISTRY_URL = "https://raw.githubusercontent.com/hobu/usgs-lidar/master/boundaries/resources.geojson"
     CACHE_DIR = Path.home() / ".cache" / "als_finder"
     CACHE_FILE = CACHE_DIR / "usgs_resources.geojson"
+    TNM_CACHE_FILE = CACHE_DIR / "usgs_tnm_workunits.json"
 
     def check_access(self) -> bool:
         """Check if Github registry is reachable or cached."""
@@ -31,18 +32,105 @@ class USGSProvider(BaseProvider):
             logger.warning("AWS USGS Entwine boundary registry unreachable.")
             return False
 
+    @staticmethod
+    def _build_tnm_lookup_from_records(records: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        """Build normalized workunit lookup dictionary from TNM feature/record dictionaries."""
+        import re
+        from datetime import datetime, timezone
+
+        lookup: Dict[str, Dict[str, Any]] = {}
+        for feat in records:
+            attrs = feat.get("attributes", feat) if isinstance(feat, dict) else {}
+            w_name = attrs.get("workunit")
+            if not w_name:
+                continue
+            start_ms = attrs.get("collect_start")
+            end_ms = attrs.get("collect_end")
+            if isinstance(start_ms, (int, float)):
+                start_date = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+            else:
+                start_date = attrs.get("start_date") or (str(start_ms) if start_ms else None)
+            if isinstance(end_ms, (int, float)):
+                end_date = datetime.fromtimestamp(end_ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+            else:
+                end_date = attrs.get("end_date") or (str(end_ms) if end_ms else None)
+
+            meta_item = {
+                "workunit": w_name,
+                "project": attrs.get("project"),
+                "start_date": start_date,
+                "end_date": end_date,
+                "ql": attrs.get("ql"),
+                "horiz_crs": attrs.get("horiz_crs"),
+                "vert_crs": attrs.get("vert_crs"),
+            }
+            lookup[w_name.lower()] = meta_item
+            norm_key = re.sub(r"^(usgs_lpc_|usgs_)", "", w_name.lower())
+            norm_key = re.sub(r"(_las_.*|_las)$", "", norm_key)
+            lookup[norm_key] = meta_item
+        return lookup
+
     def _fetch_tnm_metadata(self, roi: Optional[Polygon]) -> Dict[str, Dict[str, Any]]:
         """
         Query the official USGS The National Map (TNM) 3DEP Elevation Index service
         to enrich datasets with exact collect_start, collect_end, QL, project name,
-        and vertical/horizontal reference systems.
+        and vertical/horizontal reference systems. Uses a local workunit cache when
+        available or when querying multi-polygon continental extents to avoid the
+        ArcGIS REST 2,000-feature envelope truncation limit.
         """
+        import json
+
+        if self.TNM_CACHE_FILE.exists() and self.TNM_CACHE_FILE.stat().st_size > 10000:
+            try:
+                with open(self.TNM_CACHE_FILE, "r", encoding="utf-8") as f:
+                    cached = json.load(f)
+                if isinstance(cached, list):
+                    return self._build_tnm_lookup_from_records(cached)
+                elif isinstance(cached, dict):
+                    return self._build_tnm_lookup_from_records(list(cached.values()))
+            except Exception as e:
+                logger.debug(f"Failed reading cached USGS TNM workunits: {e}")
+
         if not roi:
             return {}
         try:
-            import re
             minx, miny, maxx, maxy = roi.bounds
             url = "https://index.nationalmap.gov/arcgis/rest/services/3DEPElevationIndex/MapServer/8/query"
+            lon_span = abs(maxx - minx)
+            lat_span = abs(maxy - miny)
+
+            # If ROI spans multiple regions (>10 degrees), paginate full workunit table and cache locally
+            if lon_span > 10.0 or lat_span > 10.0:
+                all_features: List[Dict[str, Any]] = []
+                offset = 0
+                while True:
+                    params = {
+                        "where": "1=1",
+                        "outFields": "workunit,project,collect_start,collect_end,ql,horiz_crs,vert_crs",
+                        "returnGeometry": "false",
+                        "resultOffset": offset,
+                        "resultRecordCount": 2000,
+                        "f": "json",
+                    }
+                    resp = requests.get(url, params=params, headers={"User-Agent": "als-finder/1.2"}, timeout=15)
+                    if resp.status_code != 200:
+                        break
+                    batch = resp.json().get("features", [])
+                    if not batch:
+                        break
+                    all_features.extend(batch)
+                    if len(batch) < 2000:
+                        break
+                    offset += len(batch)
+                if all_features:
+                    try:
+                        self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                        with open(self.TNM_CACHE_FILE, "w", encoding="utf-8") as f:
+                            json.dump(all_features, f)
+                    except Exception:
+                        pass
+                    return self._build_tnm_lookup_from_records(all_features)
+
             params = {
                 "geometry": f"{minx:.6f},{miny:.6f},{maxx:.6f},{maxy:.6f}",
                 "geometryType": "esriGeometryEnvelope",
@@ -50,39 +138,14 @@ class USGSProvider(BaseProvider):
                 "spatialRel": "esriSpatialRelIntersects",
                 "outFields": "workunit,project,collect_start,collect_end,ql,horiz_crs,vert_crs",
                 "returnGeometry": "false",
-                "f": "json"
+                "f": "json",
             }
             resp = requests.get(url, params=params, headers={"User-Agent": "als-finder/1.2"}, timeout=15)
             if resp.status_code != 200:
                 return {}
             data = resp.json()
             features = data.get("features", [])
-            lookup = {}
-            from datetime import datetime, timezone
-            for feat in features:
-                attrs = feat.get("attributes", {})
-                w_name = attrs.get("workunit")
-                if not w_name:
-                    continue
-                start_ms = attrs.get("collect_start")
-                end_ms = attrs.get("collect_end")
-                start_date = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d') if start_ms else None
-                end_date = datetime.fromtimestamp(end_ms / 1000, tz=timezone.utc).strftime('%Y-%m-%d') if end_ms else None
-                
-                meta_item = {
-                    "workunit": w_name,
-                    "project": attrs.get("project"),
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "ql": attrs.get("ql"),
-                    "horiz_crs": attrs.get("horiz_crs"),
-                    "vert_crs": attrs.get("vert_crs"),
-                }
-                lookup[w_name.lower()] = meta_item
-                norm_key = re.sub(r'^(usgs_lpc_|usgs_)', '', w_name.lower())
-                norm_key = re.sub(r'(_las_.*|_las)$', '', norm_key)
-                lookup[norm_key] = meta_item
-            return lookup
+            return self._build_tnm_lookup_from_records(features)
         except Exception as e:
             logger.debug(f"Could not reach USGS TNM 3DEP Index service for date enrichment: {e}")
             return {}

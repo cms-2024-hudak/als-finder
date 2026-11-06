@@ -279,8 +279,12 @@ class NOAAProvider(BaseProvider):
     ) -> List[Dict[str, Any]]:
         pipeline = []
         inputs = []
-        b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
-        bounds_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
+        if poly_crs and poly_crs.upper() != "EPSG:3857":
+            ept_poly = gpd.GeoDataFrame(geometry=[buffered_poly], crs=poly_crs).to_crs("EPSG:3857").geometry.iloc[0]
+        else:
+            ept_poly = buffered_poly
+        eb_minx, eb_miny, eb_maxx, eb_maxy = ept_poly.bounds
+        ept_bounds_str = f"([{eb_minx}, {eb_maxx}], [{eb_miny}, {eb_maxy}])"
         
         for i, url in enumerate(urls):
             tag = f"reader_{i}"
@@ -288,7 +292,7 @@ class NOAAProvider(BaseProvider):
                 pipeline.append({
                     "type": "readers.ept",
                     "filename": url,
-                    "bounds": bounds_str,
+                    "bounds": ept_bounds_str,
                     "tag": tag
                 })
             else:

@@ -15,6 +15,8 @@ class OpenTopographyProvider(BaseProvider):
     """
     
     BASE_URL = "https://portal.opentopography.org/API"
+    CACHE_DIR = Path.home() / ".cache" / "als_finder"
+    DENSITY_CACHE_FILE = CACHE_DIR / "ot_density_cache.json"
 
     def __init__(self, ot_key: Optional[str] = None):
         """Initializes the OpenTopography abstraction using unified credential resolver."""
@@ -92,8 +94,22 @@ class OpenTopographyProvider(BaseProvider):
             # The structure is usually {'Datasets': [...]}
             datasets = data.get('Datasets', [])
             logger.info(f"Found {len(datasets)} datasets from OpenTopography.")
-            
+
+            import json
+            import re
+            from concurrent.futures import ThreadPoolExecutor
+
+            density_cache: Dict[str, Dict[str, Any]] = {}
+            if self.DENSITY_CACHE_FILE.exists():
+                try:
+                    with open(self.DENSITY_CACHE_FILE, "r", encoding="utf-8") as cf:
+                        density_cache = json.load(cf)
+                except Exception:
+                    density_cache = {}
+
             results = []
+            urls_to_scrape: List[str] = []
+
             for ds in datasets:
                 # OpenTopography wraps the actual metadata in a 'Dataset' key using JSON-LD
                 meta = ds.get('Dataset', ds)
@@ -134,31 +150,28 @@ class OpenTopographyProvider(BaseProvider):
 
                 point_count = meta.get('ptCount') or meta.get('pointCount')
                 point_density = meta.get('pointDensity')
-
-                # STAC/XML often drops High-Res Point Data. Let's dynamically regex the OpenTopography HTML Portal!
                 dataset_url = meta.get('url')
-                if not point_density and dataset_url:
-                    try:
-                        import re
-                        html_resp = requests.get(dataset_url, timeout=15).text
-                        density_match = re.search(r'([\d\.,]+)\s*pts/m', html_resp, re.IGNORECASE)
-                        if density_match:
-                            point_density = float(density_match.group(1).replace(',', ''))
-                        
-                        pts_match = re.search(r'Point Count(?:<[^>]+>\s*)*[:]*\s*([0-9,]+)', html_resp, re.IGNORECASE)
-                        if pts_match:
-                            point_count = int(pts_match.group(1).replace(',', ''))
-                    except Exception as e:
-                        logger.warning(f"Failed OT DOM Intercept for {dataset_url}: {e}")
 
-                # Impute missing point counts geometrically using Density * Area (m2)
-                if point_density and area and not point_count:
-                    try:
-                        point_count = int(float(point_density) * float(area) * 1e6)
-                    except:
-                        pass
+                if not point_density and dataset_url:
+                    if dataset_url in density_cache:
+                        point_density = density_cache[dataset_url].get("point_density")
+                        if not point_count:
+                            point_count = density_cache[dataset_url].get("point_count")
+                    else:
+                        urls_to_scrape.append(dataset_url)
+
+                # Extract flight date from temporalCoverage when available (more accurate than portal dateCreated)
+                temp_cov = str(meta.get('temporalCoverage') or '').strip()
+                acq_date = meta.get('dateCreated')
+                if temp_cov:
+                    date_matches = re.findall(r'\d{4}-\d{2}-\d{2}', temp_cov)
+                    if date_matches:
+                        acq_date = date_matches[-1]
 
                 clean_meta = self.sanitize_metadata(meta)
+                if temp_cov:
+                    clean_meta["temporalCoverage"] = temp_cov
+
                 results.append({
                     "provider": "OpenTopography",
                     "dataset_id": dataset_id,
@@ -167,14 +180,52 @@ class OpenTopographyProvider(BaseProvider):
                     "url": dataset_url,
                     "bounds": None, 
                     "geometry": geom,
-                    "date": meta.get('dateCreated'),
+                    "date": acq_date,
                     "point_count": point_count, 
                     "point_density": point_density,
                     "area_sqkm": area,
-                    # Store all raw and random metadata for full context
                     "raw_metadata": clean_meta,
                     "additional_metadata": clean_meta
                 })
+
+            if urls_to_scrape:
+                def _scrape_one(u: str):
+                    p_dens, p_cnt = None, None
+                    try:
+                        html_resp = requests.get(u, timeout=8).text
+                        density_match = re.search(r'([\d\.,]+)\s*pts/m', html_resp, re.IGNORECASE)
+                        if density_match:
+                            p_dens = float(density_match.group(1).replace(',', ''))
+                        pts_match = re.search(r'Point Count(?:<[^>]+>\s*)*[:]*\s*([0-9,]+)', html_resp, re.IGNORECASE)
+                        if pts_match:
+                            p_cnt = int(pts_match.group(1).replace(',', ''))
+                    except Exception as e:
+                        logger.debug(f"Failed OT DOM Intercept for {u}: {e}")
+                    return u, {"point_density": p_dens, "point_count": p_cnt}
+
+                with ThreadPoolExecutor(max_workers=8) as pool:
+                    for u, scraped in pool.map(_scrape_one, urls_to_scrape):
+                        density_cache[u] = scraped
+
+                try:
+                    self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+                    with open(self.DENSITY_CACHE_FILE, "w", encoding="utf-8") as cf:
+                        json.dump(density_cache, cf)
+                except Exception:
+                    pass
+
+            for item in results:
+                u = item.get("url")
+                if not item.get("point_density") and u and u in density_cache:
+                    item["point_density"] = density_cache[u].get("point_density")
+                    if not item.get("point_count"):
+                        item["point_count"] = density_cache[u].get("point_count")
+                if item.get("point_density") and item.get("area_sqkm") and not item.get("point_count"):
+                    try:
+                        item["point_count"] = int(float(item["point_density"]) * float(item["area_sqkm"]) * 1e6)
+                    except Exception:
+                        pass
+
             return results
 
         except requests.RequestException as e:
@@ -197,8 +248,13 @@ class OpenTopographyProvider(BaseProvider):
     ) -> List[Dict[str, Any]]:
         pipeline = []
         inputs = []
-        b_minx, b_miny, b_maxx, b_maxy = buffered_poly.bounds
-        bounds_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
+        if poly_crs and poly_crs.upper() != "EPSG:3857":
+            import geopandas as gpd
+            ept_poly = gpd.GeoDataFrame(geometry=[buffered_poly], crs=poly_crs).to_crs("EPSG:3857").geometry.iloc[0]
+        else:
+            ept_poly = buffered_poly
+        eb_minx, eb_miny, eb_maxx, eb_maxy = ept_poly.bounds
+        ept_bounds_str = f"([{eb_minx}, {eb_maxx}], [{eb_miny}, {eb_maxy}])"
 
         for i, url in enumerate(urls):
             tag = f"reader_{i}"
@@ -206,7 +262,7 @@ class OpenTopographyProvider(BaseProvider):
                 pipeline.append({
                     "type": "readers.ept",
                     "filename": url,
-                    "bounds": bounds_str,
+                    "bounds": ept_bounds_str,
                     "tag": tag
                 })
             else:

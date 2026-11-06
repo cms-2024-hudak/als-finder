@@ -53,9 +53,9 @@ def get_provider(name: str) -> BaseProvider:
 def get_active_providers(provider_names: Optional[List[str]] = None) -> List[BaseProvider]:
     """
     Return a list of initialized provider instances matching requested names/aliases.
-    If provider_names is None or empty, returns all registered standard providers.
+    If provider_names is None, empty, or contains 'all'/'*', returns all registered standard providers.
     """
-    if not provider_names:
+    if not provider_names or any(str(p).strip().upper() in ("ALL", "*") for p in provider_names):
         return [cls() for cls in PROVIDER_REGISTRY.values()]
 
     seen = set()

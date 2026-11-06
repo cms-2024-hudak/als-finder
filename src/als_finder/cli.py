@@ -77,19 +77,20 @@ def get_example_roi():
         sys.exit(1)
 
 @cli.command()
-@click.option('--roi', required=False, help='Path to ROI file (GeoJSON/Shapefile) or BBox string')
+@click.option('--roi', required=False, help='Path to ROI file (GeoJSON/Shapefile/GPKG) or BBox string')
 @click.option('--name', help='Filter by dataset name (Exact, wildcard *Tahoe*, or prefix ~ for regex e.g. ~^USGS)')
 @click.option('--date', help='Temporal filter: colon range 2018-01-01:2022-12-31, open-ended 2020:, or single year 2020')
+@click.option('--doy', help='Day-of-Year (phenology) filter across any acquisition year, e.g. 121:273 (May 1 to Sep 30)')
 @click.option('--density', help='Point density filter in pts/m2 (e.g. 8.0, 2:10) or QL Level (QL0, QL1, QL2, QL3)')
 @click.option('--workspace', help='Path to project workspace directory')
-@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NASA_GLIHT'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated allowed)')
+@click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NEON_AOP', 'NASA_GLIHT', 'NASA_EARTHDATA'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated or "all")')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
 @click.option('--ot-key', help='OpenTopography API Key. Auto-saved to workspace .env.')
 @click.option('--earthdata-token', help='NASA Earthdata Login (EDL) Bearer Token. Auto-saved to workspace .env.')
 @click.option('--neon-key', help='NEON API Token. Auto-saved to workspace .env.')
 @click.option('--dedup/--no-dedup', default=True, help='Deduplicate multi-archive surveys, prioritizing open repositories (default True). Pass --no-dedup to disable.')
 @click.option('--overwrite/--no-overwrite', default=True, help='Overwrite existing catalog files in workspace (default True). Use --no-overwrite to prevent replacing an existing catalog.')
-def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, earthdata_token, neon_key, dedup, overwrite):
+def search(roi, name, date, doy=None, density=None, workspace=None, provider=('USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NEON_AOP', 'NASA_GLIHT', 'NASA_EARTHDATA'), cloud_native=False, ot_key=None, earthdata_token=None, neon_key=None, dedup=True, overwrite=True):
     """Search for available LiDAR data."""
     start_time_exec = time.time()
     
@@ -100,8 +101,25 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
     if neon_key:
         os.environ['NEON_API_KEY'] = neon_key
         
-    if not (roi or name or date or density):
-        raise click.UsageError("At least one filter (--roi, --name, --date, or --density) must be provided to execute a pipeline search securely avoiding arbitrary global extraction ceilings.")
+    if not (roi or name or date or doy or density):
+        raise click.UsageError("At least one filter (--roi, --name, --date, --doy, or --density) must be provided to execute a pipeline search securely avoiding arbitrary global extraction ceilings.")
+
+    min_doy, max_doy = None, None
+    if doy:
+        doy_str = str(doy).strip()
+        doy_delim = next((d for d in ['..', ':', '/', '-'] if d in doy_str), None)
+        try:
+            if doy_delim:
+                d_s, d_e = doy_str.split(doy_delim, 1)
+                min_doy = int(d_s.strip()) if d_s.strip() else 1
+                max_doy = int(d_e.strip()) if d_e.strip() else 366
+            else:
+                min_doy = int(doy_str)
+                max_doy = int(doy_str)
+            if min_doy < 1 or max_doy > 366 or min_doy > max_doy:
+                raise ValueError("DOY out of range")
+        except ValueError:
+            raise click.ClickException(f"Invalid --doy specification: '{doy}'. Expected integer range within 1..366 (e.g. '121:273' or '121-273').")
 
     start_date, end_date = None, None
     if date:
@@ -332,6 +350,39 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
                 continue
             if end_date and item_date > end_date:
                 continue
+
+            # 2b. Day-of-Year (DOY / phenology) filter across any acquisition year
+            if min_doy is not None or max_doy is not None:
+                import re
+                add_m = item.get('additional_metadata') or item.get('raw_metadata') or {}
+                cand_strs = [
+                    str(add_m.get('collect_start') or ''),
+                    str(add_m.get('collect_end') or ''),
+                    str(add_m.get('temporalCoverage') or ''),
+                    str(item.get('date') or ''),
+                ]
+                ymd_tokens: List[str] = []
+                for cs in cand_strs:
+                    ymd_tokens.extend(re.findall(r'\d{4}-\d{2}-\d{2}', cs))
+                if not ymd_tokens:
+                    continue
+                doys: List[int] = []
+                for tok in ymd_tokens:
+                    try:
+                        doys.append(datetime.strptime(tok, '%Y-%m-%d').timetuple().tm_yday)
+                    except ValueError:
+                        pass
+                if not doys:
+                    continue
+                lo_doy = min_doy if min_doy is not None else 1
+                hi_doy = max_doy if max_doy is not None else 366
+                s_doy, e_doy = doys[0], doys[-1]
+                if s_doy <= e_doy:
+                    if not (max(s_doy, lo_doy) <= min(e_doy, hi_doy)):
+                        continue
+                else:
+                    if not (lo_doy <= s_doy <= hi_doy or lo_doy <= e_doy <= hi_doy):
+                        continue
                 
             # 3. Density filter inherently requires PyProj parsing execution first
             pts_m2 = item.get('point_density')
@@ -491,6 +542,7 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
                 "roi": roi,
                 "name": name,
                 "date": date,
+                "doy": doy,
                 "density": density,
                 "providers": list(provider)
             },
@@ -500,6 +552,26 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
             },
             "datasets": unique_results 
         }
+
+        # Invalidate any stale derived grid.gpkg / grids/ / fetch_array.csv before writing new catalog
+        from als_finder.core.grid_manager import invalidate_derived_catalog_artifacts
+        invalidate_derived_catalog_artifacts(catalog_dir)
+
+        # Persist or clean up workspace-local roi.gpkg so build_workspace_grid always has the active ROI
+        ws_roi_gpkg = os.path.join(catalog_dir, 'roi.gpkg')
+        if os.path.exists(ws_roi_gpkg):
+            try:
+                os.remove(ws_roi_gpkg)
+            except Exception:
+                pass
+        if roi and isinstance(roi, (str, Path)) and os.path.isfile(str(roi)):
+            try:
+                import geopandas as gpd
+                roi_src_gdf = gpd.read_file(str(roi))
+                if not roi_src_gdf.empty:
+                    roi_src_gdf.to_file(ws_roi_gpkg, driver="GPKG")
+            except Exception as e:
+                logger.debug(f"Could not cache ROI file to {ws_roi_gpkg}: {e}")
 
         # Save manifest
         with open(output_manifest, 'w') as f:
@@ -533,7 +605,12 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
                 
         logger.info(f"CSV manifest written to {output_csv}")
         
-        # Save GPKG globally
+        # Save GPKG globally (always unlink existing catalog.gpkg first so 0-result searches never leave stale data)
+        if os.path.exists(output_gpkg):
+            try:
+                os.remove(output_gpkg)
+            except Exception as rm_e:
+                logger.debug(f"Failed removing existing catalog.gpkg: {rm_e}")
         try:
             import geopandas as gpd
             from shapely.geometry import box, shape
@@ -601,13 +678,19 @@ def search(roi, name, date, density, workspace, provider, cloud_native, ot_key, 
 
 @cli.command()
 @click.option('--workspace', required=True, help='Path to existing als-finder workspace')
+@click.option('--roi', help='Override ROI file or BBox string')
 @click.option('--name', help='Override dataset name filter (Supports wildcards, or regex via ~)')
 @click.option('--date', help='Override temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
+@click.option('--doy', help='Override Day-of-Year phenology filter (e.g. 121:273)')
 @click.option('--density', help='Override point density filter or QL Level (e.g. QL1)')
-@click.option('--provider', multiple=True, callback=parse_comma_separated, help='Override provider(s) (comma-separated allowed)')
+@click.option('--provider', multiple=True, callback=parse_comma_separated, help='Override provider(s) (comma-separated or "all")')
+@click.option('--cloud-native', is_flag=True, default=False, help='Filter exclusively for streaming EPT/COPC datasets')
+@click.option('--dedup/--no-dedup', default=True, help='Deduplicate multi-archive surveys (default True)')
 @click.option('--ot-key', help='OpenTopography API Key. Will be saved to a local .env file in your working directory natively.')
+@click.option('--earthdata-token', help='NASA Earthdata Login (EDL) Bearer Token.')
+@click.option('--neon-key', help='NEON API Token.')
 @click.pass_context
-def update(ctx, workspace, name, date, density, provider, ot_key):
+def update(ctx, workspace, roi=None, name=None, date=None, doy=None, density=None, provider=(), cloud_native=False, dedup=True, ot_key=None, earthdata_token=None, neon_key=None):
     """Update an existing workspace catalog, preserving historical parameters and invoking atomic rollbacks."""
     catalog_dir = os.path.join(workspace, 'catalog')
     manifest_path = os.path.join(catalog_dir, 'manifest.json')
@@ -636,15 +719,24 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
     params = data.get('search_parameters', {})
     historic_utc = data.get('execution_metadata', {}).get('timestamp_utc', 'unknown_time').replace(':', '').replace('-', '')
     
+    # Normalize provider override if passed as a bare string
+    if isinstance(provider, str):
+        provider_list = [x.strip() for x in provider.split(',') if x.strip()]
+    elif provider:
+        provider_list = list(provider)
+    else:
+        provider_list = []
+
     # Override logic
-    final_roi = params.get('roi')
-    if not final_roi:
-        raise click.ClickException("Historic ROI not found in manifest headers. Cannot update.")
-        
+    final_roi = roi if roi else params.get('roi')
     final_name = name if name else params.get('name')
     final_date = date if date else params.get('date')
+    final_doy = doy if doy else params.get('doy')
     final_density = density if density else params.get('density')
-    final_providers = list(provider) if provider else params.get('providers', ['usgs', 'noaa', 'opentopography'])
+    final_providers = provider_list if provider_list else params.get('providers', ['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NEON_AOP', 'NASA_GLIHT', 'NASA_EARTHDATA'])
+
+    if not (final_roi or final_name or final_date or final_doy or final_density):
+        raise click.ClickException("No active search filters (--roi, --name, --date, --doy, or --density) found in historic manifest or overrides. Cannot update.")
     
     logger.info(f"Executing Full-Replacement Update natively over Workspace: {workspace}")
         
@@ -652,22 +744,40 @@ def update(ctx, workspace, name, date, density, provider, ot_key):
     backup_manifest = os.path.join(catalog_dir, f'manifest_{historic_utc}.json')
     backup_gpkg = os.path.join(catalog_dir, f'catalog_{historic_utc}.gpkg')
     backup_csv = os.path.join(catalog_dir, f'catalog_{historic_utc}.csv')
+    backup_roi = os.path.join(catalog_dir, f'roi_{historic_utc}.gpkg')
     
     if os.path.exists(manifest_path): shutil.move(manifest_path, backup_manifest)
     if os.path.exists(os.path.join(catalog_dir, 'catalog.gpkg')): shutil.move(os.path.join(catalog_dir, 'catalog.gpkg'), backup_gpkg)
     if os.path.exists(os.path.join(catalog_dir, 'catalog.csv')): shutil.move(os.path.join(catalog_dir, 'catalog.csv'), backup_csv)
+    if os.path.exists(os.path.join(catalog_dir, 'roi.gpkg')): shutil.copy2(os.path.join(catalog_dir, 'roi.gpkg'), backup_roi)
     
     logger.info(f"Atomic Rollback successful. Historic catalog mapped to timestamp {historic_utc}.")
     
     # Execute native search bypass via explicit Context invocation
     try:
-        ctx.invoke(search, roi=final_roi, name=final_name, date=final_date, density=final_density, workspace=workspace, provider=final_providers)
+        ctx.invoke(
+            search,
+            roi=final_roi,
+            name=final_name,
+            date=final_date,
+            doy=final_doy,
+            density=final_density,
+            workspace=workspace,
+            provider=final_providers,
+            cloud_native=cloud_native,
+            ot_key=ot_key,
+            earthdata_token=earthdata_token,
+            neon_key=neon_key,
+            dedup=dedup,
+            overwrite=True,
+        )
     except Exception as e:
         logger.error(f"Update failed during sub-search execution: {e}. Restoring previous catalog state natively.")
         # Roll forward to restore state
         if os.path.exists(backup_manifest): shutil.move(backup_manifest, manifest_path)
         if os.path.exists(backup_gpkg): shutil.move(backup_gpkg, os.path.join(catalog_dir, 'catalog.gpkg'))
         if os.path.exists(backup_csv): shutil.move(backup_csv, os.path.join(catalog_dir, 'catalog.csv'))
+        if os.path.exists(backup_roi): shutil.move(backup_roi, os.path.join(catalog_dir, 'roi.gpkg'))
         raise click.ClickException(f"Update failed and was safely rolled back. Original error: {str(e)}")
 
 
@@ -1368,11 +1478,11 @@ def fetch_tile_subcmd(tile_ids, tile_id, workspace, manifest, output, buffer_siz
 
         if workspace:
             ws_path = Path(workspace)
-            manifest_candidate = ws_path / "catalog" / "grid.gpkg"
+            manifest_candidate = ws_path / "catalog" / "manifest.json"
             if not manifest_candidate.exists():
-                manifest_candidate = ws_path / "catalog" / "manifest.json"
+                manifest_candidate = ws_path / "catalog" / "grid.gpkg"
             if not manifest_candidate.exists():
-                raise click.UsageError(f"Neither grid.gpkg nor manifest.json found in workspace '{workspace}/catalog/'. Run 'search' first.")
+                raise click.UsageError(f"Neither manifest.json nor grid.gpkg found in workspace '{workspace}/catalog/'. Run 'search' first.")
             target_manifest = manifest_candidate
         elif manifest:
             target_manifest = Path(manifest)
@@ -1561,7 +1671,7 @@ def fetch_survey_subcmd(ctx, workspace, roi, name, date, density, provider, clou
 # PLANNING & PRE-FLIGHT AUDIT COMMAND (plan & grid-info alias)
 # ==============================================================================
 
-def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=False, tasks_parquet=None):
+def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=False, tasks_parquet=None, subtiles=True):
     try:
         # Default workspace fallback to '.' if catalog/ exists
         if workspace is None and manifest is None:
@@ -1570,11 +1680,11 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
 
         if workspace:
             ws_path = Path(workspace)
-            manifest_candidate = ws_path / "catalog" / "grid.gpkg"
+            manifest_candidate = ws_path / "catalog" / "manifest.json"
             if not manifest_candidate.exists():
-                manifest_candidate = ws_path / "catalog" / "manifest.json"
+                manifest_candidate = ws_path / "catalog" / "grid.gpkg"
             if not manifest_candidate.exists():
-                raise click.UsageError(f"Neither grid.gpkg nor manifest.json found in workspace '{workspace}/catalog/'. Run 'search' first.")
+                raise click.UsageError(f"Neither manifest.json nor grid.gpkg found in workspace '{workspace}/catalog/'. Run 'search' first.")
             target_manifest = manifest_candidate
         elif manifest:
             target_manifest = Path(manifest)
@@ -1599,7 +1709,7 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
 
         audit_info = None
         leaf_ids = []
-        if max_points is not None:
+        if max_points is not None and subtiles:
             cur_t = float(spec_0.get("nominal_tile_size", spec_0.get("tile_size", tile_size)))
             cur_b = float(spec_0.get("nominal_buffer_size", spec_0.get("buffer_size", buffer_size)))
             default_density = float(spec_0.get("point_density") or 10.0)
@@ -1671,6 +1781,7 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
         if tasks_csv or tasks_parquet:
             import csv
             from shapely.geometry import box
+            from shapely.wkt import loads as wkt_loads
             from als_finder.core.grid_manager import format_coord, parse_quadrant_tile_id
             fieldnames = [
                 "task_id", "tile_id", "basename", "hive_dir", "hive_path", "dataset_id", "provider", "grid_crs",
@@ -1682,9 +1793,12 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
             for task_idx, leaf_tid in enumerate(leaf_ids):
                 base_id, quadrants = parse_quadrant_tile_id(leaf_tid)
                 row = grid_gdf.iloc[base_id]
-                cur_c_poly = row.geometry
-                cur_t = float(spec_0.get("nominal_tile_size", spec_0.get("tile_size", tile_size)))
-                cur_b = float(spec_0.get("nominal_buffer_size", spec_0.get("buffer_size", buffer_size)))
+                if "core_wkt" in row and row["core_wkt"] and isinstance(row["core_wkt"], str):
+                    cur_c_poly = wkt_loads(row["core_wkt"])
+                else:
+                    cur_c_poly = row.geometry
+                cur_t = float(row.get("tile_size") or spec_0.get("nominal_tile_size", spec_0.get("tile_size", tile_size)))
+                cur_b = float(row.get("buffer_size") or spec_0.get("nominal_buffer_size", spec_0.get("buffer_size", buffer_size)))
 
                 if quadrants:
                     for q in quadrants:
@@ -1854,6 +1968,7 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
 @click.option('-s', '--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m for 30m/10m/1m divisibility)')
 @click.option('-b', '--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m for 30m raster compatibility)')
 @click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
+@click.option('--subtiles/--no-subtiles', default=True, help='Enable/disable quadrant subdivision when max-points is exceeded (default True); pass --no-subtiles for strict 1:1 tile mapping')
 @click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays (one per line)')
 @click.option('--tasks-csv', is_flag=True, help='Output rich task manifest CSV with all metadata (basenames, bounds, CRS, memory audits) for Slurm job arrays')
 @click.option('--tasks-parquet', is_flag=False, flag_value='tasks.parquet', default=None, help='Export rich task manifest to Parquet (defaults to tasks.parquet, or specify custom path)')
@@ -1861,9 +1976,9 @@ def _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_poin
 @click.option('--field', default=None, help='Extract a specific field from payload (e.g. total_tiles, grid_crs, basename, crop_pdal_bounds)')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None, help='Output format: json, env (shell exports), or table')
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, tasks_csv, tasks_parquet, overwrite, field, output_format, json_output):
+def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, subtiles, tasks, tasks_csv, tasks_parquet, overwrite, field, output_format, json_output):
     """Plan spatial grid partitioning, pre-flight memory audits, and Slurm task lists."""
-    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv, tasks_parquet=tasks_parquet)
+    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv, tasks_parquet=tasks_parquet, subtiles=subtiles)
 
 
 @cli.command('grid-info')
@@ -1873,6 +1988,7 @@ def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, t
 @click.option('--tile-size', type=int, default=1200, help='Core tile size in meters (default 1200m)')
 @click.option('--buffer-size', type=int, default=30, help='Spatial overlap buffer in meters (default 30m)')
 @click.option('--max-points', type=int, default=None, help='Target point budget for pre-flight memory audit')
+@click.option('--subtiles/--no-subtiles', default=True, help='Enable/disable quadrant subdivision when max-points is exceeded (default True)')
 @click.option('--tasks', is_flag=True, help='Output flat list of all leaf tile IDs for Slurm job arrays')
 @click.option('--tasks-csv', is_flag=True, help='Output rich task manifest CSV with all metadata for Slurm job arrays')
 @click.option('--tasks-parquet', is_flag=False, flag_value='tasks.parquet', default=None, help='Export rich task manifest to Parquet (defaults to tasks.parquet, or specify custom path)')
@@ -1880,9 +1996,9 @@ def plan_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, t
 @click.option('--field', default=None, help='Extract a specific field from payload')
 @click.option('--format', 'output_format', type=click.Choice(['json', 'env', 'table'], case_sensitive=False), default=None)
 @click.option('--json', 'json_output', is_flag=True, help='Output machine-readable JSON to stdout')
-def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, tasks_csv, tasks_parquet, overwrite, field, output_format, json_output):
+def grid_info_cmd(workspace, manifest, tile_id, tile_size, buffer_size, max_points, subtiles, tasks, tasks_csv, tasks_parquet, overwrite, field, output_format, json_output):
     """Backward-compatible alias for 'als-finder plan'."""
-    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv, tasks_parquet=tasks_parquet)
+    _execute_plan(workspace, manifest, tile_id, tile_size, buffer_size, max_points, tasks, overwrite, field, output_format, json_output, tasks_csv=tasks_csv, tasks_parquet=tasks_parquet, subtiles=subtiles)
 
 
 # ==============================================================================
@@ -1898,14 +2014,34 @@ def workspace_group():
 @workspace_group.command('update')
 @click.pass_context
 @click.option('--workspace', required=True, help='Path to existing als-finder workspace')
+@click.option('--roi', help='Override ROI file or BBox string')
 @click.option('--name', help='Override dataset name filter')
 @click.option('--date', help='Override temporal filter')
+@click.option('--doy', help='Override Day-of-Year phenology filter (e.g. 121:273)')
 @click.option('--density', help='Override point density filter')
-@click.option('--provider', help='Override provider(s)')
+@click.option('--provider', multiple=True, callback=parse_comma_separated, help='Override provider(s) (comma-separated or "all")')
+@click.option('--cloud-native', is_flag=True, default=False, help='Filter exclusively for streaming EPT/COPC datasets')
+@click.option('--dedup/--no-dedup', default=True, help='Deduplicate multi-archive surveys (default True)')
 @click.option('--ot-key', help='OpenTopography API Key')
-def workspace_update_cmd(ctx, workspace, name, date, density, provider, ot_key):
+@click.option('--earthdata-token', help='NASA Earthdata Login (EDL) Bearer Token')
+@click.option('--neon-key', help='NEON API Token')
+def workspace_update_cmd(ctx, workspace, roi, name, date, doy, density, provider, cloud_native, dedup, ot_key, earthdata_token, neon_key):
     """Update an existing workspace catalog with new filters."""
-    ctx.invoke(update, workspace=workspace, name=name, date=date, density=density, provider=provider, ot_key=ot_key)
+    ctx.invoke(
+        update,
+        workspace=workspace,
+        roi=roi,
+        name=name,
+        date=date,
+        doy=doy,
+        density=density,
+        provider=provider,
+        cloud_native=cloud_native,
+        dedup=dedup,
+        ot_key=ot_key,
+        earthdata_token=earthdata_token,
+        neon_key=neon_key,
+    )
 
 
 @workspace_group.command('clean')
