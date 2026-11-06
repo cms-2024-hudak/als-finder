@@ -271,11 +271,32 @@ class USGSProvider(BaseProvider):
 
         b_minx, b_miny, b_maxx, b_maxy = target_poly.bounds
         bounds_str = f"([{b_minx}, {b_maxx}], [{b_miny}, {b_maxy}])"
-        reader_stage = {
-            "type": "readers.ept",
-            "filename": urls[0],
-            "bounds": bounds_str
-        }
-        if resolution:
-            reader_stage["resolution"] = float(resolution)
-        return [reader_stage]
+        clean_urls = list(dict.fromkeys([str(u) for u in urls if u]))
+        if not clean_urls:
+            raise ValueError("USGSProvider.get_pdal_reader requires at least one EPT URL.")
+        if len(clean_urls) == 1:
+            reader_stage: Dict[str, Any] = {
+                "type": "readers.ept",
+                "filename": clean_urls[0],
+                "bounds": bounds_str,
+            }
+            if resolution:
+                reader_stage["resolution"] = float(resolution)
+            return [reader_stage]
+
+        stages: List[Dict[str, Any]] = []
+        tags: List[str] = []
+        for idx, u in enumerate(clean_urls):
+            tag = f"ept_reader_{idx}"
+            stage: Dict[str, Any] = {
+                "type": "readers.ept",
+                "filename": u,
+                "bounds": bounds_str,
+                "tag": tag,
+            }
+            if resolution:
+                stage["resolution"] = float(resolution)
+            stages.append(stage)
+            tags.append(tag)
+        stages.append({"type": "filters.merge", "inputs": tags})
+        return stages

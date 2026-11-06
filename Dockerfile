@@ -10,7 +10,7 @@ COPY --chown=$MAMBA_USER:$MAMBA_USER requirements.txt /tmp/requirements.txt
 RUN micromamba install -y -n base -c conda-forge \
     python=3.11 \
     gdal \
-    pdal \
+    libpdal-core \
     python-pdal \
     --file /tmp/requirements.txt && \
     micromamba clean --all --yes

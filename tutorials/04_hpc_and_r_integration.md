@@ -66,9 +66,10 @@ if (length(laz_files) > 0) {
   cat("Generating 1m DTM (TIN interpolation)...\n")
   dtm <- rasterize_terrain(ctg, res = 1.0, algorithm = tin())
   
-  # 2. Generate 1m Canopy Height Model (CHM)
-  cat("Generating 1m CHM (Pit-free algorithm)...\n")
-  chm <- rasterize_canopy(ctg, res = 1.0, algorithm = p2r())
+  # 2. Normalize Point Cloud Heights Above Ground & Generate 1m Canopy Height Model (CHM)
+  cat("Normalizing heights above ground and generating 1m CHM (Pit-free algorithm)...\n")
+  ctg_norm <- normalize_height(ctg, tin(), dtm = dtm)
+  chm <- rasterize_canopy(ctg_norm, res = 1.0, algorithm = p2r())
   
   # 3. Individual Tree Detection (ITD)
   cat("Running Individual Tree Detection (lmf)...\n")

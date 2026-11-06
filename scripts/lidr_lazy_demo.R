@@ -39,13 +39,13 @@ if (is_parquet) {
   ds <- open_dataset(manifest_path)
   total_tasks <- nrow(ds)
 } else {
-  # Base R streaming 1-row CSV reader
+  # Base R streaming 1-row CSV reader (cross-platform on Windows, macOS, and Linux)
   read_task_csv <- function(path, task_idx) {
     header <- readLines(path, n = 1)
     line <- scan(path, what = character(), sep = "\n", skip = task_idx, nlines = 1, quiet = TRUE)
     read.csv(text = c(header, line), stringsAsFactors = FALSE)
   }
-  total_tasks <- as.integer(system2("wc", args = c("-l", manifest_path), stdout = TRUE)) - 1
+  total_tasks <- length(count.fields(manifest_path, sep = ",")) - 1L
 }
 
 cat(sprintf("Total tasks available: %d. Processing subset of %d tiles...\n", total_tasks, min(max_tiles, total_tasks)))
@@ -78,8 +78,14 @@ for (tid in 1:min(max_tiles, total_tasks)) {
   
   # Ingest dropping withheld points
   las <- readLAS(laz_path, filter = "-drop_withheld")
-  
-  # 4. Compute 30m Canopy Height Model
+  if (is.empty(las) || npoints(las) == 0) {
+    warning(paste("Skipping empty tile (0 points):", laz_path))
+    unlink(laz_path)
+    next
+  }
+
+  # 4. Normalize height above ground (TIN) and compute 30m Canopy Height Model (CHM)
+  las <- normalize_height(las, tin())
   chm_buffered <- rasterize_canopy(las, res = 30, p2r())
   
   # 5. Crop spatial buffer collar to core bounds

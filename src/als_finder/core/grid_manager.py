@@ -532,6 +532,10 @@ def _enrich_grid_with_datasets(
         d_id = str(d.get("dataset_id") or d.get("name") or "")
         if d_id:
             ds_by_id[d_id] = d
+        d_add = d.get("additional_metadata") or d.get("raw_metadata") or {}
+        for alt_k in (d.get("name"), d_add.get("ot_id"), d_add.get("alternateName")):
+            if alt_k and str(alt_k).strip() and str(alt_k).strip() not in ds_by_id:
+                ds_by_id[str(alt_k).strip()] = d
         d_geom = None
         try:
             raw_g = d.get("geometry")
@@ -545,15 +549,24 @@ def _enrich_grid_with_datasets(
         if d_geom is not None and not d_geom.is_empty:
             spatial_datasets.append((d_geom, d))
 
-    # Prepare WGS84 geometries if we need spatial matching across multiple datasets
+    # Prepare WGS84 geometries and STRtree spatial index for fast dataset matching across tiles
     wgs_geoms: Optional[List[Any]] = None
-    if len(spatial_datasets) > 1:
+    tile_ds_candidates: Dict[int, List[int]] = {}
+    if len(spatial_datasets) >= 1:
         try:
+            from shapely.strtree import STRtree
+
             wgs_series = export_df.geometry
             if export_df.crs and export_df.crs.to_string() != "EPSG:4326":
                 wgs_series = export_df.to_crs("EPSG:4326").geometry
             wgs_geoms = list(wgs_series)
-        except Exception:
+            ds_geoms_only = [dg for dg, _ in spatial_datasets]
+            tree = STRtree(ds_geoms_only)
+            q_tiles, q_ds = tree.query(wgs_geoms, predicate="intersects")
+            for t_idx, d_idx in zip(q_tiles.tolist(), q_ds.tolist()):
+                tile_ds_candidates.setdefault(int(t_idx), []).append(int(d_idx))
+        except Exception as e:
+            logger.debug(f"STRtree spatial dataset matching fallback: {e}")
             wgs_geoms = None
 
     cols = set(export_df.columns)
@@ -576,6 +589,7 @@ def _enrich_grid_with_datasets(
     area_sqkms: List[Optional[float]] = []
     source_urls_col: List[str] = []
     add_meta_col: List[str] = []
+    covered_mask: List[bool] = []
 
     for row_idx, (_, row) in enumerate(export_df.iterrows()):
         row_crs = (
@@ -610,19 +624,33 @@ def _enrich_grid_with_datasets(
         row_prov = str(row.get("provider") or "").strip() if "provider" in cols and pd.notna(row.get("provider")) else ""
 
         matched_ds: Optional[Dict[str, Any]] = None
+        ranked_matches: List[Tuple[float, str, Dict[str, Any]]] = []
         if row_ds_id and row_ds_id not in ("dataset", "unknown_dataset") and row_ds_id in ds_by_id:
             matched_ds = ds_by_id[row_ds_id]
         elif (not row_ds_id or row_ds_id in ("dataset", "unknown_dataset")) and wgs_geoms is not None:
             tile_wgs = wgs_geoms[row_idx]
-            for d_geom, d_dict in spatial_datasets:
+            tile_area = max(float(tile_wgs.area), 1e-12)
+            cand_indices = tile_ds_candidates.get(row_idx, [])
+            for d_idx in cand_indices:
+                d_geom, d_dict = spatial_datasets[d_idx]
                 try:
-                    if d_geom.intersects(tile_wgs):
-                        matched_ds = d_dict
-                        break
+                    inter_area = float(tile_wgs.intersection(d_geom).area)
+                    if inter_area > 0.0:
+                        overlap_ratio = inter_area / tile_area
+                        s_date = str(d_dict.get("sort_date") or d_dict.get("date") or "0000-00-00")
+                        ranked_matches.append((overlap_ratio, s_date, d_dict))
                 except Exception:
                     continue
+            if ranked_matches:
+                # Sort primarily by overlap ratio (rounded to 0.1% to avoid float noise), secondarily by newest date
+                ranked_matches.sort(key=lambda x: (round(x[0], 3), x[1]), reverse=True)
+                matched_ds = ranked_matches[0][2]
 
-        if row_ds_id and row_ds_id not in ("dataset", "unknown_dataset"):
+        has_explicit_ds = bool(row_ds_id and row_ds_id not in ("dataset", "unknown_dataset"))
+        is_covered = bool(has_explicit_ds or matched_ds is not None or len(spatial_datasets) == 0)
+        covered_mask.append(is_covered)
+
+        if has_explicit_ds:
             ds_id = row_ds_id
             prov = row_prov or (str(matched_ds.get("provider")) if matched_ds else def_provider)
             nm = (
@@ -682,8 +710,21 @@ def _enrich_grid_with_datasets(
             p_cnt = matched_ds.get("point_count")
             p_dens = matched_ds.get("point_density")
             a_sqkm = matched_ds.get("area_sqkm")
-            u = matched_ds.get("url") or matched_ds.get("assets", {}).get("data", {}).get("href")
-            row_urls = [str(u)] if u else all_urls
+            primary_u = matched_ds.get("url") or matched_ds.get("assets", {}).get("data", {}).get("href")
+            row_urls = [str(primary_u)] if primary_u else []
+            # Include co-intersecting same-provider campaign URLs on boundary/seam tiles (or same-year blocks)
+            best_overlap = ranked_matches[0][0] if ranked_matches else 1.0
+            for ov_ratio, _, cand_ds in ranked_matches[1:]:
+                if str(cand_ds.get("provider") or "") != prov:
+                    continue
+                cand_dt = str(cand_ds.get("date") or "")
+                cand_yr = cand_dt[:4] if len(cand_dt) >= 4 else ""
+                if ov_ratio >= 0.01 and (best_overlap < 0.99 or cand_yr == yr):
+                    cu = cand_ds.get("url") or cand_ds.get("assets", {}).get("data", {}).get("href")
+                    if cu and str(cu) not in row_urls:
+                        row_urls.append(str(cu))
+            if not row_urls:
+                row_urls = all_urls
             row_meta_json = json.dumps(matched_ds.get("additional_metadata") or matched_ds.get("raw_metadata") or {}, default=str)
         else:
             prov = def_provider
@@ -745,6 +786,16 @@ def _enrich_grid_with_datasets(
 
     if "buffered_geometry" in export_df.columns:
         export_df = export_df.drop(columns=["buffered_geometry"])
+
+    # Prune ROI tiles that do not intersect any discovered dataset footprint (when spatial footprints exist)
+    if len(spatial_datasets) >= 1 and any(covered_mask) and not all(covered_mask):
+        dropped_count = len(covered_mask) - sum(covered_mask)
+        export_df = export_df.loc[covered_mask].reset_index(drop=True)
+        export_df["tile_id"] = list(range(len(export_df)))
+        logger.info(
+            f"Pruned {dropped_count} uncovered ROI tile(s) with no matching LiDAR dataset; "
+            f"retained {len(export_df)} covered tile(s)."
+        )
 
     return export_df
 
@@ -822,7 +873,7 @@ def export_grid_manifest(
         "tile_size": tile_size,
         "buffer_size": buffer_size,
         "grid_crs": default_crs,
-        "total_tiles": len(grid_gdf),
+        "total_tiles": num_rows,
         "gpkg_file": rel_gpkg_str,
         "catalog_timestamp_utc": exec_ts,
     }
@@ -831,14 +882,14 @@ def export_grid_manifest(
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(updated_manifest, f, indent=2)
 
-    logger.info(f"Exported grid index ({len(grid_gdf)} tiles) to {gpkg_path} and {manifest_path}")
+    logger.info(f"Exported grid index ({num_rows} tiles) to {gpkg_path} and {manifest_path}")
     return gpkg_path, manifest_path
 
 
 def build_workspace_grid(
     workspace_dir: Union[str, Path],
-    tile_size: int = 500,
-    buffer_size: int = 50,
+    tile_size: int = 1200,
+    buffer_size: int = 30,
     target_crs: Optional[str] = None,
     overwrite: bool = False
 ) -> Tuple[gpd.GeoDataFrame, str]:
@@ -986,8 +1037,8 @@ def parse_quadrant_tile_id(tile_id: Union[int, str]) -> Tuple[int, List[str]]:
 def get_tile_spec(
     manifest_or_grid_path: Union[str, Path],
     tile_id: Union[int, str],
-    tile_size: int = 500,
-    buffer_size: int = 50,
+    tile_size: int = 1200,
+    buffer_size: int = 30,
     overwrite: bool = False
 ) -> Dict[str, Any]:
     """
@@ -1253,8 +1304,8 @@ def get_tile_spec(
 
 def get_grid_path(
     workspace_or_manifest: Union[str, Path],
-    tile_size: int = 500,
-    buffer_size: int = 50
+    tile_size: int = 1200,
+    buffer_size: int = 30
 ) -> Path:
     """
     Returns the filesystem path to the Hive-partitioned grid.gpkg (or direct standalone grid GeoPackage)
@@ -1284,8 +1335,8 @@ def get_grid_path(
 
 def read_grid(
     workspace_or_manifest: Union[str, Path],
-    tile_size: int = 500,
-    buffer_size: int = 50,
+    tile_size: int = 1200,
+    buffer_size: int = 30,
     overwrite: bool = False
 ) -> gpd.GeoDataFrame:
     """

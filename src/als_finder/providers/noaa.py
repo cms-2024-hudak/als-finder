@@ -2,7 +2,7 @@ import logging
 import os
 import json
 import concurrent.futures
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from shapely.geometry import Polygon, box, shape
 from pathlib import Path
 import geopandas as gpd
@@ -194,6 +194,48 @@ class NOAAProvider(BaseProvider):
             logger.info(f"No spatial constraints formally provided. Filtering all {len(gdf)} global NOAA STAC distributions directly.")
             intersecting = gdf
         
+        from concurrent.futures import ThreadPoolExecutor
+
+        counts_cache_file = self.INDEX_FILE.parent / "noaa_ept_counts.json"
+        counts_cache: Dict[str, Any] = {}
+        if counts_cache_file.exists():
+            try:
+                with open(counts_cache_file, "r", encoding="utf-8") as cf:
+                    counts_cache = json.load(cf)
+            except Exception:
+                counts_cache = {}
+
+        urls_to_probe: List[str] = []
+        for _, row in intersecting.iterrows():
+            u = row.get("url")
+            if not row.get("point_count") and u:
+                ept_u = u if u.endswith("ept.json") else u.rstrip("/") + "/ept.json"
+                if ept_u not in counts_cache:
+                    urls_to_probe.append(ept_u)
+
+        if urls_to_probe:
+            def _probe_ept(eu: str) -> Tuple[str, Any]:
+                try:
+                    r = requests.get(eu, timeout=5)
+                    if r.status_code == 404:
+                        return eu, -404
+                    if r.status_code == 200:
+                        return eu, r.json().get("points")
+                except Exception:
+                    pass
+                return eu, None
+
+            with ThreadPoolExecutor(max_workers=12) as pool:
+                for eu_k, pt_v in pool.map(_probe_ept, set(urls_to_probe)):
+                    if pt_v is not None:
+                        counts_cache[eu_k] = pt_v
+            try:
+                self.INDEX_FILE.parent.mkdir(parents=True, exist_ok=True)
+                with open(counts_cache_file, "w", encoding="utf-8") as cf:
+                    json.dump(counts_cache, cf)
+            except Exception:
+                pass
+
         results = []
         for idx, row in intersecting.iterrows():
             url = row.get("url")
@@ -202,15 +244,11 @@ class NOAAProvider(BaseProvider):
             # STAC fundamentally drops point counts natively. Dynamically intercept EPT to fix it!
             if not point_count and url:
                 ept_url = url if url.endswith('ept.json') else url.rstrip('/') + '/ept.json'
-                try:
-                    resp = self.session.get(ept_url, timeout=4)
-                    if resp.status_code == 404:
-                        logger.warning(f"NOAA S3 Ghost 404 (Missing Data). Purging native bounds for: {ept_url}")
-                        continue
-                    ept_resp = resp.json()
-                    point_count = ept_resp.get('points')
-                except Exception as e:
-                    logger.debug(f"NOAA EPT extraction failed for {ept_url}: {e}")
+                cached_val = counts_cache.get(ept_url)
+                if cached_val == -404:
+                    logger.warning(f"NOAA S3 Ghost 404 (Missing Data). Purging native bounds for: {ept_url}")
+                    continue
+                point_count = cached_val
 
             raw_dict = {}
             for k in row.index:

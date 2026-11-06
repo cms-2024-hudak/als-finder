@@ -23,7 +23,7 @@ Because `als-finder` relies on advanced C++ geospatial libraries (`geopandas`, `
 ### Option A: Install from GitHub via Conda (Recommended)
 ```bash
 # 1. Create a conda environment with all C++ spatial dependencies from conda-forge
-conda create -n als-finder -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv laspy -y
+conda create -n als-finder -c conda-forge python=3.11 geopandas libpdal-core python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv laspy -y
 
 # 2. Activate the environment
 conda activate als-finder
@@ -34,6 +34,9 @@ pip install git+https://github.com/cms-2024-hudak/als-finder.git
 # 4. (Later) To update an existing install to the latest GitHub commit:
 python -m pip install --force-reinstall --no-deps git+https://github.com/cms-2024-hudak/als-finder.git
 ```
+
+> **Why `libpdal-core` instead of `pdal`?**
+> On `conda-forge`, `libpdal-core` contains the `pdal` CLI binary and all built-in point cloud drivers used by `als-finder` (`readers.ept`, `readers.copc`, `readers.las`, `writers.las`, `writers.copc`, `filters.*`) **without** installing optional third-party plugin DLLs (`libpdal-arrow`, `libpdal-tiledb`) that link against specific `libarrow.dll` builds. Using `libpdal-core` (together with `als-finder`'s built-in `PDAL_DRIVER_PATH` isolation) allows Windows and Linux users to install `als-finder`, `pyarrow`, and R packages (`r-lidr`, `r-terra`, `r-arrow`) in the **same Conda environment** without `libarrow.dll` / `libpdal_plugin_reader_arrow.dll` ABI conflicts.
 
 ### Option B: Install from Local Source Clone / environment.yml (Development)
 ```bash

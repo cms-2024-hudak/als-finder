@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -11,6 +12,19 @@ import geopandas as gpd
 from shapely.geometry import Polygon, box
 
 logger = logging.getLogger(__name__)
+
+
+class EmptyTileError(RuntimeError):
+    """Raised when a streamed spatial tile contains zero LiDAR returns."""
+    pass
+
+
+def _get_isolated_pdal_driver_dir() -> str:
+    """Return an empty directory path used to prevent PDAL from auto-loading optional third-party plugin DLLs."""
+    driver_dir = Path(tempfile.gettempdir()) / "als_finder_pdal_no_plugins"
+    driver_dir.mkdir(parents=True, exist_ok=True)
+    return str(driver_dir)
+
 
 def execute_with_memory_limit(cmd: List[str], input_data: bytes, memory_limit_mb: int = 4096) -> Tuple[bool, str]:
     memory_limit_bytes = memory_limit_mb * 1024 * 1024
@@ -22,6 +36,12 @@ def execute_with_memory_limit(cmd: List[str], input_data: bytes, memory_limit_mb
     pdal_env["OPENBLAS_NUM_THREADS"] = "1"
     pdal_env["OMP_NUM_THREADS"] = "1"
     pdal_env["GDAL_NUM_THREADS"] = "1"
+    # Isolate PDAL from scanning optional plugin DLLs (e.g., libpdal_plugin_reader_arrow.dll /
+    # libpdal_plugin_reader_tiledb.so) that can trigger libarrow ABI collisions when R (`r-arrow`/`r-terra`)
+    # and Python live in the same Conda environment. All core drivers used by als-finder (`readers.ept`,
+    # `readers.copc`, `readers.las`, `readers.tindex`, `writers.las`, `writers.copc`, `filters.*`) are
+    # compiled directly into `libpdalcpp` (`libpdal-core`).
+    pdal_env.setdefault("PDAL_DRIVER_PATH", _get_isolated_pdal_driver_dir())
     
     if sys.platform != 'win32':
         # We wrap the command in a tiny Python invocation that sets the memory limit natively,
@@ -42,6 +62,12 @@ def execute_with_memory_limit(cmd: List[str], input_data: bytes, memory_limit_mb
             return False, err_msg
     else:
         import psutil
+        try:
+            import ctypes
+            # Suppress Windows modal "Entry Point Not Found" / GP fault dialog boxes in headless batch runs
+            ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002 | 0x8000)
+        except Exception:
+            pass
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=pdal_env)
         
         oom_killed = {"killed": False}
@@ -600,8 +626,18 @@ def stream_single_tile(
             target_out = raw_out
 
     if target_out.exists() and not overwrite:
-        logger.info(f"Tile output {target_out} already exists and overwrite=False. Skipping.")
-        return target_out
+        try:
+            import laspy
+            with laspy.open(str(target_out)) as fh:
+                existing_pts = int(fh.header.point_count)
+            if existing_pts == 0:
+                target_out.unlink(missing_ok=True)
+            else:
+                logger.info(f"Tile output {target_out} already exists ({existing_pts:,} points) and overwrite=False. Skipping.")
+                return target_out
+        except Exception:
+            logger.info(f"Tile output {target_out} already exists and overwrite=False. Skipping.")
+            return target_out
 
     target_out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -735,6 +771,28 @@ def stream_single_tile(
     if not success or not target_out.exists():
         raise RuntimeError(f"PDAL stream execution failed for tile_id {tile_id}: {err_msg}")
 
+    # 7b. Post-condition point-count check: reject and clean up 0-point (empty) tiles
+    actual_point_count: Optional[int] = None
+    try:
+        import laspy
+        with laspy.open(str(target_out)) as fh:
+            actual_point_count = int(fh.header.point_count)
+    except Exception as e:
+        logger.debug(f"Could not inspect LAS header point count for {target_out}: {e}")
+
+    if actual_point_count is not None and actual_point_count == 0:
+        try:
+            target_out.unlink(missing_ok=True)
+            sidecar_candidate = target_out.with_suffix(".json")
+            if sidecar_candidate.exists():
+                sidecar_candidate.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise EmptyTileError(
+            f"Tile {tile_id} returned 0 points from {spec.get('provider')} ({spec.get('dataset_id')}); "
+            "empty output file was not retained."
+        )
+
     # 8. Optional sidecar metadata export
     if write_sidecar:
         sidecar_path = target_out.with_suffix(".json")
@@ -754,6 +812,7 @@ def stream_single_tile(
             "grid_crs": str(target_crs),
             "tile_size": int(spec.get("tile_size", tile_size)),
             "buffer_size": int(spec.get("buffer_size", buffer_size)),
+            "point_count": actual_point_count,
             "est_points": spec.get("est_points"),
             "is_hyperdense": spec.get("is_hyperdense", False),
             "recommended_mem_gb": spec.get("recommended_mem_gb"),

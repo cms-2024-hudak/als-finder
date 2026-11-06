@@ -10,7 +10,7 @@ Because `als-finder` uses spatial and point cloud libraries (PDAL, GDAL, GEOS), 
 
 ```bash
 # 1. Create a fresh environment with spatial dependencies
-conda create -n als-finder -c conda-forge python=3.11 geopandas pdal python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv laspy -y
+conda create -n als-finder -c conda-forge python=3.11 geopandas libpdal-core python-pdal pystac stac-validator psutil shapely pyproj tqdm pyogrio requests click python-dotenv laspy -y
 
 # 2. Activate the environment
 conda activate als-finder
@@ -18,6 +18,9 @@ conda activate als-finder
 # 3. Install als-finder
 pip install git+https://github.com/cms-2024-hudak/als-finder.git
 ```
+
+> **Note on `libpdal-core` vs `pdal`**:
+> Installing `libpdal-core` (rather than the `pdal` meta-package) provides the `pdal` CLI executable and all core EPT/COPC/LAS drivers without pulling in optional `libpdal-arrow` / `libpdal-tiledb` plugin DLLs. In addition, `als-finder` automatically isolates `PDAL_DRIVER_PATH` at runtime so you can use `als-finder`, `pyarrow`, and R (`lidR` / `terra`) in a single Conda environment without `libarrow.dll` conflicts.
 
 ---
 

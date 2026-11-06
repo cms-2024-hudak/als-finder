@@ -4,7 +4,7 @@ channels:
 dependencies:
   - python=3.11
   - gdal
-  - pdal
+  - libpdal-core
   - python-pdal
   - geopandas
   - shapely

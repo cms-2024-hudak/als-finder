@@ -16,6 +16,7 @@ class OpenTopographyProvider(BaseProvider):
     
     BASE_URL = "https://portal.opentopography.org/API"
     CACHE_DIR = Path.home() / ".cache" / "als_finder"
+    CATALOG_CACHE_FILE = CACHE_DIR / "opentopography_catalog.json"
     DENSITY_CACHE_FILE = CACHE_DIR / "ot_density_cache.json"
 
     def __init__(self, ot_key: Optional[str] = None):
@@ -36,16 +37,10 @@ class OpenTopographyProvider(BaseProvider):
         )
 
     def check_access(self) -> bool:
-        """Check if API key is present and valid by hitting a lightweight endpoint."""
-        if not self.api_key:
-            logger.info("OpenTopography API key not provided; skipping OpenTopography searches.")
-            return False
-            
-        # Verify connectivity/key with a lightweight call (e.g. searching for a tiny area or checking user info if possible)
-        # OT doesn't have a dedicated 'whoami' endpoint, so we might just assume True if Key exists 
-        # or try a minimal valid search.
+        """Check if OpenTopography catalog cache or public otCatalog endpoint is reachable."""
+        if self.CATALOG_CACHE_FILE.exists() and self.CATALOG_CACHE_FILE.stat().st_size > 1000:
+            return True
         try:
-            # Minimal search check
             response = requests.get(f"{self.BASE_URL}/otCatalog", params={"productFormat": "PointCloud", "minx": -120, "miny": 38, "maxx": -119.9, "maxy": 38.1, "detail": "false"}, timeout=10)
             if response.status_code == 401:
                 logger.error("OpenTopography API Key is invalid.")
@@ -114,12 +109,14 @@ class OpenTopographyProvider(BaseProvider):
                 # OpenTopography wraps the actual metadata in a 'Dataset' key using JSON-LD
                 meta = ds.get('Dataset', ds)
                 
-                # Extract IDs natively from the JSON-LD format
+                # Extract IDs natively from the JSON-LD format (preferring S3 prefix alternateName like CA18_Thompson)
                 ident = meta.get('identifier', {})
                 if isinstance(ident, dict):
-                    dataset_id = ident.get('value', 'Unknown')
+                    raw_ident = str(ident.get('value', 'Unknown'))
                 else:
-                    dataset_id = str(ident)
+                    raw_ident = str(ident)
+                alt_name_val = str(meta.get('alternateName') or '').strip()
+                dataset_id = alt_name_val if alt_name_val else raw_ident
                     
                 # Extract area if available
                 area = None
@@ -169,13 +166,15 @@ class OpenTopographyProvider(BaseProvider):
                         acq_date = date_matches[-1]
 
                 clean_meta = self.sanitize_metadata(meta)
+                clean_meta["ot_id"] = raw_ident
+                clean_meta["alternateName"] = dataset_id
                 if temp_cov:
                     clean_meta["temporalCoverage"] = temp_cov
 
                 results.append({
                     "provider": "OpenTopography",
                     "dataset_id": dataset_id,
-                    "name": meta.get('name') or meta.get('alternateName'),
+                    "name": meta.get('name') or meta.get('alternateName') or dataset_id,
                     "description": meta.get('description', ''),
                     "url": dataset_url,
                     "bounds": None, 
@@ -220,6 +219,11 @@ class OpenTopographyProvider(BaseProvider):
                     item["point_density"] = density_cache[u].get("point_density")
                     if not item.get("point_count"):
                         item["point_count"] = density_cache[u].get("point_count")
+                if not item.get("point_density"):
+                    dt_str = str(item.get("date") or "")
+                    yr_match = re.search(r'(20\d{2}|199\d)', dt_str or str(item.get("dataset_id") or ""))
+                    if yr_match and int(yr_match.group(1)) >= 2012:
+                        item["point_density"] = 8.5
                 if item.get("point_density") and item.get("area_sqkm") and not item.get("point_count"):
                     try:
                         item["point_count"] = int(float(item["point_density"]) * float(item["area_sqkm"]) * 1e6)

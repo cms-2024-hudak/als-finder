@@ -423,3 +423,186 @@ def test_fetch_tile_no_subtiles_multi_utm_pdal_pipeline(tmp_path: Path):
         reproj_stages = [s for s in pipeline_stages if s.get("type") == "filters.reprojection"]
         assert len(reproj_stages) == 1
         assert reproj_stages[0]["out_srs"] == "EPSG:32613"
+
+
+def test_enrich_grid_prunes_uncovered_and_ranks_by_overlap(tmp_path: Path):
+    """
+    Verify Issue #70 fixes:
+    1. Grid tiles in a regional ROI that do NOT intersect any discovered dataset footprint are
+       pruned from `grid.gpkg` instead of falling back to `datasets[0]`.
+    2. When multiple datasets intersect a tile, the dataset covering the largest fraction of the
+       tile is selected as primary `dataset_id` (even if an edge-grazing dataset came earlier
+       in `manifest.json`), and co-intersecting same-provider URLs are retained in `source_urls`.
+    """
+    # Create a 2-tile ROI in EPSG:4326: West tile (-106.0 to -105.98) covered, East tile (-105.5 to -105.48) uncovered
+    west_poly = box(-106.00, 36.00, -105.99, 36.01)
+    east_uncovered_poly = box(-105.50, 36.00, -105.49, 36.01)
+    roi_gdf = gpd.GeoDataFrame(
+        {"id": [1, 2]},
+        geometry=[west_poly, east_uncovered_poly],
+        crs="EPSG:4326",
+    )
+    grid_gdf, _ = create_tile_grid_index(roi_gdf, tile_size=1200, buffer_size=30)
+    assert len(grid_gdf) >= 2
+
+    # Dataset 0 only grazes a tiny sliver on the western edge (-106.05 to -105.9995)
+    ds_sliver = {
+        "provider": "USGS_EPT",
+        "dataset_id": "Sliver_First_2020",
+        "name": "Sliver_First_2020",
+        "date": "2020-09-01",
+        "point_density": 4.0,
+        "url": "https://s3-us-west-2.amazonaws.com/usgs-lidar-public/Sliver_First_2020/ept.json",
+        "geometry": box(-106.05, 35.99, -105.999, 36.02).__geo_interface__,
+    }
+    # Dataset 1 covers 95% of the western tile (-105.999 to -105.97)
+    ds_dominant = {
+        "provider": "USGS_EPT",
+        "dataset_id": "Dominant_Second_2018",
+        "name": "Dominant_Second_2018",
+        "date": "2018-11-10",
+        "point_density": 12.5,
+        "url": "https://s3-us-west-2.amazonaws.com/usgs-lidar-public/Dominant_Second_2018/ept.json",
+        "geometry": box(-105.999, 35.99, -105.97, 36.02).__geo_interface__,
+    }
+
+    cat_dir = tmp_path / "catalog"
+    gpkg_path, _ = export_grid_manifest(
+        grid_gdf,
+        {"search_parameters": {}, "datasets": [ds_sliver, ds_dominant]},
+        cat_dir,
+        tile_size=1200,
+        buffer_size=30,
+    )
+
+    saved_grid = gpd.read_file(gpkg_path, layer="grid")
+    # Uncovered eastern tiles must be pruned
+    assert len(saved_grid) < len(grid_gdf)
+    # Sequential tile_id 0..N-1
+    assert list(saved_grid["tile_id"]) == list(range(len(saved_grid)))
+    # The tile covered 95% by Dominant_Second_2018 must get Dominant_Second_2018, not Sliver_First_2020
+    assert "Dominant_Second_2018" in set(saved_grid["dataset_id"])
+
+
+def test_usgs_pdal_reader_multi_url_merge():
+    """
+    Verify USGSProvider.get_pdal_reader builds multiple `readers.ept` stages + `filters.merge`
+    when a seam tile straddles multiple intersecting USGS EPT workunits.
+    """
+    from als_finder.providers.usgs import USGSProvider
+
+    prov = USGSProvider()
+    poly = box(400000, 4000000, 401200, 4001200)
+    urls = [
+        "https://s3-us-west-2.amazonaws.com/usgs-lidar-public/BlockA/ept.json",
+        "https://s3-us-west-2.amazonaws.com/usgs-lidar-public/BlockB/ept.json",
+    ]
+    stages = prov.get_pdal_reader(urls, poly, poly_crs="EPSG:32613")
+    assert len(stages) == 3
+    assert stages[0]["type"] == "readers.ept"
+    assert stages[0]["filename"] == urls[0]
+    assert stages[1]["type"] == "readers.ept"
+    assert stages[1]["filename"] == urls[1]
+    assert stages[2]["type"] == "filters.merge"
+    assert stages[2]["inputs"] == ["ept_reader_0", "ept_reader_1"]
+
+
+def test_stream_single_tile_rejects_and_cleans_up_empty_tile(tmp_path: Path):
+    """
+    Verify that when a streamed tile yields 0 points, `stream_single_tile` unlinks the 0-point
+    `.laz` file and raises `EmptyTileError`, and `als-finder fetch tile --json` reports
+    `status: "empty"` instead of `status: "success"`.
+    """
+    import laspy
+    from als_finder.core.standardization import stream_single_tile, EmptyTileError
+
+    far_poly = box(5000, 5000, 5100, 5100)
+    roi_gdf = gpd.GeoDataFrame({"id": [1]}, geometry=[far_poly], crs="EPSG:3857")
+    grid_gdf, _ = create_tile_grid_index(roi_gdf, tile_size=100, buffer_size=10, target_crs="EPSG:3857")
+    cat_dir = tmp_path / "catalog"
+    gpkg_path, _ = export_grid_manifest(
+        grid_gdf,
+        {"search_parameters": {}, "datasets": [{"name": "far_ds", "url": "https://s3-us-west-2.amazonaws.com/usgs-lidar-public/far_ds/ept.json"}]},
+        cat_dir,
+        tile_size=100,
+        buffer_size=10,
+    )
+
+    out_empty_las = tmp_path / "should_not_exist.las"
+
+    def _write_zero_point_las(cmd, stdin_bytes, memory_limit_mb=4096):
+        out_empty_las.parent.mkdir(parents=True, exist_ok=True)
+        empty_las = laspy.create(point_format=6, file_version="1.4")
+        empty_las.write(str(out_empty_las))
+        return True, ""
+
+    with patch("als_finder.core.standardization.execute_with_memory_limit", side_effect=_write_zero_point_las):
+        with pytest.raises(EmptyTileError):
+            stream_single_tile(
+                manifest_or_grid_path=gpkg_path,
+                tile_id=0,
+                out_path=out_empty_las,
+                tile_size=100,
+                buffer_size=10,
+                crs="EPSG:3857",
+                tile_format="las",
+            )
+        assert not out_empty_las.exists(), "0-point .las file must be deleted on EmptyTileError"
+
+        # Also verify CLI `als-finder fetch tile 0 --json` returns status="empty" and point_count=0
+        runner = CliRunner()
+        res = runner.invoke(
+            cli,
+            [
+                "fetch",
+                "tile",
+                "0",
+                "--manifest",
+                str(gpkg_path),
+                "-s",
+                "100",
+                "-b",
+                "10",
+                "--crs",
+                "EPSG:3857",
+                "--tile-format",
+                "las",
+                "-o",
+                str(out_empty_las),
+                "--json",
+            ],
+        )
+        assert res.exit_code == 0, res.output
+        payload = json.loads(res.output)
+        assert payload["status"] == "empty"
+        assert payload["point_count"] == 0
+        assert payload["path"] is None
+        assert not out_empty_las.exists()
+
+
+def test_execute_with_memory_limit_isolates_pdal_driver_path(monkeypatch):
+    """
+    Verify `execute_with_memory_limit` sets `PDAL_DRIVER_PATH` to an isolated empty directory
+    by default so PDAL does not scan third-party plugin DLLs (`libpdal_plugin_reader_arrow.dll`
+    / `libpdal_plugin_reader_tiledb.so`) that can collide with `r-arrow` / `libarrow.dll`.
+    """
+    from als_finder.core.standardization import execute_with_memory_limit
+
+    monkeypatch.delenv("PDAL_DRIVER_PATH", raising=False)
+    captured_env = {}
+
+    def _fake_run(cmd, input=None, capture_output=True, env=None, check=True):
+        captured_env.update(env or {})
+        res = MagicMock()
+        res.stderr = b""
+        return res
+
+    with patch("als_finder.core.standardization.subprocess.run", side_effect=_fake_run):
+        ok, _ = execute_with_memory_limit(["pdal", "pipeline", "-s"], b"{}")
+        assert ok is True
+        assert "PDAL_DRIVER_PATH" in captured_env
+        driver_dir = Path(captured_env["PDAL_DRIVER_PATH"])
+        assert driver_dir.exists() and driver_dir.is_dir()
+        assert list(driver_dir.iterdir()) == []
+
+

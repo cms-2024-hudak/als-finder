@@ -6,7 +6,7 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 from typing import Dict, Any, List, Optional, Callable, Union, Tuple
 import importlib.resources as pkg_resources
@@ -147,11 +147,15 @@ def search(roi, name, date, doy=None, density=None, workspace=None, provider=('U
                 end_date = date_str
             
     min_density, max_density = None, None
+    requested_ql_rank = None
+    ql_rank_table = {'QL0': 0, 'QL1': 1, 'QL2': 2, 'QL3': 3}
     if density:
         density_str = str(density).strip()
-        if density_str.upper().startswith('QL'):
-            ql_map = {'QL0': 8.0, 'QL1': 8.0, 'QL2': 2.0, 'QL3': 0.5}
-            min_density = ql_map.get(density_str.upper())
+        norm_ql = density_str.upper().replace(" ", "").replace("-", "")
+        if norm_ql.startswith('QL'):
+            ql_map = {'QL0': 20.0, 'QL1': 8.0, 'QL2': 2.0, 'QL3': 0.5}
+            min_density = ql_map.get(norm_ql)
+            requested_ql_rank = ql_rank_table.get(norm_ql)
             if min_density is None:
                 raise click.ClickException(f"Invalid QL specification: {density}. Use QL0, QL1, QL2, or QL3.")
         else:
@@ -366,20 +370,32 @@ def search(roi, name, date, doy=None, density=None, workspace=None, provider=('U
                     ymd_tokens.extend(re.findall(r'\d{4}-\d{2}-\d{2}', cs))
                 if not ymd_tokens:
                     continue
+                parsed_dts: List[datetime] = []
                 doys: List[int] = []
                 for tok in ymd_tokens:
                     try:
-                        doys.append(datetime.strptime(tok, '%Y-%m-%d').timetuple().tm_yday)
+                        dt_obj = datetime.strptime(tok, '%Y-%m-%d')
+                        parsed_dts.append(dt_obj)
+                        doys.append(dt_obj.timetuple().tm_yday)
                     except ValueError:
                         pass
                 if not doys:
                     continue
                 lo_doy = min_doy if min_doy is not None else 1
                 hi_doy = max_doy if max_doy is not None else 366
-                if not all(lo_doy <= d_val <= hi_doy for d_val in doys):
-                    continue
+                all_in_window = all(lo_doy <= d_val <= hi_doy for d_val in doys)
+                if not all_in_window:
+                    span_days = abs((max(parsed_dts) - min(parsed_dts)).days) if len(parsed_dts) >= 2 else 0
+                    any_in_window = any(lo_doy <= d_val <= hi_doy for d_val in doys)
+                    if not ((any_in_window and span_days <= 155) or span_days >= 365):
+                        continue
                 
-            # 3. Density filter inherently requires PyProj parsing execution first
+            # 3. Density & USGS Quality Level (QL) filter
+            if requested_ql_rank is not None:
+                add_m_ql = item.get('additional_metadata') or item.get('raw_metadata') or {}
+                item_ql_raw = str(add_m_ql.get('usgs_ql') or '').upper().replace(" ", "").replace("-", "")
+                if item_ql_raw in ql_rank_table and ql_rank_table[item_ql_raw] > requested_ql_rank:
+                    continue
             pts_m2 = item.get('point_density')
             if (min_density is not None or max_density is not None) and pts_m2 is None:
                 logger.warning(f"Dropping {dataset_name_raw} due to missing density metadata.")
@@ -451,38 +467,65 @@ def search(roi, name, date, doy=None, density=None, workspace=None, provider=('U
             if dedup:
                 deduped: List[Dict[str, Any]] = []
                 for candidate in unique_results:
+                    c_prov = str(candidate.get('provider', '') or '')
+                    c_id = str(candidate.get('dataset_id', '') or '').lower()
                     c_name = str(candidate.get('name', '')).lower().replace('_', ' ').replace('-', ' ')
-                    c_year = str(candidate.get('year', '') or '')
+                    c_year = str(candidate.get('year', '') or candidate.get('sort_date', '')[:4] or '')
                     c_bounds = candidate.get('bounds')
+                    if not c_bounds and candidate.get('geometry'):
+                        try:
+                            c_bounds = list(shape(candidate['geometry']).bounds)
+                        except Exception:
+                            c_bounds = None
                     
                     is_dup = False
                     for kept in deduped:
+                        k_prov = str(kept.get('provider', '') or '')
+                        k_id = str(kept.get('dataset_id', '') or '').lower()
                         k_name = str(kept.get('name', '')).lower().replace('_', ' ').replace('-', ' ')
-                        k_year = str(kept.get('year', '') or '')
+                        k_year = str(kept.get('year', '') or kept.get('sort_date', '')[:4] or '')
                         k_bounds = kept.get('bounds')
-                        
-                        # Name + year match
-                        if c_year and k_year and c_year == k_year:
-                            c_words = set([w for w in c_name.split() if len(w) > 4])
-                            k_words = set([w for w in k_name.split() if len(w) > 4])
-                            if c_words and k_words and len(c_words.intersection(k_words)) >= 2:
-                                is_dup = True
-                                break
-                        
-                        # Bounding box IoU overlap > 0.80 with matching year
-                        if c_bounds and k_bounds and c_year and k_year and c_year == k_year:
-                            minx = max(c_bounds[0], k_bounds[0])
-                            miny = max(c_bounds[1], k_bounds[1])
-                            maxx = min(c_bounds[2], k_bounds[2])
-                            maxy = min(c_bounds[3], k_bounds[3])
+                        if not k_bounds and kept.get('geometry'):
+                            try:
+                                k_bounds = list(shape(kept['geometry']).bounds)
+                            except Exception:
+                                k_bounds = None
+
+                        # Compute spatial intersection when bounds exist
+                        has_spatial_overlap = False
+                        iou_ratio = 0.0
+                        if c_bounds and k_bounds and len(c_bounds) >= 4 and len(k_bounds) >= 4:
+                            minx = max(float(c_bounds[0]), float(k_bounds[0]))
+                            miny = max(float(c_bounds[1]), float(k_bounds[1]))
+                            maxx = min(float(c_bounds[2]), float(k_bounds[2]))
+                            maxy = min(float(c_bounds[3]), float(k_bounds[3]))
                             if maxx > minx and maxy > miny:
+                                has_spatial_overlap = True
                                 inter_area = (maxx - minx) * (maxy - miny)
-                                c_area = (c_bounds[2] - c_bounds[0]) * (c_bounds[3] - c_bounds[1])
-                                k_area = (k_bounds[2] - k_bounds[0]) * (k_bounds[3] - k_bounds[1])
+                                c_area = (float(c_bounds[2]) - float(c_bounds[0])) * (float(c_bounds[3]) - float(c_bounds[1]))
+                                k_area = (float(k_bounds[2]) - float(k_bounds[0])) * (float(k_bounds[3]) - float(k_bounds[1]))
                                 union_area = c_area + k_area - inter_area
-                                if union_area > 0 and (inter_area / union_area) > 0.80:
+                                if union_area > 0:
+                                    iou_ratio = inter_area / union_area
+
+                        # Name + year match across different providers (or USGS_LPC_ legacy alias) when spatially overlapping
+                        if c_year and k_year and c_year == k_year and (has_spatial_overlap or (not c_bounds and not k_bounds)):
+                            if c_prov != k_prov or c_id.startswith("usgs_lpc_") != k_id.startswith("usgs_lpc_"):
+                                c_words = set([w for w in c_name.split() if len(w) > 4])
+                                k_words = set([w for w in k_name.split() if len(w) > 4])
+                                if c_words and k_words and len(c_words.intersection(k_words)) >= 2:
                                     is_dup = True
                                     break
+                        
+                        # Bounding box IoU overlap > 0.80 with matching year and shared campaign name token
+                        if c_year and k_year and c_year == k_year and iou_ratio > 0.80:
+                            c_words = set([w for w in c_name.split() if len(w) > 3])
+                            k_words = set([w for w in k_name.split() if len(w) > 3])
+                            if c_prov == k_prov and c_id != k_id and ("_fl0" in c_id or "_fl0" in k_id):
+                                pass
+                            elif (c_words and k_words and len(c_words.intersection(k_words)) >= 1) or (c_id.startswith("usgs_lpc_") != k_id.startswith("usgs_lpc_")):
+                                is_dup = True
+                                break
                     
                     if not is_dup:
                         deduped.append(candidate)
@@ -525,7 +568,7 @@ def search(roi, name, date, doy=None, density=None, workspace=None, provider=('U
             print(f"\n=================================================================================================================\n TOTAL DATASETS: 0 | ESTIMATED PAYLOAD: 0.00 GB | QUERY TIME: {query_time:.2f}s \n=================================================================================================================\n")
 
         # Construct JSON Metadata Headers
-        now_utc = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        now_utc = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         if hasattr(time, 'tzname') and len(time.tzname) > 0:
             tz_name = time.tzname[time.daylight]
         else:
@@ -1312,7 +1355,15 @@ def _execute_fetch_single_tile(
     tile_format: str = "laz",
 ) -> Tuple[bool, Union[Dict[str, Any], List[Dict[str, Any]]]]:
     from als_finder.core.grid_manager import get_tile_spec
-    from als_finder.core.standardization import stream_single_tile
+    from als_finder.core.standardization import stream_single_tile, EmptyTileError
+
+    def _read_las_point_count(p: Path) -> Optional[int]:
+        try:
+            import laspy
+            with laspy.open(str(p)) as fh:
+                return int(fh.header.point_count)
+        except Exception:
+            return None
 
     spec = get_tile_spec(
         target_manifest,
@@ -1338,68 +1389,114 @@ def _execute_fetch_single_tile(
                 buffer_size=buffer_size,
                 overwrite=overwrite
             )
-            child_path = stream_single_tile(
-                manifest_or_grid_path=target_manifest,
-                tile_id=child_id,
-                out_path=output,
-                tile_size=tile_size,
-                buffer_size=buffer_size,
-                crs=crs,
-                overwrite=overwrite,
-                use_spatial_name=spatial_name,
-                write_sidecar=sidecar,
-                tile_format=tile_format,
-            )
             core_b = child_spec["core_poly"].bounds
             buf_b = child_spec["buffered_poly"].bounds
             grid_crs = child_spec.get("grid_crs", "EPSG:32610")
             target_crs = crs if crs else grid_crs
-            child_sidecar = child_path.with_suffix(".json") if sidecar else None
-
-            subtile_results.append({
-                "tile_id": child_id,
-                "parent_tile_id": int(child_spec["parent_tile_id"]),
-                "quadrant": q,
-                "basename": child_spec.get("basename"),
-                "hive_dir": child_spec.get("hive_dir"),
-                "hive_path": child_spec.get("hive_path"),
-                "path": str(child_path.absolute()),
-                "sidecar_path": str(child_sidecar.absolute()) if child_sidecar else None,
-                "grid_crs": str(target_crs),
-                "tile_size": child_spec["tile_size"],
-                "buffer_size": child_spec["buffer_size"],
-                "est_points": child_spec["est_points"],
-                "is_hyperdense": child_spec["is_hyperdense"],
-                "crop_bbox": child_spec.get("crop_bbox"),
-                "crop_pdal_bounds": child_spec.get("crop_pdal_bounds"),
-                "crop_gdal_te": child_spec.get("crop_gdal_te"),
-                "crop_minx": child_spec.get("crop_minx"),
-                "crop_miny": child_spec.get("crop_miny"),
-                "crop_maxx": child_spec.get("crop_maxx"),
-                "crop_maxy": child_spec.get("crop_maxy"),
-                "core_bounds": child_spec.get("crop_bbox"),
-                "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
-            })
+            try:
+                child_path = stream_single_tile(
+                    manifest_or_grid_path=target_manifest,
+                    tile_id=child_id,
+                    out_path=output,
+                    tile_size=tile_size,
+                    buffer_size=buffer_size,
+                    crs=crs,
+                    overwrite=overwrite,
+                    use_spatial_name=spatial_name,
+                    write_sidecar=sidecar,
+                    tile_format=tile_format,
+                )
+                child_sidecar = child_path.with_suffix(".json") if sidecar else None
+                child_pts = _read_las_point_count(child_path)
+                subtile_results.append({
+                    "status": "success",
+                    "tile_id": child_id,
+                    "parent_tile_id": int(child_spec["parent_tile_id"]),
+                    "quadrant": q,
+                    "basename": child_spec.get("basename"),
+                    "hive_dir": child_spec.get("hive_dir"),
+                    "hive_path": child_spec.get("hive_path"),
+                    "path": str(child_path.absolute()),
+                    "sidecar_path": str(child_sidecar.absolute()) if child_sidecar else None,
+                    "grid_crs": str(target_crs),
+                    "tile_size": child_spec["tile_size"],
+                    "buffer_size": child_spec["buffer_size"],
+                    "point_count": child_pts,
+                    "est_points": child_spec["est_points"],
+                    "is_hyperdense": child_spec["is_hyperdense"],
+                    "crop_bbox": child_spec.get("crop_bbox"),
+                    "crop_pdal_bounds": child_spec.get("crop_pdal_bounds"),
+                    "crop_gdal_te": child_spec.get("crop_gdal_te"),
+                    "crop_minx": child_spec.get("crop_minx"),
+                    "crop_miny": child_spec.get("crop_miny"),
+                    "crop_maxx": child_spec.get("crop_maxx"),
+                    "crop_maxy": child_spec.get("crop_maxy"),
+                    "core_bounds": child_spec.get("crop_bbox"),
+                    "buffered_bounds": [round(buf_b[0], 2), round(buf_b[1], 2), round(buf_b[2], 2), round(buf_b[3], 2)],
+                })
+            except EmptyTileError:
+                subtile_results.append({
+                    "status": "empty",
+                    "tile_id": child_id,
+                    "parent_tile_id": int(child_spec["parent_tile_id"]),
+                    "quadrant": q,
+                    "basename": child_spec.get("basename"),
+                    "hive_dir": child_spec.get("hive_dir"),
+                    "hive_path": child_spec.get("hive_path"),
+                    "path": None,
+                    "sidecar_path": None,
+                    "grid_crs": str(target_crs),
+                    "tile_size": child_spec["tile_size"],
+                    "buffer_size": child_spec["buffer_size"],
+                    "point_count": 0,
+                    "est_points": child_spec["est_points"],
+                })
         return True, subtile_results
-
-    res_path = stream_single_tile(
-        manifest_or_grid_path=target_manifest,
-        tile_id=tile_id,
-        out_path=output,
-        tile_size=tile_size,
-        buffer_size=buffer_size,
-        crs=crs,
-        overwrite=overwrite,
-        use_spatial_name=spatial_name,
-        write_sidecar=sidecar,
-        tile_format=tile_format,
-    )
 
     core_b = spec["core_poly"].bounds
     buf_b = spec["buffered_poly"].bounds
     grid_crs = spec.get("grid_crs", "EPSG:32610")
     target_crs = crs if crs else grid_crs
+
+    try:
+        res_path = stream_single_tile(
+            manifest_or_grid_path=target_manifest,
+            tile_id=tile_id,
+            out_path=output,
+            tile_size=tile_size,
+            buffer_size=buffer_size,
+            crs=crs,
+            overwrite=overwrite,
+            use_spatial_name=spatial_name,
+            write_sidecar=sidecar,
+            tile_format=tile_format,
+        )
+    except EmptyTileError as e:
+        return False, {
+            "status": "empty",
+            "tile_id": str(tile_id) if spec.get("quadrant") else int(spec.get("parent_tile_id", tile_id)),
+            "parent_tile_id": spec.get("parent_tile_id"),
+            "quadrant": spec.get("quadrant"),
+            "level": spec.get("level", 0),
+            "basename": spec.get("basename"),
+            "hive_dir": spec.get("hive_dir"),
+            "hive_path": spec.get("hive_path"),
+            "path": None,
+            "sidecar_path": None,
+            "grid_crs": str(target_crs),
+            "tile_size": spec.get("tile_size", tile_size),
+            "buffer_size": spec.get("buffer_size", buffer_size),
+            "nominal_tile_size": spec.get("nominal_tile_size", tile_size),
+            "nominal_buffer_size": spec.get("nominal_buffer_size", buffer_size),
+            "point_count": 0,
+            "est_points": spec.get("est_points"),
+            "provider": str(spec.get("provider", "")),
+            "dataset_id": str(spec.get("dataset_id", "")),
+            "message": str(e),
+        }
+
     sidecar_path = res_path.with_suffix(".json") if sidecar else None
+    actual_pts = _read_las_point_count(res_path)
 
     payload = {
         "status": "success",
@@ -1417,6 +1514,7 @@ def _execute_fetch_single_tile(
         "buffer_size": spec.get("buffer_size", buffer_size),
         "nominal_tile_size": spec.get("nominal_tile_size", tile_size),
         "nominal_buffer_size": spec.get("nominal_buffer_size", buffer_size),
+        "point_count": actual_pts,
         "est_points": spec.get("est_points"),
         "is_hyperdense": spec.get("is_hyperdense", False),
         "recommended_mem_gb": spec.get("recommended_mem_gb"),
@@ -1530,10 +1628,14 @@ def fetch_tile_subcmd(tile_ids, tile_id, workspace, manifest, output, buffer_siz
                 )
             else:
                 def human_fetch_printer():
-                    msg = f"Successfully streamed tile {tid} to {res['path']}"
-                    if sidecar and res.get("sidecar_path"):
-                        msg += f"\nWrote metadata sidecar to {res['sidecar_path']}"
-                    click.echo(msg, err=True)
+                    if res.get("status") == "empty":
+                        click.echo(f"Skipping empty tile {tid}: 0 points returned within tile bounds (no .laz file written).", err=True)
+                    else:
+                        pts_str = f" ({res['point_count']:,} pts)" if res.get("point_count") is not None else ""
+                        msg = f"Successfully streamed tile {tid}{pts_str} to {res['path']}"
+                        if sidecar and res.get("sidecar_path"):
+                            msg += f"\nWrote metadata sidecar to {res['sidecar_path']}"
+                        click.echo(msg, err=True)
 
                 format_cli_output(
                     res,
