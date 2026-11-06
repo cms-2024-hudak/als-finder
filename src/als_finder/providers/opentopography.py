@@ -246,23 +246,47 @@ class OpenTopographyProvider(BaseProvider):
         poly_crs: Optional[str] = None,
         **kwargs: Any
     ) -> List[Dict[str, Any]]:
+        import geopandas as gpd
         pipeline = []
         inputs = []
         if poly_crs and poly_crs.upper() != "EPSG:3857":
-            import geopandas as gpd
             ept_poly = gpd.GeoDataFrame(geometry=[buffered_poly], crs=poly_crs).to_crs("EPSG:3857").geometry.iloc[0]
         else:
             ept_poly = buffered_poly
         eb_minx, eb_miny, eb_maxx, eb_maxy = ept_poly.bounds
         ept_bounds_str = f"([{eb_minx}, {eb_maxx}], [{eb_miny}, {eb_maxy}])"
 
-        for i, url in enumerate(urls):
+        resolved_urls: List[str] = []
+        for u in urls:
+            u_low = str(u).lower()
+            if u_low.endswith("ept.json") or u_low.endswith(".laz") or u_low.endswith(".las"):
+                resolved_urls.append(str(u))
+            else:
+                alt_name = str(u).split("dsid=")[-1].split("&")[0].strip("/") if "dsid=" in str(u) else str(u).rstrip("/").split("/")[-1]
+                roi_wgs = (
+                    gpd.GeoDataFrame(geometry=[buffered_poly], crs=poly_crs).to_crs("EPSG:4326").geometry.iloc[0]
+                    if poly_crs else buffered_poly
+                )
+                fetched = self.get_fetch_urls({"alternateName": alt_name}, roi_wgs, Path("/tmp"))
+                if fetched:
+                    resolved_urls.extend([item[0] for item in fetched])
+                else:
+                    resolved_urls.append(str(u))
+
+        for i, url in enumerate(resolved_urls):
             tag = f"reader_{i}"
-            if url.lower().endswith("ept.json"):
+            u_low = url.lower()
+            if u_low.endswith("ept.json"):
                 pipeline.append({
                     "type": "readers.ept",
                     "filename": url,
                     "bounds": ept_bounds_str,
+                    "tag": tag
+                })
+            elif poly_crs is not None and not u_low.endswith(".copc.laz") and (u_low.endswith(".laz") or u_low.endswith(".las")):
+                pipeline.append({
+                    "type": "readers.las",
+                    "filename": url,
                     "tag": tag
                 })
             else:
@@ -274,7 +298,7 @@ class OpenTopographyProvider(BaseProvider):
                 })
             inputs.append(tag)
             
-        if len(urls) > 1:
+        if len(resolved_urls) > 1:
             pipeline.append({
                 "type": "filters.merge",
                 "inputs": inputs
