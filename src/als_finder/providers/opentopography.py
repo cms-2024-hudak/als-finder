@@ -257,12 +257,18 @@ class OpenTopographyProvider(BaseProvider):
         ept_bounds_str = f"([{eb_minx}, {eb_maxx}], [{eb_miny}, {eb_maxy}])"
 
         resolved_urls: List[str] = []
+        ds_id_hint = kwargs.get("dataset_id")
         for u in urls:
             u_low = str(u).lower()
             if u_low.endswith("ept.json") or u_low.endswith(".laz") or u_low.endswith(".las"):
                 resolved_urls.append(str(u))
             else:
-                alt_name = str(u).split("dsid=")[-1].split("&")[0].strip("/") if "dsid=" in str(u) else str(u).rstrip("/").split("/")[-1]
+                if ds_id_hint:
+                    alt_name = str(ds_id_hint)
+                elif "dsid=" in str(u):
+                    alt_name = str(u).split("dsid=")[-1].split("&")[0].strip("/")
+                else:
+                    alt_name = str(u).rstrip("/").split("/")[-1]
                 roi_wgs = (
                     gpd.GeoDataFrame(geometry=[buffered_poly], crs=poly_crs).to_crs("EPSG:4326").geometry.iloc[0]
                     if poly_crs else buffered_poly

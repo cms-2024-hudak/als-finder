@@ -612,7 +612,12 @@ def stream_single_tile(
         provider_name = spec.get("provider", "USGS_EPT")
         provider_instance = get_provider(provider_name)
         poly_crs = spec.get("grid_crs", "EPSG:4326")
-        reader_stages = provider_instance.get_pdal_reader(urls, buffered_poly, poly_crs=poly_crs)
+        reader_stages = provider_instance.get_pdal_reader(
+            urls,
+            buffered_poly,
+            poly_crs=poly_crs,
+            dataset_id=spec.get("dataset_id"),
+        )
         pipeline.extend(reader_stages)
     else:
         inputs = []
