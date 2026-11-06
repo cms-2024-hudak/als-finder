@@ -49,7 +49,14 @@ def load_roi(source: Union[str, Path, List[float]]) -> Polygon:
             if not path.exists():
                 raise ROIError(f"ROI file not found: {path}")
 
-            gdf = gpd.read_file(path)
+            if path.suffix.lower() == ".gpkg":
+                import pyogrio
+                layers_info = pyogrio.list_layers(path)
+                layer_names = [str(r[0]) for r in layers_info] if len(layers_info) > 0 else []
+                target_layer = "sample_tiles_core_1800m" if "sample_tiles_core_1800m" in layer_names else (layer_names[0] if layer_names else None)
+                gdf = gpd.read_file(path, layer=target_layer) if target_layer else gpd.read_file(path)
+            else:
+                gdf = gpd.read_file(path)
             
             if gdf.empty:
                 raise ROIError("ROI file is empty.")

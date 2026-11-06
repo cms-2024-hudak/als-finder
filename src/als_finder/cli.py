@@ -82,7 +82,7 @@ def get_example_roi():
 @click.option('--date', help='Temporal filter: colon range 2018-01-01:2022-12-31, open-ended 2020:, or single year 2020')
 @click.option('--doy', help='Day-of-Year (phenology) filter across any acquisition year, e.g. 121:273 (May 1 to Sep 30)')
 @click.option('--density', help='Point density filter in pts/m2 (e.g. 8.0, 2:10) or QL Level (QL0, QL1, QL2, QL3)')
-@click.option('--workspace', help='Path to project workspace directory')
+@click.option('-w', '--workspace', help='Path to project workspace directory')
 @click.option('--provider', multiple=True, default=['USGS_EPT', 'NOAA_STAC', 'OpenTopography', 'NEON_AOP', 'NASA_GLIHT', 'NASA_EARTHDATA'], callback=parse_comma_separated, help='Provider(s) to search (comma-separated or "all")')
 @click.option('--cloud-native', is_flag=True, help='Filter exclusively for datasets that support dynamic byte-range streaming formats natively (e.g., USGS/NOAA EPT or COPC)')
 @click.option('--ot-key', help='OpenTopography API Key. Auto-saved to workspace .env.')
@@ -376,13 +376,8 @@ def search(roi, name, date, doy=None, density=None, workspace=None, provider=('U
                     continue
                 lo_doy = min_doy if min_doy is not None else 1
                 hi_doy = max_doy if max_doy is not None else 366
-                s_doy, e_doy = doys[0], doys[-1]
-                if s_doy <= e_doy:
-                    if not (max(s_doy, lo_doy) <= min(e_doy, hi_doy)):
-                        continue
-                else:
-                    if not (lo_doy <= s_doy <= hi_doy or lo_doy <= e_doy <= hi_doy):
-                        continue
+                if not all(lo_doy <= d_val <= hi_doy for d_val in doys):
+                    continue
                 
             # 3. Density filter inherently requires PyProj parsing execution first
             pts_m2 = item.get('point_density')
@@ -677,7 +672,7 @@ def search(roi, name, date, doy=None, density=None, workspace=None, provider=('U
         raise click.ClickException(str(e))
 
 @cli.command()
-@click.option('--workspace', required=True, help='Path to existing als-finder workspace')
+@click.option('-w', '--workspace', required=True, help='Path to existing als-finder workspace')
 @click.option('--roi', help='Override ROI file or BBox string')
 @click.option('--name', help='Override dataset name filter (Supports wildcards, or regex via ~)')
 @click.option('--date', help='Override temporal filter (e.g. 2020-01-01 or 2015-01-01/2019-12-31)')
@@ -2013,7 +2008,7 @@ def workspace_group():
 
 @workspace_group.command('update')
 @click.pass_context
-@click.option('--workspace', required=True, help='Path to existing als-finder workspace')
+@click.option('-w', '--workspace', required=True, help='Path to existing als-finder workspace')
 @click.option('--roi', help='Override ROI file or BBox string')
 @click.option('--name', help='Override dataset name filter')
 @click.option('--date', help='Override temporal filter')
@@ -2045,7 +2040,7 @@ def workspace_update_cmd(ctx, workspace, roi, name, date, doy, density, provider
 
 
 @workspace_group.command('clean')
-@click.option('--workspace', required=True, type=click.Path(exists=True), help='Path to target workspace directory to clean.')
+@click.option('-w', '--workspace', required=True, type=click.Path(exists=True), help='Path to target workspace directory to clean.')
 def workspace_clean_cmd(workspace):
     """Clean the specified workspace by removing scratch and interim data."""
     clean_cmd(workspace)
